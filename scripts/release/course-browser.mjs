@@ -315,6 +315,27 @@ async function checkRenderedContent(page, root, lesson, origin, deadline, observ
   return readable || await images.count() > 0 || await media.count() > 0 || await pdfs.count() > 0 || await models.count() > 0;
 }
 
+/**
+ * Selects a content tab. A content outside the lesson's preview range answers
+ * with the trial gate instead of switching — that is enforcement, not a broken
+ * tab — so the caller records it as gated rather than waiting for a heading
+ * that can never appear.
+ */
+async function switchContent(page, tab, deadline) {
+  const gate = page.locator('.la-trial-modal');
+  const handle = await tab.elementHandle();
+  await tab.click({ timeout: remaining(deadline) });
+  const outcome = await Promise.race([
+    page.waitForFunction(element => element?.getAttribute('aria-current') === 'step', handle, { timeout: remaining(deadline) }).then(() => 'content').catch(() => null),
+    gate.waitFor({ state: 'visible', timeout: remaining(deadline) }).then(() => 'gate').catch(() => null)
+  ]);
+  if (outcome === 'gate') {
+    await gate.locator('button.la-trial-close').click({ timeout: remaining(deadline) }).catch(() => undefined);
+    return 'gate';
+  }
+  return 'content';
+}
+
 async function exerciseLesson(page, root, lesson, origin, deadline, audit, step, scope) {
   const observed = [];
   const tabs = root.locator('.la-content-nav > button, [class*="contentLinks"] > button');
@@ -325,8 +346,27 @@ async function exerciseLesson(page, root, lesson, origin, deadline, audit, step,
       if (count) {
         const label = await tabs.nth(index).evaluate(element => { const copy = element.cloneNode(true); copy.querySelectorAll('span').forEach(span => span.remove()); return copy.textContent.trim().replace(/^\d+\.\d+\s+/, ''); });
         await tabs.nth(index).click({ timeout: remaining(deadline) });
-        await page.waitForFunction(element => element?.getAttribute('aria-current') === 'step', await tabs.nth(index).elementHandle(), { timeout: remaining(deadline) });
-        await page.waitForFunction(({ element, label }) => element.querySelector('.la-content-player > h3')?.textContent.trim() === label, { element: await root.elementHandle(), label }, { timeout: remaining(deadline) });
+        // A content outside the preview range answers with the trial gate while
+        // the tab still becomes current, so the gate must be raced against the
+        // heading itself — not against aria-current.
+        const gate = page.locator('.la-trial-modal');
+        const outcome = await Promise.race([
+          page.waitForFunction(({ element, label }) => element.querySelector('.la-content-player > h3')?.textContent.trim() === label, { element: await root.elementHandle(), label }, { timeout: remaining(deadline) }).then(() => 'content').catch(() => null),
+          gate.waitFor({ state: 'visible', timeout: remaining(deadline) }).then(() => 'gate').catch(() => null)
+        ]);
+        if (outcome === 'gate') {
+          await gate.locator('button.la-trial-close').click({ timeout: remaining(deadline) }).catch(() => undefined);
+          return { gated: true };
+        }
+        requireCheck(outcome === 'content', 'content_switch_timeout');
+        // The gate can open a beat after the heading swaps (it is raised by the
+        // player, not by the tab). Settle briefly so it is never left covering
+        // the media probe that follows.
+        await page.waitForTimeout(400);
+        if (await gate.isVisible().catch(() => false)) {
+          await gate.locator('button.la-trial-close').click({ timeout: remaining(deadline) }).catch(() => undefined);
+          return { gated: true };
+        }
       }
       const content = root.locator('.la-content-player, .lesson-body').first();
       await content.waitFor({ state: 'attached', timeout: remaining(deadline) });
@@ -367,10 +407,7 @@ async function checkTrialGate(page, root, lesson, deadline) {
   const tabCount = await tabs.count();
   let checked = 0, shorterThanLimit = 0;
   for (let i = 0; i < Math.max(1, tabCount); i++) {
-    if (tabCount) {
-      await tabs.nth(i).click({ timeout: remaining(deadline) });
-      await page.waitForFunction(element => element?.getAttribute('aria-current') === 'step', await tabs.nth(i).elementHandle(), { timeout: remaining(deadline) });
-    }
+    if (tabCount && await switchContent(page, tabs.nth(i), deadline) === 'gate') continue;
     const video = root.locator('video.la-lesson-video');
     if (!await video.count()) continue;
     const result = await probePlayback(video, remaining(deadline, LIMIT.resource));
