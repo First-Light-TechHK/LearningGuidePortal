@@ -6,7 +6,7 @@ import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, 
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
 import { STARTING_SOON_MS, type StudyGroupStore } from "./domain";
 import { createStudyGroupRepository } from "./repository";
-import { createStudyGroupService, webhookRejectionLogLine, type StudyGroupService, type UserProfile } from "./service";
+import { createStudyGroupService, tutorAvailabilityFromKs, webhookRejectionLogLine, type StudyGroupService, type UserProfile } from "./service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
 import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHealthService } from "./liveKitHealth";
 import { createHotLiveKitProjectRegistry, parseLiveKitProjects } from "./liveKitProjectRegistry";
@@ -350,10 +350,12 @@ export function studyGroupService() {
     operationalLog: (event) => console.info(JSON.stringify(event)),
     // KS Lecture proxy (2026-10-23): the room Tutor uses KnowledgeSystem's
     // course AI Tutor (Lecture prompt/model/key); the welcome is not used.
-    tutorKs: async ({ courseId, message, locale, history, deadline }) => {
+    tutorKs: async ({ courseId, message, locale, history, deadline, onProgress }) => {
       const course = await getProductCourse(courseId);
       if (!course || course.status !== "published") throw new Error("Course is not available.");
       let text = "";
+      let progressPublishing = false;
+      let lastProgressAt = 0;
       const signal = AbortSignal.timeout(Math.max(1_000, deadline - Date.now()));
       for await (const delta of streamTutorText({
         externalCourseId: course.slug,
@@ -366,22 +368,28 @@ export function studyGroupService() {
         channel: "study-group"
       })) {
         text += delta;
+        if (onProgress && !progressPublishing && Date.now() - lastProgressAt >= 150 && Buffer.byteLength(text, "utf8") <= 16_384) {
+          progressPublishing = true;
+          lastProgressAt = Date.now();
+          void onProgress(text).catch(() => undefined).finally(() => { progressPublishing = false; });
+        }
       }
       return text;
     },
-    // The host switch follows the KS course-level Online state (no cache here;
-    // the service caches this read for 10 seconds).
-    tutorOnline: async (courseId) => {
+    // The host switch and the room's @AI Tutor follow the KS course-level
+    // status, with KS's reason when it is off (D4, no cache here; the service
+    // caches this read for 10 seconds). A course Portal no longer offers is
+    // simply offline.
+    tutorStatus: async (courseId) => {
       const course = await getProductCourse(courseId);
-      if (!course || course.status !== "published") return false;
-      const availability = await getTutorAvailability(course.slug);
-      return availability.reachable && availability.online;
+      if (!course || course.status !== "published") return { available: false, reason: "offline" };
+      return tutorAvailabilityFromKs(await getTutorAvailability(course.slug));
     },
-    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, reason }) => {
+    publishRoomChat: async ({ room, text, projectId, messageId, mode, replyTo, reason, sequence }) => {
       if (!projectId) throw new Error("LiveKit room is not assigned to a project.");
       if (!liveKit.projects || !liveKit.gateway) throw new Error("LiveKit is not configured.");
       await liveKit.projects.refresh?.();
-      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo, reason });
+      await liveKit.gateway.publishTutorMessage({ project: liveKit.projects.getAssigned(projectId), room, text, messageId, mode, replyTo, reason, sequence });
     }
   });
   services.set(key, service);

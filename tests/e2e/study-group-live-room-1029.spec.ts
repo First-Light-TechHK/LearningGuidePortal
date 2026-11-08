@@ -115,7 +115,11 @@ test("1029-4: the room AI Tutor's LaTeX renders as math, one point per line, wit
     });
     expect(visible).not.toMatch(/\$|\\\(|\\\)|\\frac|\[Source:/);
     await expect(answer.locator("li")).toHaveCount(2);
-    await expect(answer).toContainText("Sources: Modeling Life - 2.2");
+    // Sources sit under the answer: a "Sources" heading, then one line per
+    // source (952e66b, 2026-11-06, dropped the colon and put each on its own line).
+    // Since the shared answer layer (docs/phase1/ai-tutor-answer-layer.md) the
+    // block is .tutor-answer-sources, the same as in the lesson drawer.
+    await expect(answer.locator(".tutor-answer-sources p")).toHaveText(["Sources", "Modeling Life - 2.2"]);
     // A wide formula scrolls inside the chat panel instead of widening it.
     const fits = await answer.evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
     expect(fits).toBe(true);
@@ -194,7 +198,14 @@ async function chatFormLooksRight(page: Page, panel: string) {
   const input = form.getByRole("textbox");
   expect(await input.evaluate((element) => getComputedStyle(element).borderTopWidth), "one frame only: the field draws no border of its own").toBe("0px");
   const entry = form.getByRole("button", { name: "@AI Tutor" });
-  expect(await entry.evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color]), "a light-blue chip, not a grey system button").toEqual(["rgb(238, 244, 255)", "rgb(29, 107, 255)"]);
+  // Owner 2026-11-06: drawn like the lesson AI Tutor's New Chat button, not a grey system button or a one-off chip.
+  expect(await entry.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color, style.borderTopColor, style.borderTopLeftRadius]; })).toEqual(["rgb(255, 255, 255)", "rgb(0, 92, 255)", "rgb(209, 220, 255)", "7px"]);
+  // While it addresses the Tutor it fills like the lesson Tutor's selected mode.
+  await entry.click();
+  await expect(entry).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => entry.evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color])).toEqual(["rgb(0, 92, 255)", "rgb(255, 255, 255)"]);
+  await entry.click();
+  await expect(entry).toHaveAttribute("aria-pressed", "false");
 }
 
 test("1030-1: the chat input is one frame on the panel's bottom edge, in the room and in full screen", async ({ browser, baseURL }) => {

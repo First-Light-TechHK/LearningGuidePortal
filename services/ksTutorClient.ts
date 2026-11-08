@@ -111,6 +111,15 @@ export async function getTutorAvailability(
 
 export type TutorHistoryMessage = { role: "user" | "assistant"; content: string };
 
+/** Read only a KS learner image; the caller checks the Portal user's entitlement. */
+export async function getTutorImage(externalCourseId: string, assetId: string): Promise<Response> {
+  const { baseUrl, apiKey } = config();
+  if (!baseUrl) throw new KsTutorError("AI Tutor service is not configured.", 503, "KS_TUTOR_NOT_CONFIGURED");
+  return fetch(`${baseUrl}/api/user/courses/${encodeURIComponent(externalCourseId)}/images/${assetId}`, {
+    headers: apiKey ? { "X-API-Key": apiKey } : undefined, cache: "no-store", signal: AbortSignal.timeout(10_000),
+  });
+}
+
 /** KS 课程 AI Tutor 欢迎语（2026-10-27：课程级统一，不再按模式区分；空字符串表示未配置） */
 export type TutorWelcome = { welcome: string };
 

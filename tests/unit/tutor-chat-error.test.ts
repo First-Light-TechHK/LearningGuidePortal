@@ -48,8 +48,9 @@ const PROJECT_ROOT = join(__dirname, "..", "..");
 const STYLES_CSS = readFileSync(join(PROJECT_ROOT, "app", "styles.css"), "utf-8");
 const copy = { tutor: "AI Tutor", lecture: "Lecture", socratic: "Socratic", send: "Send", askTutor: "Ask the tutor", you: "You", newChat: "New chat", closeTutor: "Close AI Tutor", askTutorPlaceholder: "Ask about this lesson..." } as const;
 
-test("the chat shows the localised line, not the JSON body, when the tutor answers 503", async () => {
+test("the chat shows localised 503 and 409 errors in a dismissible dialog", async () => {
   const body = JSON.stringify({ ok: false, code: "AI_TUTOR_UNAVAILABLE", error: "AI Tutor is currently unavailable." });
+  let responseStatus = 503;
   const server = createServer((request, response) => {
     const url = new URL(request.url || "/", "http://127.0.0.1");
     if (url.pathname === "/api/ai-tutor" && request.method === "GET") {
@@ -59,7 +60,7 @@ test("the chat shows the localised line, not the JSON body, when the tutor answe
     }
     if (url.pathname === "/api/ai-tutor" && request.method === "POST") {
       request.resume();
-      request.on("end", () => { response.writeHead(503, { "Content-Type": "application/json" }); response.end(body); });
+      request.on("end", () => { response.writeHead(responseStatus, { "Content-Type": "application/json" }); response.end(responseStatus === 409 ? JSON.stringify({ ok: false, code: "CONVERSATION_BUSY" }) : body); });
       return;
     }
     response.writeHead(200, { "Content-Type": "text/html" });
@@ -80,15 +81,16 @@ test("the chat shows the localised line, not the JSON body, when the tutor answe
       resolveDir: PROJECT_ROOT,
       loader: "tsx",
     },
-    bundle: true, write: false, platform: "browser", jsx: "automatic",
+    bundle: true, write: false, outdir: "test-output", platform: "browser", jsx: "automatic", loader: { ".module.css": "text", ".css": "text" },
     define: { "process.env.NODE_ENV": '"production"' },
   });
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const locale of ["en-GB", "zh-CN"] as const) {
+    for (const locale of ["en-GB", "zh-CN"] as const) for (const status of [503, 409]) {
+      responseStatus = status;
       const page = await browser.newPage();
       await page.goto(origin);
-      await page.addScriptTag({ content: bundle.outputFiles[0].text });
+      await page.addScriptTag({ content: bundle.outputFiles.find((file) => file.path.endsWith(".js"))!.text });
       await page.evaluate((props) => { (window as unknown as { mount: (value: unknown) => void }).mount(props); }, { locale, courseId: "course", lessonId: "lesson", copy });
       await page.waitForFunction(() => document.querySelector(".tutor-messages")?.textContent?.includes("Ask away."));
       await page.locator(".tutor-composer textarea").fill("What is a cell?");
@@ -96,8 +98,12 @@ test("the chat shows the localised line, not the JSON body, when the tutor answe
       const alert = page.getByRole("alert");
       await alert.waitFor();
       const text = (await alert.textContent()) || "";
-      assert.equal(text, getMessages(locale).learning.tutorErrors.unavailable);
+      assert.equal(text, getMessages(locale).learning.tutorErrors[status === 409 ? "busy" : "unavailable"]);
       assert.doesNotMatch(text, /[{}]|AI_TUTOR_|"ok"/);
+      const dialog = page.getByRole("dialog");
+      assert.equal(await dialog.count(), 1);
+      await dialog.getByRole("button", { name: getMessages(locale).learning.tutorErrorClose }).click();
+      assert.equal(await page.getByRole("dialog").count(), 0);
       await page.close();
     }
   } finally {

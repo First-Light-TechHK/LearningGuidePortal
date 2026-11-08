@@ -415,12 +415,17 @@ test("M23: at 375px the session card is one column, the member column has no fix
     expect((await session.evaluate((element) => getComputedStyle(element).gridTemplateColumns)).trim().split(/\s+/), "one column").toHaveLength(1);
     expect(await page.getByRole("complementary", { name: "Members" }).evaluate((element) => getComputedStyle(element).minHeight)).toBe("0px");
     expect(await noHorizontalScroll(page)).toBe(true);
-    const menu = page.locator("header details");
-    await expect(menu.locator("summary")).toHaveAttribute("aria-label", "Menu");
-    await menu.locator("summary").click();
-    await expect(menu.getByRole("link", { name: "Courses" })).toBeVisible();
-    await expect(menu.getByRole("link", { name: "Subscription" })).toBeVisible();
-    await menu.getByRole("link", { name: "Courses" }).click();
+    // The Portal header (runke_front 6b23067, 2026-11-02) puts the primary
+    // links on their own row below 900px instead of a folded menu; the way back
+    // to Courses and Subscription stays one tap away and inside the screen.
+    const nav = page.getByRole("navigation", { name: "Primary navigation" });
+    for (const name of ["Courses", "Subscription"]) {
+      const link = nav.getByRole("link", { name });
+      await expect(link).toBeInViewport();
+      const box = (await link.boundingBox())!;
+      expect(box.x + box.width, `${name} fits in 375px`).toBeLessThanOrEqual(375);
+    }
+    await nav.getByRole("link", { name: "Courses" }).click();
     await expect(page).toHaveURL(/\/en-GB\/portal\/courses/);
   } finally {
     await host.context.close();
@@ -505,11 +510,16 @@ test("M27: the header speaks Chinese on zh-CN, the avatar has a name, the chip i
     const page = await learner.context.newPage();
     await page.goto("/zh-CN/portal/study-groups");
     await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
-    await expect(page.locator("header").getByRole("link", { name: "我的学习" })).toBeVisible();
+    const nav = page.getByRole("navigation", { name: "主导航" });
+    for (const name of ["课程", "学习小组", "订阅"]) await expect(nav.getByRole("link", { name })).toBeVisible();
+    // My Learning moved from the header row into the account menu (Portal header, 2026-11-02).
+    await page.getByRole("button", { name: "Study Guest 的账户菜单" }).click();
+    await expect(page.locator(".portal-account-dropdown").getByRole("link", { name: "我的学习" })).toBeVisible();
     // The first paint, before any script: the server's HTML.
     const html = await (await learner.context.request.get("/zh-CN/portal/study-groups")).text();
     const chip = html.match(/(?:class="[^"]*__lang"|class="portal-language"[^>]*)>(?:<span>)?([^<]+)</);
-    expect(chip?.[1]?.toLowerCase(), "the language chip").toBe("zh");
+    // The chip names the page's language as the header copy does ("中" on zh-CN, "EN" on en-GB).
+    expect(chip?.[1], "the language chip").toBe("中");
   } finally {
     await learner.context.close();
   }

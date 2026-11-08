@@ -2427,6 +2427,33 @@ export async function saveConversation(conversation: ProductConversation) {
   });
 }
 
+/** Prevent an older stream from restoring history removed by Undo or New chat. */
+export async function saveTutorReplyIfUnchanged(conversation: ProductConversation, history: ProductConversationMessage[], expectExisting: boolean) {
+  return editData((data) => {
+    const index = data.conversations.findIndex((item) => item.id === conversation.id && item.userId === conversation.userId);
+    const current = index >= 0 ? data.conversations[index] : null;
+    if (expectExisting && !current) return false;
+    if (current && JSON.stringify(current.messages.slice(-10)) !== JSON.stringify(history)) return false;
+    if (!current && data.conversations.some((item) => item.userId === conversation.userId && item.courseId === conversation.courseId && item.lessonId === conversation.lessonId)) return false;
+    if (index >= 0) data.conversations[index] = { ...conversation, messages: conversation.messages.slice(-12), updatedAt: now() };
+    else data.conversations.unshift({ ...conversation, messages: conversation.messages.slice(-12), updatedAt: now() });
+    return true;
+  });
+}
+
+export async function trimLastTutorTurn(userId: string, conversationId: string, courseId: string, lessonId: string, lastUserAt: string) {
+  return editData((data) => {
+    const item = data.conversations.find((entry) => entry.id === conversationId && entry.userId === userId && entry.courseId === courseId && entry.lessonId === lessonId);
+    if (!item) return null;
+    const index = item.messages.findLastIndex((message) => message.role === "user");
+    if (index < 0 || item.messages[index].createdAt !== lastUserAt) return null;
+    const question = item.messages[index].content;
+    item.messages = item.messages.slice(0, index);
+    item.updatedAt = now();
+    return { question, history: item.messages };
+  });
+}
+
 /** New chat：清除当前用户在该课程/课时下的对话记录（2026-10-27：不再按 mode 隔离，幂等）。 */
 export async function deleteConversation(userId: string, courseId: string, lessonId: string | undefined, mode: "lecture" | "socratic") {
   return editData((data) => {
@@ -2464,6 +2491,13 @@ export async function listStudyGroupReminders(
   const data = await readProductAggregate();
   const reminders: Array<{ body: string; createdAt: string; sessionId?: string; kind?: "rescheduled" }> = [];
   const seenSessionIds = new Set<string>();
+  const pendingReminderFor = async (sessionId: string) => {
+    for (const row of data.notifications) {
+      if (row.userId !== userId || row.sessionId !== sessionId || !STUDY_GROUP_REMINDER_TITLES.has(row.title)) continue;
+      if (await isPendingReminder({ body: row.body, createdAt: row.createdAt, sessionId, kind: "reminder" })) return true;
+    }
+    return false;
+  };
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
     if (item.userId !== userId) continue;
@@ -2471,8 +2505,12 @@ export async function listStudyGroupReminders(
       ? "reminder"
       : STUDY_GROUP_RESCHEDULE_TITLES.has(item.title) && item.sessionId ? "rescheduled" : null;
     if (!kind) continue;
-    // Newest row per Session wins: a T-10 reminder sent after a move replaces its notice.
+    // One row per Session. A pending T-10 reminder replaces the moved Start
+    // Time's notice whichever was written last: a move inside the reminder
+    // window sends the reminder for the new time and then tells the planned
+    // members, so the notice is often the newer row (N9-a / M10-a).
     if (item.sessionId && seenSessionIds.has(item.sessionId)) continue;
+    if (kind === "rescheduled" && await pendingReminderFor(item.sessionId!)) continue;
     if (!await isPendingReminder({ body: item.body, createdAt: item.createdAt, sessionId: item.sessionId, kind })) continue;
     if (item.sessionId) seenSessionIds.add(item.sessionId);
     const body = (locale && item.copies?.[locale]?.body) || item.body;

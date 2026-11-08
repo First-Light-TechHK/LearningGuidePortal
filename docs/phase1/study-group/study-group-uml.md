@@ -189,17 +189,19 @@ Chat and Raise Hand after connect are LiveKit data messages. They do not call th
 
 ## AI Tutor queue
 
-The queue belongs to one Live Session. The service appends an item, then one delivery drains the Session in process: it takes the next unserved item in receipt order, retrieves only existing course text, calls the model, and publishes a grounded answer as a shared LiveKit data message. The append does not read occupancy and does not sign a token. Chat remains a LiveKit data message and does not become this item.
+The queue belongs to one Live Session. The service appends an item, then one delivery drains the Session in process: it claims the next item in fair-turn order (one in flight per Session, lease-bounded), asks the Related Course's KnowledgeSystem AI Tutor in Lecture mode with the Session's earlier `@AI Tutor` exchanges, and publishes the answer as a shared LiveKit data message (2026-10-23; before that Portal retrieved course text and called its own model). The append does not read occupancy and does not sign a token. Chat remains a LiveKit data message and does not become this item.
 
 ```mermaid
 sequenceDiagram
   participant Service
   participant Repo
+  participant KS
   participant LiveKit
   Service->>Repo: append item userId, sessionId, text, server receipt time
   Repo-->>Service: item stored
-  Service->>Repo: read the next unserved item
-  Service->>Service: retrieve existing course text, call the model
+  Service->>Repo: claim the next item (fair turn, lease)
+  Service->>KS: Lecture chat-stream with the session's earlier @AI Tutor exchanges
+  KS-->>Service: answer text
   Service->>LiveKit: publish the answer as one shared data message
   Service->>Repo: settle the item and advance the next
   Note over Service: no screen parse

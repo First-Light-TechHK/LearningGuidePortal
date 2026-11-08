@@ -3,6 +3,7 @@
 - 对照来源：需求跟踪矩阵导出 + **PRD 原件**（`docs/phase1/source-prd/Learning_Guide_Study_Group_PRD_v0.10_EN.docx`，2026-10-12 入库，逐句核对）
 - 对照对象：upstream `dev` @ `79ee620` + 本轮按 PRD 修复的提交
 - 结论：**20 条全部符合**（本轮按 PRD 修复 3 处实现差异）；与跟踪表有 3 处措辞差异，建议同步修表
+- 2026-11-05 复核：0096 的实现 2026-10-23 已改为直播间 AI Tutor 转发课程在 KS 的 AI Tutor（Lecture 模式，业主决定），Portal 自建的检索、COURSE/GENERAL 标记与理解检查题已删除（提交 8b5f17e）。下表 0096 一行已按现状改写；下文标「历史」的条目只记录 10-12 当时的做法。
 
 ## 逐条对照
 
@@ -26,20 +27,20 @@
 | 0093 Raise Hand | ✅ | 数据消息 + 名单/画面标识；无审批、不改麦克风（BR-025） | ui（源码+纯函数钉） |
 | 0094 Screen Share | ✅ | 任意参与者；共享为主显示区、面板保留；不做 AI 解析（BR-031） | e2e |
 | 0095 AI Tutor | ✅ | 默认开、可关；进房者可 @；问答全员可见（BR-014/029） | service/e2e |
-| 0096 Grounding | ✅* | 接地检索+材料缺失拒答完整；**理解检查题生成本轮补上**（提示词条款+测试，PRD 6.11/TC-040）；*课程 AI Tutor 配置对齐为架构文档既有 open 项（BR-030/SC-011 partial） | service/新检索测试 |
+| 0096 Grounding | ✅ | 直播间 AI Tutor 就是关联课程在 KS 的 AI Tutor（Lecture 模式），提示词、模型、key 与课程知识都随 KS 配置（BR-030/SC-011，2026-10-23 起）；只发送本场 @AI Tutor 的问答，不发普通聊天；课程在 KS 下线时入口置灰 | service/api/e2e |
 | 0097 Reminder | ✅ | 受众=Host+已 Plan；站内+邮件；每人每场一次；T-10 窗口（BR-019/TC-049） | service/PG 并发 |
 
 ## 与需求跟踪表（飞书表）的 3 处措辞差异（建议改表）
 
 1. **REQ-0087/0090"无论提前多久"**：PRD 原文明文"From T-10 / Starting Soon 才可进入等待"（v0.10 更新日志、SC-013、BR-015/020、7.2、6.6、6.9、TC-044 共 7 处）。实现与 PRD 一致，**跟踪表这句应改为"开始前 10 分钟起可进入等待"**。
 2. **REQ-0096"如果该 Course 没有配置 AI Tutor，用默认 LLM 回答（Open router Auto）"**：PRD 中不存在此条；PRD 的口径是"必须遵循课程 AI Tutor 配置与课程知识接地"（BR-030/8.4），且"Study Group 不选择独立 Knowledge Release"。**建议删除跟踪表该句**（该口径会导致"无接地即自由作答"，与 PRD 的接地原则相反）。
-3. **REQ-0096"以及主动生成的问题"**：PRD 6.11 "Understanding check: AI Tutor may generate a relevant question for the group"——本轮已实现（请求理解检查题时，用课程语境生成一道可答的题；语境不足则拒答）。跟踪表保留此句即可，现已符合。
+3. **REQ-0096"以及主动生成的问题"**：PRD 6.11 "Understanding check: AI Tutor may generate a relevant question for the group"。10-12 时由 Portal 自建 Tutor 实现；2026-10-23 起直播间转发 KS 的 Lecture Tutor，学员请它出题时由 KS 的 Tutor 回答，Portal 不再有专门的出题逻辑。
 
 ## 本轮按 PRD 修复的 3 处实现差异（附测试）
 
 1. **查看参与者名单语义（6.6）**：此前 Starting Soon 即显示实际进入者；现改为未开始=计划名单、Live/Completed=实际名单（等待人数仍计入 Currently in session，BR-033 不受影响）。测试：`study-group-service.test.ts` "View attendees shows planners until the Session is live…"。
-2. **中文提问检索（TC-042）**：无空格中文整句此前会被当作单一词条、永远检索不到；现按重叠 2 字词条展开 + 中文虚词停用表。测试：`study-group-tutor-retrieval.test.ts`（含"覆盖主题可检索 / 未覆盖主题仍拒答"双向）。
-3. **理解检查题生成（6.11/TC-040）**：新增提示词条款（一次一题、必须在课程语境内；语境不足则明说），英文检查类请求不再被虚词误判为"材料缺失"。测试同上文件 + 既有 tutor 套件全绿。
+2. （历史，10-23 已随 Portal 自建 Tutor 删除）**中文提问检索（TC-042）**：无空格中文整句此前会被当作单一词条、永远检索不到；现按重叠 2 字词条展开 + 中文虚词停用表。测试：`study-group-tutor-retrieval.test.ts`（含"覆盖主题可检索 / 未覆盖主题仍拒答"双向）。
+3. （历史，10-23 已删除；现由 KS 的 Tutor 回答）**理解检查题生成（6.11/TC-040）**：新增提示词条款（一次一题、必须在课程语境内；语境不足则明说），英文检查类请求不再被虚词误判为"材料缺失"。测试同上文件 + 既有 tutor 套件全绿。
 
 ## 检查方式说明
 

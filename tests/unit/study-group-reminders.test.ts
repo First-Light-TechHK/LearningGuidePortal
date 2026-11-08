@@ -271,6 +271,25 @@ test("a moved Start Time shows its notice in the strip until the member stops pl
   assert.deepEqual(await service.listReminders("member"), []);
 });
 
+// N9-a / M10-a (SG E2E 2026-11-06): a move inside the reminder window sends the
+// T-10 reminder for the new time and then the moved notice, so the notice is
+// the newer row. The member must still see the reminder with the minutes left,
+// not the notice.
+test("a move inside the reminder window shows the new reminder, not the moved notice", async () => {
+  const group = await service.createGroup({ actorUserId: "host", title: "Window group", courseId: "course-1", about: "About the window." });
+  await service.joinGroup({ actorUserId: "member", groupId: group.id });
+  const session = await schedule(service, group.id, "Window session", 6);
+  await service.planToAttend({ actorUserId: "member", sessionId: session.id });
+  await service.dispatchDueReminders();
+  assert.match((await service.listReminders("member"))[0]?.body ?? "", /starts in [56] minutes\.$/);
+
+  await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: minutesFromNow(9) });
+  const shown = await service.listReminders("member");
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0].kind, undefined, "the reminder, not the moved notice");
+  assert.match(shown[0].body, /^Window session in the Study Group "Window group" starts in [89] minutes\.$/);
+});
+
 test("a rescheduled notice stops showing once the Session has started or ended", async () => {
   const store = {
     sessions: [{ id: "s1", groupId: "g1", status: "scheduled", startsAt: new Date(Date.now() - 60_000).toISOString() }],

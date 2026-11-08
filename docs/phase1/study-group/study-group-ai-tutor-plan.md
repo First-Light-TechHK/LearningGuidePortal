@@ -12,7 +12,7 @@ This phase does not call a model from the enqueue path. It stores the Live Sessi
 - The same client event id returns the original item.
 - The item is not a chat row and not a token row.
 - Enqueue does not change occupancy, does not issue a LiveKit token, and does not call a provider.
-- The enqueue path has no drain and no Course Knowledge call; the implemented delivery path drains the queue (see decisions.md). On request in the shared Chat the tutor can ask one grounded understanding-check question (prompt constant in `tutorPrompt.ts`; reply-tag parsing and reply clamping in `tutorAnswer.ts`; `tests/unit/study-group-tutor-retrieval.test.ts`).
+- The enqueue path has no drain and no Course Knowledge call; the delivery path drains the queue (see "Answer path" below).
 - Do not put an AI Tutor participant in the LiveKit room.
 
 ## Queue
@@ -21,33 +21,20 @@ The queue that exists in this design is per Live Session only. Items are answere
 
 decisions.md closes this: the tutor is the Related Course tutor, shared in the Live Session chat, with no private per-user channel.
 
-## Server-side prompt
+## Answer path (current, since 2026-10-23)
 
-The prompt wording is a server-side constant. It is not returned by the token route, not written into LiveKit metadata, and not shipped to the browser. Participant text is untrusted data inside a delimiter and cannot override these limits. The tutor does not parse the screen. Replies are for the shared room. The model call happens on the implemented delivery path, not in this prompt constant.
+The room Tutor is KnowledgeSystem's course AI Tutor in Lecture mode (owner decision 2026-10-23, `decisions.md`). Portal holds no prompt, model, provider key or course corpus for it.
 
-Answers may use the course context that a later design supplies. decisions.md closes that shape, and later revised it (2026-10-13, owner decision, recorded deviation from PRD BR-030): the course's existing stored text — published lesson text plus every file in the course's `knowledge/<slug>/` directory — is supplied whole to the model, which fuzzy-matches the question against it, by meaning and across languages. The tutor never refuses. When the material does not cover the question it answers from general knowledge and flags the reply GENERAL (published mode `general`), which the client marks as not from the course material; a course-grounded reply is flagged COURSE (published mode `course`). A model completion is never presented as a course fact — the client label, not the text, carries the distinction.
+- **Call**: `runtime.ts` `tutorKs` streams KS's learner chat (`streamTutorText`, `mode: "lecture"`, `channel: "study-group"`, so the room has its own KS quota bucket apart from the 1:1 Tutor). The course must be published in Portal. The KS endpoint is `KS_TUTOR_BASE_URL` / `KS_TUTOR_API_KEY`; the Lecture prompt, model and key are whatever the KS AI Tutor page sets.
+- **Context**: only earlier `@AI Tutor` exchanges of the same Live Session (at most 12, each question cut to 500 characters; `tutorHistory` in `service.ts`). Ordinary room chat is never sent.
+- **Deadlines**: one answer gets 45 seconds (`TUTOR_ANSWER_BUDGET_MS`); a claim lease is 60 seconds; one drain stops after 45 seconds and the recovery timer picks up the rest.
+- **Reply**: the KS answer text as it comes, published once as `{ type: "tutor", id, text, mode, replyTo?, reason? }`. `mode` is `course` for an answer and `unavailable` (empty text, failure class in `reason`) when KS could not answer; the client shows its own "temporarily unavailable" line. The answer renders through the AI Tutor answer layer shared with the lesson drawer (`lib/tutorAnswer.ts` + `components/portal/TutorAnswer.tsx`, see `docs/phase1/ai-tutor-answer-layer.md`): LaTeX, one point per line, and `[Source: …]` / `Sources` citations as a short source list under the answer.
+- **Availability**: follows the related course's KS status (cached 10 seconds). The session view carries `tutor: { available: true }` or `{ available: false, reason }`, where `reason` is KS's own reason in the room's words (`tutorAvailabilityFromKs`, 2026-11-06): `no_key` (KS not set up here), `provider_down` (KS erroring, slow or unreachable; a status read over 2.5 seconds counts too) or `offline` (course not in KS, its Tutor not Online, or the course no longer offered). `GET /api/backoffice/study-group/tutor-health` returns that availability and `source: "ks"`; `/api/health/config` reports `studyGroup.tutorSource` (`ks` or `none`).
+- **Unchanged from the queue design**: fair turns, one question in flight per session, two waiting per asker (`tutor_busy`), five per minute (`tutor_rate_limited`), withdrawal of a question not yet started, `replyTo` on every answer, and no call for a session that has ended or an asker who has left.
 
-## Knowledge base
+## History (superseded 2026-10-23)
 
-Closed by decisions.md: no new knowledge base, table, schema, or import is added. A piece of knowledge is the course's existing stored text, supplied whole to the model instead of being filtered server-side.
-
-## Call
-
-The model call is direct. No new framework is added. `package.json` on `main` has no agent framework. The call layer is a lightweight distributed service, not a heavy platform. It keeps a pool of API keys. On auth failure, rate limit, or quota, it switches to another key. It records request count, errors, and latency per key, and sends traffic only to healthy keys. Raw keys are never logged, never put in the repo, and never sent to the browser.
-
-This plan left the model vendor and the reply path open. decisions.md later closed both: a direct OpenRouter-compatible chat completion (with `STUDY_GROUP_TUTOR_URL` as an OpenAI-compatible alternative) and one shared, reliable LiveKit data message with no destination list (`{ type: "tutor", id, text, mode }` with mode `course`, `general`, or `unavailable`).
-
-## Answer engine (tutor infra, 2026-10-20)
-
-`tutorEngine.ts` owns one claimed question from the queue to an answer or a classified failure, inside the question's 45-second answer deadline and its claim lease:
-
-- Models: an ordered list (`STUDY_GROUP_TUTOR_MODELS`, comma separated; else `STUDY_GROUP_TUTOR_MODEL`; else a pinned default list). `openrouter/auto` is no longer the default. A model the provider reports as gone (404 "No endpoints found") is skipped for 10 minutes and the next model answers; a model that refuses tool definitions is called without tools for an hour.
-- Failures are classified (`auth`, `quota`, `rate_limited`, `timeout`, `upstream_error`, `model_gone`, `bad_request`, `empty`, `malformed`, `deadline`, `budget`, …). A refused key (401/403) rests for every model for 10 minutes; a rate limit or a quota rests the key for that model only, so the next model may still use it; a moderation 403 is the question's, not the key's. Each model call gets at most 20 seconds, so a stalled model leaves time for the next. Retryable classes go to the next model, for up to three rounds with a short backoff. The room's unavailable answer carries only a coarse `reason` (`busy`, `setup`, `refused`, `provider`); the log keeps the precise class.
-- Replies are checked before the room sees them: the mode tag, a QUIZ tag for an understanding check (published with `kind: "quiz"` and labelled in the room), the length guard (480 Latin to 240 CJK characters), the question's language (a wrong-language reply is kept only if no model does better), and no key echoed.
-- Room memory: the latest three exchanges of the session and any open understanding check (15 minutes) go into every call as `room_context`, built by the server from its own answered requests. Older exchanges are behind the read-only tool `get_room_history`; `get_open_quiz` returns the open check. The tool loop takes at most three model calls; every call of the loop carries the tool definitions, the last one with `tool_choice: "none"`, and at most three tool calls run per step. Room text goes into `room_context` on one line with `<`, `>` and `&` escaped, and the participant text is escaped the same way. Course knowledge tools join this registry when the Knowledge System module is integrated (owner, 2026-10-20); until then the course material goes in the prompt as before.
-- Health, per process: three failed questions in a row (a refused question does not count) pause the Tutor for 60 seconds, and while paused or over budget the server refuses a new question with `tutor_unavailable` (503); a daily spend cap per instance (`STUDY_GROUP_TUTOR_DAILY_BUDGET_USD`, default 10, `off` to disable) from the cost OpenRouter reports. The session view carries `tutor: { available }` or `{ available: false, reason: no_key | provider_down | budget }`, and the room greys out the Tutor entry with the reason. Operators read the last hour (answered, failed, p95 latency, failure classes, spend, model marks) at `GET /api/backoffice/study-group/tutor-health`. Each question leaves one log line `study_group.tutor_answer` with classes and counts only, never text, names or keys.
-- The asker sees their place in the queue (`viewerTutorQuestions` on the session view) and can withdraw a question the Tutor has not started (`DELETE …/ai-tutor` with `requestId`; `tutor_answering`, 409, once it has; a repeated withdrawal answers `withdrawn` again). The room's own answer timer never calls a question unavailable while the server still lists it as waiting.
-- `scripts/studygroup-tutor-eval.ts` runs a fixed set of standard questions (Chinese and English, course and general, quiz, follow-up, injection) through the same engine and checks tag, language, cut and leaks per model. It targets the local mock unless a provider URL and key are given, and stops at a cost cap.
+From 2026-10-13 to 2026-10-22 Portal ran its own room Tutor: a server-side prompt with COURSE / GENERAL reply tags and understanding-check questions, the whole `knowledge/<slug>/` text in the prompt, an OpenRouter key pool (`STUDY_GROUP_TUTOR_KEYS` / `STUDY_GROUP_TUTOR_KEYS_SECRET_ID`), an ordered model list (`STUDY_GROUP_TUTOR_MODELS`), a daily budget (`STUDY_GROUP_TUTOR_DAILY_BUDGET_USD`), room tools, and `tutorEngine.ts` / `tutorPrompt.ts` / `tutorAnswer.ts` / `scripts/studygroup-tutor-eval.ts`. Commit 8b5f17e removed all of it. None of those variables or files is read any more.
 
 ## Later phase
 

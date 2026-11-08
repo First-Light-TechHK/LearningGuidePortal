@@ -176,7 +176,12 @@ export async function runLiveSmoke(input, request) {
   if (![403, 404].includes(orders.status) || orders.body?.ok === true) fail(failures, "orders", `anonymous orders must be rejected, got ${orders.status}`);
   const authoring = await http("/api/backoffice/courses");
   if (![403, 404].includes(authoring.status) || authoring.body?.ok === true) fail(failures, "course-management", `anonymous course management must be rejected, got ${authoring.status}`);
-  const tutor = await postJson(http, "/api/ai-tutor", { courseId: slug || "epicureanism", message: "smoke" });
+  const tutorBody = { courseId: slug || "epicureanism", message: "smoke" };
+  const tutorWithoutOrigin = await postJson(http, "/api/ai-tutor", tutorBody);
+  if (tutorWithoutOrigin.status !== 403 || tutorWithoutOrigin.body?.ok === true) fail(failures, "ai-tutor.origin", `missing origin must be rejected, got ${tutorWithoutOrigin.status}`);
+  const tutorCrossOrigin = await http("/api/ai-tutor", { method: "POST", headers: { ...json, origin: "https://example.invalid" }, body: JSON.stringify(tutorBody) });
+  if (tutorCrossOrigin.status !== 403 || tutorCrossOrigin.body?.ok === true) fail(failures, "ai-tutor.cross-origin", `cross-origin request must be rejected, got ${tutorCrossOrigin.status}`);
+  const tutor = await http("/api/ai-tutor", { method: "POST", headers: { ...json, origin: new URL(origin).origin }, body: JSON.stringify(tutorBody) });
   if (tutor.status !== 401 || tutor.body?.ok === true) fail(failures, "ai-tutor", `anonymous tutor must be rejected, got ${tutor.status}`);
 
   const checkEmail = await http("/api/auth/check-email", {

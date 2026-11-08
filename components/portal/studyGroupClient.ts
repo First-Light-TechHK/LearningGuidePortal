@@ -25,7 +25,8 @@ export type StudySession = {
   attendees: Array<{ userId: string; displayName: string }>;
   // Live sessions with the AI Tutor on: whether the room offers it right now
   // (and why not), and the viewer's own questions still waiting.
-  tutor?: { available: true } | { available: false; reason: "no_key" | "provider_down" | "budget" | "offline" };
+  // D4: the server says why the AI Tutor is off (modules/group-study/service.ts RoomTutorOffReason).
+  tutor?: { available: true } | { available: false; reason: "no_key" | "provider_down" | "offline" };
   viewerTutorQuestions?: Array<{ id: string; position: number; answering: boolean }>;
 };
 export type StudyGroupDetail = {
@@ -253,6 +254,13 @@ export function tutorChatLines<T extends { id: string; pending?: boolean }>(curr
   if (index < 0) return [...current, line];
   if (!current[index].pending || line.pending) return current;
   return current.map((item, position) => position === index ? line : item);
+}
+
+export function tutorProgressLines<T extends { id: string; pending?: boolean; progressSeq?: number }>(current: T[], line: T): T[] {
+  const index = current.findIndex((item) => item.id === line.id);
+  if (index < 0) return [...current, line];
+  if (!current[index].pending || (current[index].progressSeq ?? 0) >= (line.progressSeq ?? 0)) return current;
+  return current.map((item, position) => position === index ? { ...item, ...line } : item);
 }
 
 // The asker's question line asks again, with a new client event id, once its
