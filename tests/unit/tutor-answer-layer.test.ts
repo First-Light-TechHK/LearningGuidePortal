@@ -15,11 +15,14 @@ async function render(text: string, courseId?: string) {
   return renderToStaticMarkup(createElement(TutorAnswer, { text, courseId, sourcesLabel: "Sources" }));
 }
 
-test("D1: fenced code keeps its own lines, blank lines and backslashes; prose around it still gets one paragraph per line", () => {
+test("D1: fenced code keeps its own lines, blank lines and backslashes; prose around it still gets one paragraph per line", async () => {
   const code = "```python\nx = 1\n\n\n# \\(not math\\) [Source: not a citation]\nprint(2*3)\n```";
   const { markdown, sources } = tutorAnswerParts(`First point\nSecond point\n${code}\nAfter`);
-  assert.equal(markdown, `First point\n\nSecond point\n\n${code}\n\nAfter`);
+  // Prose lines become paragraphs after parsing (remarkTutorLines); the text only marks block edges.
+  assert.equal(markdown, `First point\nSecond point\n\n${code}\n\nAfter`);
   assert.deepEqual(sources, []);
+  const html = await render(`First point\nSecond point\n${code}\nAfter`);
+  assert.match(html, /<p>First point<\/p>\s*<p>Second point<\/p>\s*<pre><code class="language-python">x = 1\n\n\n# \\\(not math\\\) \[Source: not a citation\]\nprint\(2\*3\)\n<\/code><\/pre>\s*<p>After<\/p>/);
 });
 
 test("D1: inline code is not rewritten; the prose beside it is", () => {
