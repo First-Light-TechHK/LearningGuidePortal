@@ -31,7 +31,7 @@ let filledTokens: string[] = [];
 function call(handler: (request: Request, context: { params: Promise<Record<string, string>> }) => Promise<Response>, url: string, body?: unknown, cookie?: string, params?: Record<string, string>, method = body === undefined ? "GET" : "POST") {
   return handler(new Request(url, {
     method,
-    headers: { "content-type": "application/json", cookie: cookie ? `${SESSION_COOKIE}=${cookie}` : "" },
+    headers: { "content-type": "application/json", origin: new URL(url).origin, cookie: cookie ? `${SESSION_COOKIE}=${cookie}` : "" },
     body: body === undefined ? undefined : JSON.stringify(body)
   }), { params: Promise.resolve(params || {}) });
 }

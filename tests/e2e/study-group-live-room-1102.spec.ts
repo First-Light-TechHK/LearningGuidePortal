@@ -7,6 +7,7 @@ import { newMember, openLiveRoom } from "./study-group-helpers";
 //             English interface words.
 //   BUG-0286: outside full screen no people card floats over the shared screen;
 //             the Participants tab beside it already lists them.
+// 2026-11-06: an @AI Tutor entry that cannot be used looks disabled (1106-1).
 
 test.skip(Boolean(process.env.CI), "local-only Study Group E2E; CI does not run e2e");
 
@@ -140,6 +141,39 @@ test("1102-3 (BUG-0285): the join page of a Chinese link has no English interfac
     await expectNoEnglishInterface(page);
   } finally {
     await visitor.context.close();
+    await room.close();
+  }
+});
+
+// 2026-11-06 (shared AI Tutor layer review): while the course's Tutor is off,
+// the room's @AI Tutor entry is disabled and must also look it: grey, not the
+// faded brand blue that read as clickable. The room says why above it.
+test("1106-1: an @AI Tutor entry that cannot be used looks disabled and the room says why", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const room = await openLiveRoom(browser, appOrigin(baseURL), "1106-off");
+  const setKsOnline = (online: boolean) => room.host.context.request.post("http://127.0.0.1:8788/__control/ks-online", { data: { online } });
+  try {
+    const { pageB } = room;
+    await pageB.getByRole("tab", { name: /Chat/ }).click();
+    const entry = pageB.getByRole("button", { name: "@AI Tutor", exact: true });
+    await expect(entry).toBeEnabled();
+    const look = () => entry.evaluate((element) => { const style = getComputedStyle(element); return [style.backgroundColor, style.color, style.borderTopColor, style.opacity]; });
+    expect(await look()).toEqual(["rgb(255, 255, 255)", "rgb(0, 92, 255)", "rgb(209, 220, 255)", "1"]);
+
+    // The room polls every 3 s and the server keeps the KS status for 10 s.
+    expect((await setKsOnline(false)).status()).toBe(200);
+    await expect(pageB.getByTestId("tutor-offline")).toHaveText("AI Tutor is offline for this course.", { timeout: 30_000 });
+    await expect(entry).toBeDisabled();
+    // The entry eases into grey over .15 s (.tutorEntry transition); read it
+    // once that is over, not part-way (red in a full run 2026-11-07).
+    await entry.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+    expect(await look()).toEqual(["rgb(242, 244, 247)", "rgb(152, 162, 179)", "rgb(228, 231, 236)", "1"]);
+
+    expect((await setKsOnline(true)).status()).toBe(200);
+    await expect(entry).toBeEnabled({ timeout: 30_000 });
+    await expect(pageB.getByTestId("tutor-offline")).toHaveCount(0);
+  } finally {
+    await setKsOnline(true);
     await room.close();
   }
 });

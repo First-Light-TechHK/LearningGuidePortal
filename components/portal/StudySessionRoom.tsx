@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { RotateCcw } from "lucide-react";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { liveKitDisconnectReasonName, liveKitDisconnectStep, transitionLiveKitClient, whileCurrentRoom } from "@/modules/group-study/liveKitClientRecovery";
@@ -10,9 +11,9 @@ import { createSeatIntents, deadlineSignal } from "@/modules/group-study/seatInt
 import { participantStatus, raisedHands, roomPageRestoreAction, seatRefusalOffer, sessionControls } from "@/modules/group-study/uiState";
 import styles from "./study-groups.module.css";
 import { PortalDialog } from "./PortalDialog";
-import { TutorAnswer } from "./TutorAnswer";
+import { TutorAnswer, TutorCopyButton } from "./TutorAnswer";
 import { useFloatDrag } from "./useFloatDrag";
-import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, tutorWithdrawState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
+import { FINAL_ENTRY_CODES, fill, tutorOfflineReason, tutorPendingState, tutorWithdrawState, plannedMinutes, reconnectDelayMs, roomGateAction, roomSignInHref, screenShareCancelled, screenShareSupported, SEAT_HEARTBEAT_MS, seatReentryAction, sessionNotStarted, sessionScheduleLabel, studyGroupRequest, tutorAskAgain, tutorChatLines, tutorProgressLines, tutorClientEventId, tutorQueueBody, tutorRefusalReason, tutorStillWaiting, type StudyGroupDetail, type StudySession } from "./studyGroupClient";
 
 function tileStatus(copy: { muted: string; speaking: string; micOn: string }, tile: { mic: boolean; speaking: boolean }) {
   const status = participantStatus(tile);
@@ -98,6 +99,7 @@ type ChatLine = {
   // the answer with the same id replaces it; `replyTo` names the question an
   // answer belongs to.
   pending?: boolean; replyTo?: { name: string; question: string };
+  progressSeq?: number;
   // The queue position the server gave when it took the question, shown
   // until the next session poll lists it.
   queuedPosition?: number | null;
@@ -400,6 +402,11 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
       const participant = data.senderIdentity ? room.remoteParticipants.get(data.senderIdentity) : undefined;
       const from = roomDataSenderName({ participantName: participant?.name, identity: data.senderIdentity, members: groupRef.current?.members || [], fallback: roomCopy.participant });
       const hostIds = new Set((groupRef.current?.members || []).filter((member) => member.role === "host").map((member) => member.userId));
+      if (message.type === "tutor-progress") {
+        setChat((items) => tutorProgressLines(items, { id: `tutor-${message.id}`, from: roomCopy.tutorName, text: message.text, at: chatStamp(), tutor: true, pending: true, progressSeq: message.sequence, ...(message.replyTo ? { replyTo: message.replyTo } : {}) }));
+        setSideTab("chat");
+        return;
+      }
       if (message.type === "tutor") {
         // The server republishes a crashed tutor answer with the same message
         // id; keying the line by that id drops the repeat instead of
@@ -1383,17 +1390,22 @@ export function StudySessionRoom({ locale, sessionId, onNotLive }: { locale: Loc
             }}>
               {chat.map((line) => <article className={styles.chatLine} key={line.id}><div className={styles.chatHead}>{line.tutor ? <span className={styles.tutorAvatar} aria-hidden="true">✦</span> : <span className={styles.rosterInitial}>{line.from.slice(0, 1)}</span>}<strong className={line.tutor ? styles.tutorName : undefined}>{line.from}</strong>{line.host ? <span className={styles.chatHost}>{roomCopy.host}</span> : null}{line.tutor ? null : <time dateTime={line.at}>{chatLabel(locale, line.at)}</time>}</div>{line.tutor ? (
                 <div className={`${styles.chatBody} ${styles.tutorBody}`}>
+                  <div className={styles.tutorBubble}>
                   {line.replyTo ? <span className={styles.tutorDisclosure}>{fill(roomCopy.tutorReplyTo, { name: line.replyTo.name || roomCopy.participant, question: line.replyTo.question })}</span> : null}
                   {line.mode === "unavailable"
                     ? roomCopy.tutorUnavailable
+                    : line.pending && line.text
+                    ? <><span className={styles.tutorRow} role="status">{roomCopy.tutorAnswering}</span><TutorAnswer text={line.text} courseId={group?.courseId} sourcesLabel={roomCopy.tutorSources} /></>
                     : line.pending
                     ? (() => {
                         const pending = tutorWithdrawState(tutorPendingState(session, line.id, line.queuedPosition), line.withdrawError);
                         return <><span className={styles.tutorRow} role="status">{pending.state === "queued" ? (pending.ahead > 0 ? fill(roomCopy.tutorQueued, { count: String(pending.ahead) }) : roomCopy.tutorNext) : roomCopy.tutorAnswering}{pending.withdrawable ? <> <button className={styles.textButton} type="button" onClick={() => void withdrawTutor(line.id)}>{roomCopy.tutorWithdraw}</button></> : null}</span>{line.withdrawError ? <p className={styles.alert} role="alert">{copy.errors[line.withdrawError as keyof typeof copy.errors] || copy.errors.error}</p> : null}</>;
                       })()
-                    : <TutorAnswer text={line.text} sourcesLabel={roomCopy.tutorSources} className={styles.tutorAnswer} sourcesClassName={styles.tutorSources} />}
+                    : <TutorAnswer text={line.text} courseId={group?.courseId} sourcesLabel={roomCopy.tutorSources} />}
+                  </div>
+                  {!line.pending && line.mode !== "unavailable" ? <div className={styles.tutorActions}><TutorCopyButton text={line.text} copyLabel={roomCopy.tutorCopy} copiedLabel={roomCopy.tutorCopied} className={styles.chatAction} /></div> : null}
                 </div>
-              ) : <><p className={`${styles.chatBody} ${styles.chatText}`}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })} <button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, line.tutorAsk!)}>{roomCopy.tutorRetry}</button></p> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatBody}><button className={styles.textButton} type="button" onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}>{roomCopy.tutorRetry}</button></p> : null}</>}</article>)}
+              ) : <><p className={`${styles.chatBody} ${styles.chatText}`}>{line.text.startsWith(`${roomCopy.aiTutor} `) ? <><span className={styles.tutorMention}>{roomCopy.aiTutor}</span>{line.text.slice(roomCopy.aiTutor.length)}</> : line.text}</p>{line.failed ? <p className={styles.alert} role="alert">{copy.errors.error} <button className={styles.textButton} type="button" onClick={() => void sendChatLine(line)}>{roomCopy.send}</button></p> : null}{line.tutorError && line.tutorAsk ? <><p className={styles.alert} role="alert">{fill(roomCopy.tutorNotSent, { reason: tutorRefusalReason(line.tutorError, { errors: copy.errors, notLive: roomCopy.tutorNotLive }) })}</p><p className={styles.chatActionRow}><button className={styles.chatAction} type="button" aria-label={roomCopy.tutorRetry} title={roomCopy.tutorRetry} onClick={() => void askTutor(line.id, line.tutorAsk!)}><RotateCcw size={16} aria-hidden="true" /></button></p></> : null}{line.tutorWithdrawn ? <p className={styles.chatBody} role="status">{roomCopy.tutorWithdrawn}</p> : null}{!line.tutorError && line.tutorAsk && tutorAskAgain(chat, line.tutorAnswerId) ? <p className={styles.chatActionRow}><button className={styles.chatAction} type="button" aria-label={roomCopy.tutorRetry} title={roomCopy.tutorRetry} onClick={() => void askTutor(line.id, { question: line.tutorAsk!.question, clientEventId: tutorClientEventId() })}><RotateCcw size={16} aria-hidden="true" /></button></p> : null}</>}</article>)}
               {!connected ? <p>{roomCopy.chatUnavailable}</p> : null}
             </div>
             <form className={styles.chatForm} onSubmit={(event) => {

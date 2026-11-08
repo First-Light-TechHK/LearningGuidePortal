@@ -20,9 +20,9 @@ Rejected:
 
 Group, membership, Live Session, attendance intent, presence, the one meeting row, and reminder rows are product records. They belong in the same RDS PostgreSQL database as the rest of Learning Guide. DEV, SIT, UAT, and PPE/PROD already use that database. App Runner instances do not keep a private disk.
 
-The logical tables are `study_groups`, `study_group_memberships`, `live_sessions`, `study_group_attendance_intents`, `study_group_presences`, `study_group_meetings`, `study_group_reminders`, and `study_group_tutor_queue`. The tutor queue is session-scoped. A row is user id, session id, text, client idempotency key, server receipt time, an `inFlight` flag and `answeredAt`. The service enqueues and drains those rows in process today; the durable lease shape is target design gated on the RDS phase (see `decisions.md`). Chat is not one of these tables. `live_sessions.duration_seconds` is 600, 1200, 1800, or 2400, the stored form of the choices 10, 20, 30, and 40 minutes (owner 2026-10-29), or an earlier row's 2700, 3600, or 5400. The Figma session card shows `45 mins`. Seat grant and its release, and the single meeting insert, run inside a database transaction. External idempotency for a repeated Host Start is the unique meeting row for that Live Session.
+The logical tables are `study_groups`, `study_group_memberships`, `live_sessions`, `study_group_attendance_intents`, `study_group_presences`, `study_group_meetings`, `study_group_reminders`, `study_group_tutor_requests` and `study_group_outbox` (migration 012). The tutor queue is session-scoped. A row is user id, session id, text, client idempotency key, server receipt time, a status with lease owner and expiry, bounded attempts and a dead-letter reason; one request per session can be in flight (partial unique index). Chat is not one of these tables. `live_sessions.duration_seconds` is 600, 1200, 1800, or 2400, the stored form of the choices 10, 20, 30, and 40 minutes (owner 2026-10-29), or an earlier row's 2700, 3600, or 5400. The Figma session card shows `45 mins`. Seat grant and its release, and the single meeting insert, run inside a database transaction. External idempotency for a repeated Host Start is the unique meeting row for that Live Session.
 
-The branch does not do this yet. `modules/group-study/repository.ts` reads and writes one JSON file, `study-group.json`, and appends `token-issuance.log` beside it. The in-process queue serializes writers only inside one process.
+This is implemented: `repositories/studyGroupRepository.ts` on PostgreSQL (migrations 012, 013, 016, 021, 027) in every managed environment. `modules/group-study/repository.ts`, one JSON file `study-group.json` plus `token-issuance.log`, is kept only for local DEV without PostgreSQL and refuses to start in a managed environment.
 
 Rejected:
 
@@ -59,9 +59,7 @@ Rejected:
 
 ## AI Tutor call
 
-The Study Group tutor uses a direct model call. No agent framework is added. `package.json` on `main` has none. The call layer is a lightweight distributed service, not a heavy platform. It keeps a pool of API keys. On auth failure, rate limit, or quota, it uses another key. It records request count, errors, and latency per key, and sends traffic only to healthy keys. Raw keys are never logged, never committed, and never sent to the browser.
-
-`decisions.md` closed these points: the model is OpenRouter through the existing client, or the configured OpenAI-compatible URL; the reply re-enters the room as one shared LiveKit data message; and Course context is lexical retrieval over existing Course Knowledge text. The queue remains per Live Session. This note adds no schema, table, or sample content for that base.
+Since 2026-10-23 (owner decision, `decisions.md`) the room Tutor proxies the Related Course's KnowledgeSystem AI Tutor in Lecture mode (`services/ksTutorClient.ts`, `KS_TUTOR_BASE_URL` / `KS_TUTOR_API_KEY`). The prompt, model, provider key and Course Knowledge live in KS; Portal keeps only the per-session queue and publishes the answer into the room as one shared LiveKit data message. Before that date Portal made a direct OpenRouter call with its own key pool and lexical retrieval; that code was removed in 8b5f17e.
 
 Not used:
 

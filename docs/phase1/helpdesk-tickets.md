@@ -2,6 +2,19 @@
 
 Status: approved by owner 2026-10-28 ("把工单这个流程做好，页面做好，UI 做好，每个工单就是一个小卡片在 Back Office 上 … 按原有 UI UX 风格 … TDD 锁住 … 推 dev"). Out of scope for v1 (owner said): Feishu sync, front-end tracking / ring buffer / traceparent, AI agent, SaaS.
 
+## 0. Current state (checked against upstream dev 2026-11-05; read this first)
+
+The sections below are a dated build log: a later section overrides an earlier one. What holds today:
+
+- **Model (Admin side):** Admin's tiered default in `server/src/contracts/helpdesk-defaults.ts` (LearningGuideAdmin, owner 2026-11-03): L1 lexical search ∪ `baai/bge-m3` vectors over every published answer card; L2 `voyageai/rerank-2.5-lite` keeps the top 5 and answers directly when the top score is ≥ 0.816 and leads by ≥ 0.05; L3 `google/gemma-4-31b-it` with thinking off picks, explains and handles small talk. Admin needs only `OPENROUTER_API_KEY`; `HELPDESK_*` variables only swap or switch off a layer. §11 C's "first cheap model in AI_AVAILABLE_MODELS" no longer applies: `AI_AVAILABLE_MODELS` is the AI Tutor's list, not Helpdesk's.
+- **Portal never calls a model.** Its calls to Admin (`modules/helpdesk/adminClient.ts`): FAQs 3 s with the page waiting at most 500 ms (`ADMIN_FAQS_WAIT_MS`; §15's `ADMIN_QUESTIONS_WAIT_MS` is the earlier name), form suggestion 4 s, chat 16 s (§27), outcome 4 s.
+- **Knowledge:** Common Questions (`helpdesk_questions`, §11 A) were replaced by bilingual FAQs (§16), then by FAQ question trees with published releases (§22–23).
+- **Language:** an answer card follows the language the user writes in; anything not Chinese gets the English card (e8b8d9e, ea492e1).
+- **Help Centre:** lists every popular FAQ in Admin's order and folds after 10, searches 150 ms after typing stops, and shows articles on a cold cache (e263938, 40a59e1, baf5923).
+- **Chat:** the question is saved to the transcript before the request leaves (83059e3). Learner-side hourly limits are counted in `helpdesk_rate_hits` (migration 026).
+- **BackOffice data tab:** daily ticket numbers come from `GET /api/integration/helpdesk/ticket-stats` (caa45d0).
+- **Ops config:** Portal `ADMIN_HELPDESK_BASE_URL` + `ADMIN_HELPDESK_TOKEN`; Admin `PORTAL_HELPDESK_BASE_URL` + `PORTAL_HELPDESK_TOKEN`, `ADMIN_HELPDESK_TOKEN` and `OPENROUTER_API_KEY`.
+
 ## 1. Ownership (follows docs/System_Architecture_4_Components.md in LearningGuideAdmin)
 
 - **Portal is the single writer** of tickets, messages, attachments and ticket events (user data; Portal owns users and notifications).

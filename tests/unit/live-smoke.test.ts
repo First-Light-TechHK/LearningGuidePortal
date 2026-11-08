@@ -79,7 +79,7 @@ function stub(overrides = {}) {
     if (path === "/api/payment/webhook") return json(400, { ok: false, code: "invalid_signature" });
     if (path === "/api/backoffice/orders") return json(403, { ok: false });
     if (path === "/api/backoffice/courses") return json(403, { ok: false });
-    if (path === "/api/ai-tutor") return json(401, { ok: false });
+    if (path === "/api/ai-tutor") return json(options.headers?.origin === "https://sit.example.test" ? 401 : 403, { ok: false });
     if (path === "/api/auth/check-email") return json(200, { ok: true, data: {} });
     if (path === "/api/auth/register") return json(200, { ok: true, data: { verificationRequired: true } });
     if (path === "/api/auth/login") return json(401, { ok: false });
@@ -112,6 +112,16 @@ test("live smoke accepts a healthy SIT origin, registers, and does not pay", asy
   assert.equal(seen.some((item) => item === "POST /api/purchase/checkout"), true);
   assert.equal(seen.some((item) => item === "POST /api/payment/webhook"), true);
   assert.equal(seen.some((item) => item === "GET https://cdn.example.test/cover.jpg"), true);
+});
+
+test("live smoke checks tutor origin and anonymous authentication separately", async () => {
+  const origins = [];
+  const result = await runLiveSmoke({ origin: "https://sit.example.test", appEnv: "SIT", checkMail: false }, async (path, options = {}) => {
+    if (path === "/api/ai-tutor") origins.push(options.headers?.origin);
+    return stub()(path, options);
+  });
+  assert.equal(result.ok, true, result.failures.join("; "));
+  assert.deepEqual(origins, [undefined, "https://example.invalid", "https://sit.example.test"]);
 });
 
 test("live smoke fails SIT when LIVE_TEST_EMAIL is missing", async () => {

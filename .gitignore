@@ -2,6 +2,7 @@
 .next-ui-check
 .next-stripe-sandbox
 .next-backoffice-check
+.next-e2e-sg
 test-results
 node_modules
 data

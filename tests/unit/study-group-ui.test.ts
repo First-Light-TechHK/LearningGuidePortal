@@ -498,7 +498,7 @@ test("the live stage is a 2x2 tile grid and the chat follows 599:1276 with tutor
   assert.doesNotMatch(room, /line\.kind === "quiz"/);
   assert.doesNotMatch(room, /roomCopy\.tutorGeneral/);
   // Owner 2026-10-29: the answer renders as Markdown with KaTeX math (TutorAnswer).
-  assert.match(room, /<TutorAnswer text=\{line\.text\} sourcesLabel=\{roomCopy\.tutorSources\} className=\{styles\.tutorAnswer\} sourcesClassName=\{styles\.tutorSources\} \/>/);
+  assert.match(room, /<TutorAnswer text=\{line\.text\} courseId=\{group\?\.courseId\} sourcesLabel=\{roomCopy\.tutorSources\}/);
   assert.doesNotMatch(room, /<strong key="lead"/);
 
   assert.equal(en.studyGroupsPage.room.tutorUnavailable, "AI Tutor is temporarily unavailable. Please try again.");
@@ -743,6 +743,8 @@ test("the Schedule dialog keeps long Study Group copy inside its context card", 
   // stacks to one column below 800px.
   assert.match(css, /\.contextCard \{[^}]*overflow-wrap: anywhere;[^}]*\}/);
   assert.match(css, /\.modal \{ position: fixed; inset: 0;[^}]*display: grid; place-items: center; \}/);
+  // A dialog that is not open yet is not painted (BUG-0107 2026-11-07: Escape in that frame reached no dialog).
+  assert.match(css, /\.modal:not\(\[open\]\) \{ display: none; \}/);
   assert.match(css, /\.modal form \{[^}]*max-height: calc\(100vh - 48px\); overflow: auto;[^}]*\}/);
   assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.pair[\s\S]*grid-template-columns: 1fr;/);
 });
@@ -1069,8 +1071,12 @@ test("the chat input is one frame on the panel's bottom edge and the floating pe
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   // The box is the only frame, the @AI Tutor entry is a light-blue chip, and the log fills the panel so the box sits on its bottom edge.
   assert.match(css, /\.chatForm textarea \{[^}]*border: 0;[^}]*background: transparent;/);
-  assert.match(css, /\.tutorEntry \{[^}]*border-radius: 999px; background: #eef4ff; color: #1d6bff;/);
-  assert.match(css, /\.tutorEntry\[aria-pressed="true"\] \{ background: #1d6bff; color: #fff; \}/);
+  // Owner 2026-11-06: the entry stays, drawn like the lesson AI Tutor's controls (.tutor-new-chat / .mode-switch).
+  assert.match(css, /\.tutorEntry \{[^}]*border: 1px solid var\(--lg-tutor-accent-border\); border-radius: 7px; background: #fff; color: var\(--lg-tutor-accent\);/);
+  assert.match(css, /\.tutorEntry\[aria-pressed="true"\], \.tutorEntry\[aria-pressed="true"\]:hover:not\(:disabled\) \{ border-color: var\(--lg-tutor-accent\); background: var\(--lg-tutor-accent\); color: #fff;/);
+  // Off (2026-11-06): grey, not a faded blue that still looks clickable.
+  assert.match(css, /\.tutorEntry:disabled \{ border-color: #e4e7ec; background: #f2f4f7; color: #98a2b3; cursor: not-allowed; \}/);
+  assert.doesNotMatch(css, /\.tutorEntry:disabled \{[^}]*opacity/);
   assert.match(css, /\.side \.chatLog \{ max-height: none; \}/);
   assert.match(css, /\.side \.chatForm \{ margin-top: auto; \}/);
   // BUG-0284: the input wraps and grows to a limit; Enter sends, Shift+Enter starts a new line; a message keeps its lines.
@@ -1114,7 +1120,7 @@ test("full screen: a top bar to leave, chat as a float with unread and a preview
   assert.match(room, /<div className=\{styles\.sharingBanner\} role="status">/);
   assert.match(css, /\.controls button\[data-mic="off"\] \{ background: #fef3f2; color: #d92d20;/);
   // The Tutor's answer is a light-blue block in dark ink.
-  assert.match(css, /\.tutorBody \{ color: #344054; background: #f5f8ff;/);
+  assert.match(css, /\.tutorBubble \{ background: var\(--lg-tutor-accent-soft\); padding: 10px 12px; border-radius: 10px; \}/);
 });
 
 test("Edit Session says the AI Tutor switch can change, keeps a passed Start Time valid, and an offline Tutor at start names the way out (FAQ grounding check 2026-11-02)", () => {
