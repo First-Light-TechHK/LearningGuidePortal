@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkRequiredCI } from './release/required-ci.mjs';
+import { mergeKsTutorConfiguration } from './release/ks-tutor-env.mjs';
 import { captureCurriculum, assetInventory, verifyUatAcceptance } from './release/uat-acceptance.mjs';
 import { readReleaseHealth } from './release/health-read.mjs';
 
@@ -36,6 +37,10 @@ if (!summary) throw new Error('UAT must be provisioned first');
 const current = aws('apprunner','describe-service', { ServiceArn: summary.ServiceArn }).Service;
 if (current.Status !== 'RUNNING') throw new Error('Another deployment is in progress; retry after it completes');
 const source = current.SourceConfiguration;
+// Written into the service, not the image: a source deployment preserves the
+// service configuration and never adds a missing value. UAT ran without a KS
+// Tutor endpoint until 2026-11-08 because only the DEV deploy merged it.
+mergeKsTutorConfiguration(source);
 if (source.ImageRepository) {
   if (!/^851987565851\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com\/learning-guide-portal@sha256:[a-f0-9]{64}$/.test(process.env.UAT_IMAGE || '')) throw new Error('A digest-pinned UAT_IMAGE is required');
   source.ImageRepository.ImageIdentifier = process.env.UAT_IMAGE;
