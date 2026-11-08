@@ -30,6 +30,11 @@ jobs:
       - name: Release exact UAT revision and verify against SIT
         env:
           GH_TOKEN: ${{ github.token }}
+          # Source deployments keep the service configuration; without this the
+          # service silently runs with no KS Tutor endpoint and hides every AI
+          # Tutor entry (UAT did exactly that until 2026-11-08).
+          KS_TUTOR_BASE_URL: https://admin.uat.ilovelearningguide.com
+          KS_TUTOR_TIMEOUT_MS: '60000'
         run: node scripts/release-uat.mjs
       - name: Retain acceptance evidence, including failed checks
         if: always()

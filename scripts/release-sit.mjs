@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { checkRequiredCI } from './release/required-ci.mjs';
+import { mergeKsTutorConfiguration } from './release/ks-tutor-env.mjs';
 
 const repo = 'First-Light-TechHK/LearningGuidePortal';
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -36,6 +37,8 @@ if (!summary) throw new Error('SIT must be provisioned first');
 const current = aws('apprunner','describe-service', { ServiceArn: summary.ServiceArn }).Service;
 if (current.Status !== 'RUNNING') throw new Error('Another deployment is in progress; retry after it completes');
 const source = current.SourceConfiguration;
+// Re-assert the environment's KS AI Tutor endpoint on every release.
+mergeKsTutorConfiguration(source);
 if (source.ImageRepository) {
   if (!/^851987565851\.dkr\.ecr\.ap-southeast-1\.amazonaws\.com\/learning-guide-portal@sha256:[a-f0-9]{64}$/.test(process.env.SIT_IMAGE || '')) throw new Error('A digest-pinned SIT_IMAGE is required');
   source.ImageRepository.ImageIdentifier = process.env.SIT_IMAGE;

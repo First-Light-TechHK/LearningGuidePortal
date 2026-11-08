@@ -50,6 +50,8 @@ jobs:
       - name: Verify revision, deploy and await readiness
         env:
           GH_TOKEN: ${{ github.token }}
+          KS_TUTOR_BASE_URL: https://admin.sit.ilovelearningguide.com
+          KS_TUTOR_TIMEOUT_MS: '60000'
         run: node scripts/release-sit.mjs
 
   verify:
