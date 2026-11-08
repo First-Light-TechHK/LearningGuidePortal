@@ -39,6 +39,18 @@ test("formula rule: $ … $, \\( … \\), \\[ … \\], $$ … $$ inline and on t
   assert.match(escaped, /<p>Price \$5 and \$6\.<\/p>/);
 });
 
+test("formula rule: \\[ … \\] inside a sentence around plain words is escaped brackets; with TeX in it, or on its own line, it is a formula", async () => {
+  const brackets = await render("Array index \\[1\\] means the second item.");
+  assert.equal(katexCount(brackets), 0);
+  assert.match(brackets, /<p>Array index \[1\] means the second item\.<\/p>/);
+  assert.match(await render("The interval \\[a, b\\] is closed."), /<p>The interval \[a, b\] is closed\.<\/p>/);
+  assert.equal(tutorAnswerPlainText("Array index \\[1\\] here", "Sources"), "Array index [1] here");
+  assert.match(await render("So \\[x=1\\] holds."), /katex-display/);
+  assert.match(await render("So \\[\\alpha\\] holds."), /katex-display/);
+  assert.match(await render("\\[1\\]"), /katex-display/);
+  assert.match(await render("Value:\n\\[x\\]\nDone"), /<p>Value:<\/p>\s*<span class="katex-display">/);
+});
+
 test("formula rule: a $$ block keeps lines that look like a table or a list, and a formula may wrap a line", async () => {
   const { markdown } = tutorAnswerParts("Abs:\n$$\n|x| = -x\n- y\n$$\nEnd");
   assert.equal(markdown, "Abs:\n\n$$\n|x| = -x\n- y\n$$\n\nEnd");

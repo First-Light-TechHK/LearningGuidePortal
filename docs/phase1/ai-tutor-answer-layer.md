@@ -39,7 +39,7 @@ flowchart LR
   2. **什么是公式**：`\( \)`、`\[ \]`、`$$ $$`，以及按 Pandoc 规则认的 `$ $`（开头的 `$` 后面紧跟非空白，结尾的 `$` 前面紧跟非空白、后面不是数字）。其余的 `$` 都是美元符号，所以"$5 和 $10"还是钱数。代码和公式由同一次扫描找出来（`tutorAnswerSegments`），再按解析器唯一认的写法交给它（行内 `$ $`，独立成行的 `$$` 块）。
   3. **段落在哪断**：一行一个段落。这一步放在解析之后（`remarkTutorLines`），所以跨行的粗体、链接、公式不会被拆开；解析前只在文字和列表、表格、引用、标题、围栏块、`$$` 块的交界处补空行（`layoutLines`）。
 
-  另外：来源抽出（`[Source: …]`、`【来源：…】`，以及结尾的 `Sources` / `来源` 编号列表，缩进也认）、`数字*数字` 不当强调。课程页"复制纯文本"也走同一次扫描（`tutorAnswerPlainText`）：公式保留 TeX、代码原样、去掉 Markdown 标记、来源附在最后。已知限制：转义方括号 `\[1\]` 会被当成公式块，因为 `\[ \]` 是 KS 的公式写法。
+  另外：来源抽出（`[Source: …]`、`【来源：…】`，以及结尾的 `Sources` / `来源` 编号列表，缩进也认）、`数字*数字` 不当强调。课程页"复制纯文本"也走同一次扫描（`tutorAnswerPlainText`）：公式保留 TeX、代码原样、去掉 Markdown 标记、来源附在最后。`\[ \]` 一般是公式块；只有夹在句子中间（同一行前后还有文字）、里面又只有普通文字或数字、没有任何 TeX 符号时（如"下标 `\[1\]` 是"），才按 Markdown 的转义方括号显示成 `[1]`。独占一行的 `\[ \]` 永远是公式。
 - **D2 渲染**（`components/portal/TutorAnswer.tsx`）：两处都用它。只放行经 Portal 权限代理的课程图片；链接只放行 http(s)，新窗口打开且不带来源；不渲染原始 HTML；KaTeX 用两边选项的并集（`trust:false, maxExpand:100, strict:"ignore", output:"html"`）。来源固定渲染成 `.tutor-answer-sources`：一个标题行，加每条来源一行。
 - **D3 样式**（`app/styles.css` 的 "AI Tutor answer" 一节）：回答内容的排版只此一份，用 `em` 跟随所在气泡的字号（课程页 13px，直播间 12px）。气泡本身仍归各自页面：课程页 `.tutor-message`，直播间 `.tutorBubble`。Tutor 的品牌色收成三个变量（`--lg-tutor-accent` 等），课程页按钮、直播间 @AI Tutor 按钮和头像都用这三个变量。
 - **D4 不可用原因**：`runtime.ts` 的 `tutorStatus` 把 KS 原因映射成房间已有的三种：`not-configured` → `no_key`；`http-error` / `timeout` / `network` → `provider_down`；`not-in-ks` / `not-online` / 课程未发布 → `offline`。读取超时（2.5 秒）算 `provider_down`。原来的 `budget` 已经没有来源，删除。

@@ -77,6 +77,24 @@ function splitCode(text: string): CodePart[] {
   return parts;
 }
 
+// Anything TeX would need: a command, a script, an operator, a group or a relation.
+const TEX_SIGNAL = /[\\^_=+\-*/<>{}|$]/;
+
+/**
+ * \[ … \] is a display formula, except where it can only be Markdown's escaped
+ * brackets: written inside a sentence (text before or after it on the same
+ * line) around plain words or numbers with nothing TeX would need, as in
+ * "index \[1\] is". A display formula on its own line is always a formula.
+ */
+function escapedBrackets(text: string, start: number, end: number, body: string, startsLine: boolean) {
+  if (body.includes("\n") || TEX_SIGNAL.test(body)) return false;
+  const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+  const lineEnd = text.indexOf("\n", end);
+  const before = text.slice(lineStart, start);
+  const after = text.slice(end, lineEnd < 0 ? text.length : lineEnd);
+  return /\S/.test(before) || /\S/.test(after) || (lineStart === 0 && !startsLine);
+}
+
 /** Splits prose into formulas and the text between them; every $ left in the text is escaped as a plain dollar sign. */
 function splitMath(text: string, startsLine: boolean): TutorAnswerSegment[] {
   const out: TutorAnswerSegment[] = [];
@@ -96,7 +114,16 @@ function splitMath(text: string, startsLine: boolean): TutorAnswerSegment[] {
       const rule = text[i + 1] === "[" ? TEX_DISPLAY : TEX_INLINE;
       rule.lastIndex = i;
       const found = rule.exec(text);
-      if (found && found[1].trim()) { math(found[1], rule === TEX_DISPLAY); i = rule.lastIndex; continue; }
+      if (found && found[1].trim()) {
+        if (rule === TEX_DISPLAY && escapedBrackets(text, i, rule.lastIndex, found[1], startsLine)) {
+          // "\[1\]" inside a sentence is Markdown for the brackets "[1]", not a display formula.
+          prose += found[0];
+        } else {
+          math(found[1], rule === TEX_DISPLAY);
+        }
+        i = rule.lastIndex;
+        continue;
+      }
     }
     if (i === 0 ? startsLine : text[i - 1] === "\n") {
       DISPLAY_LINE.lastIndex = i;
