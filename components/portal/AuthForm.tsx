@@ -143,7 +143,7 @@ function AuthFormContent({ locale, mode, copy, returnTo, googleEnabled, wechatEn
       <PortalButton className="auth-submit" type="primary" htmlType="submit" loading={busy} disabled={busy} onClick={event => { if (!hasRegistrationConsent()) event.preventDefault(); }}>{signupDesign ? copy.joinForFree : signIn ? copy.submitSignIn : copy.submitSignUp}</PortalButton>
       {showTitle ? <a href={switchPath}>{signIn ? copy.noAccount : copy.haveAccount}</a> : null}
       {signupDesign ? <div className="auth-signup-divider" /> : null}
-      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} disabled={!signIn && (!termsAccepted || busy)} wechatFirst={signIn} variant={signIn ? "signin" : signupDesign ? "buttons" : "icons"} />
+      <AuthProviders locale={locale} returnTo={returnTo} copy={copy} googleEnabled={googleEnabled} wechatEnabled={wechatEnabled} disabled={!signIn && busy} consentRequired={!signIn && !termsAccepted ? { message: labels.registrationConsentRequired, onAttempt: hasRegistrationConsent } : undefined} wechatFirst={signIn} variant={signIn ? "signin" : signupDesign ? "buttons" : "icons"} />
       {showTitle ? <a href={`/${locale}/portal`}>{copy.backToPortal}</a> : null}
     </form>
   );

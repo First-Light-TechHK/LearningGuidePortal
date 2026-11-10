@@ -26,6 +26,8 @@
 .auth-provider-divider::before,.auth-provider-divider::after { content:""; height:1px; background:#d0d5dd; flex:1; }
 .auth-provider-links { display:flex; justify-content:center; gap:38px; margin-top:24px; }
 .auth-provider-icon { width:32px; height:32px; display:grid; place-items:center; border-radius:50%; }
+button.auth-provider-icon { padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.auth-provider-icons button.auth-provider-google { border:1px solid #ccc; }
 .auth-provider-google { border:1px solid #ccc; }
 .auth-provider-icon:focus-visible { outline:2px solid #155dfc; outline-offset:4px; }
 .auth-provider-icon:hover { background:#edf2fa; }
