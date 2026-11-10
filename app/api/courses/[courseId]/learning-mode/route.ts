@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CourseLearningModeError, isCourseLearningMode } from "@/contracts/course-learning-mode";
+import { CourseLearningModeError, isCourseLearningMode, isCourseLearningModeContext } from "@/contracts/course-learning-mode";
 import { currentProductUserFromRequest } from "@/services/productAuth";
 import { requestOriginMatches } from "@/services/adminHost";
 import { saveCourseLearningMode } from "@/services/productStore";
@@ -16,11 +16,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ cour
   if ("lessonId" in body && (typeof body.lessonId !== "string" || !body.lessonId.trim() || body.lessonId.length > 200)) {
     return NextResponse.json({ ok: false, code: "invalid", message: "Choose a lesson." }, { status: 400 });
   }
+  if ("accessContext" in body && !isCourseLearningModeContext(body.accessContext)) {
+    return NextResponse.json({ ok: false, code: "invalid", message: "Choose a learning context." }, { status: 400 });
+  }
   try {
-    const data = await saveCourseLearningMode(user.id, (await params).courseId, body.mode, "lessonId" in body ? body.lessonId as string : undefined);
+    const data = await saveCourseLearningMode(user.id, (await params).courseId, body.mode, "lessonId" in body ? body.lessonId as string : undefined,
+      "accessContext" in body && isCourseLearningModeContext(body.accessContext) ? body.accessContext : undefined);
     return NextResponse.json({ ok: true, code: "saved", message: "Learning mode saved.", data });
   } catch (error) {
-    if (error instanceof CourseLearningModeError) return NextResponse.json({ ok: false, code: error.code, message: error.message }, { status: { invalid: 400, notFound: 404, unauthorised: 401 }[error.code] });
+    if (error instanceof CourseLearningModeError) return NextResponse.json({ ok: false, code: error.code, message: error.message }, { status: { invalid: 400, notFound: 404, unauthorised: 401, access_changed: 409 }[error.code] });
     return NextResponse.json({ ok: false, code: "failed", message: "Learning mode could not be saved." }, { status: 500 });
   }
 }

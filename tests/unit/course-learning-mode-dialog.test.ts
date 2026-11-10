@@ -36,7 +36,7 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
       const bold = (await readFile("node_modules/@fontsource/inter/files/inter-latin-700-normal.woff2")).toString("base64");
       await page.addStyleTag({ content: `@font-face{font-family:Inter;src:url(data:font/woff2;base64,${font}) format('woff2');font-weight:400}@font-face{font-family:Inter;src:url(data:font/woff2;base64,${bold}) format('woff2');font-weight:700}` });
       await page.addScriptTag({ content: script });
-      const mount = (courseId: string, signedIn = true, destinationHref?: string) => page.evaluate(props => (window as unknown as {mount: (props: unknown) => void}).mount(props), { locale, courseId, signedIn, destinationHref });
+      const mount = (courseId: string, signedIn = true, destinationHref?: string) => page.evaluate(props => (window as unknown as {mount: (props: unknown) => void}).mount(props), { locale, courseId, signedIn, destinationHref, accessContext: destinationHref ? "entitled" : "preview" });
       await mount("a",true,`/${locale}/account/learn/a?lessonId=selected`);
       const dialog = page.getByRole("dialog"); await dialog.waitFor();
       assert.equal(await dialog.getByRole("radio").count(), 2);
@@ -52,7 +52,7 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
       await proceed().click(); await dialog.getByRole("alert").waitFor();
       assert.equal(await dialog.isVisible(), true);
       fail = false; await proceed().click(); await dialog.waitFor({ state: "detached" });
-      assert.deepEqual(requests, [{ mode: "video" }, { mode: "video" }]);
+      assert.deepEqual(requests, [{ mode: "video", accessContext: "entitled" }, { mode: "video", accessContext: "entitled" }]);
       assert.equal(await page.evaluate(()=>(window as unknown as {destination:string}).destination),`/${locale}/account/learn/a?lessonId=selected&viewMode=video`);
       await mount("b"); await dialog.waitFor();
       assert.equal(await dialog.locator("input:checked").count(), 0);
@@ -90,7 +90,7 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
       assert.equal(requests.length, 2, "login return retains selection but does not save before confirmation");
       await dialog.getByRole("button", { name: locale === "zh-CN" ? "以文本模式继续" : "Continue with Text", exact: true }).click();
       await dialog.waitFor({ state: "detached" });
-      assert.deepEqual(requests[2], { mode: "text" });
+      assert.deepEqual(requests[2], { mode: "text", accessContext: "preview" });
       await page.close();
     }
   } finally { await browser.close(); }
