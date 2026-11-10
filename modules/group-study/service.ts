@@ -2021,11 +2021,11 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
       const text = requireText(input.text, "AI Tutor request", TUTOR_REQUEST_MAX_LENGTH);
       const clientEventId = requiredValue(input.clientEventId, "Client event id");
       const receivedAt = deps.now().toISOString();
-      // The server refuses a question while the Tutor is paused (provider
-      // failing) or over its daily budget; the room shows why. A missing key
-      // is still taken and answered "unavailable" (QA N4: the question line
-      // must not block), and the room greys the entry out for it.
-      // KS-owned Tutor (2026-10-23): availability follows the related Course.
+      // The server refuses a question while the course's KS Tutor is
+      // unavailable, whatever the reason (no_key / provider_down / offline,
+      // D4 in docs/phase1/ai-tutor-answer-layer.md); the room greys the
+      // @AI Tutor entry out and shows why. KS-owned Tutor (2026-10-23):
+      // availability follows the related Course.
       const availabilityStore = await deps.repository.read({ session: input.sessionId });
       const availabilitySession = availabilityStore.sessions.find((item) => item.id === input.sessionId);
       const availabilityGroup = availabilitySession ? availabilityStore.groups.find((item) => item.id === availabilitySession.groupId) : undefined;

@@ -835,21 +835,18 @@ async function demoOrder(page: Page) {
   return orderId;
 }
 
-test("v4 order entry: Contact support on a payment record carries the order; the agent sees the order projection; another learner's order is refused", async ({ browser }) => {
+test("v4 order entry: payment records omit support links; direct support URLs retain order ownership and the agent projection", async ({ browser }) => {
   for (const locale of ["en-GB", "zh-CN"] as const) {
     const { context, page } = await newLearner(browser, locale);
     await page.goto(`/${locale}/account/my-learning`);
     const orderId = await demoOrder(page);
     const records = getMessages(locale).subscriptionDesign;
     const text = copy(locale);
-    // My Learning > Subscription: every payment record shown has "Contact support" for its order.
+    // Payment history retains receipts without a per-order support action.
     await page.goto(`/${locale}/account/my-learning/subscription`);
     await page.getByRole("button", { name: records.paymentHistory }).first().click();
-    const link = page.getByRole("link", { name: records.contactSupportLabel.replace("{number}", orderId), exact: true });
-    await expect(link).toHaveText(records.contactSupport);
-    await expect(page.locator("a[data-contact-support]")).toHaveCount(await page.locator("table tbody tr").count());
-    await link.click();
-    await page.waitForURL(`**/${locale}/account/my-learning/support?orderId=${orderId}`);
+    await expect(page.locator('table tbody a[href*="/support"]')).toHaveCount(0);
+    await page.goto(`/${locale}/account/my-learning/support?orderId=${orderId}`);
     // Contact Support: Payments & Subscriptions preset, the read-only order line above Subject with Remove.
     await expect(page.locator(".helpdesk-select-trigger")).toHaveText(text.categories.payments_subscriptions);
     const line = page.getByRole("group", { name: text.order.label, exact: true });

@@ -116,7 +116,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: destination.mode, lessonId: lesson.id }) });
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: destination.mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
       const result = await response.json() as { ok?: boolean };
       if (!response.ok || !result.ok) throw new Error("mode-save");
       // This is an explicit lesson choice, so do not replace it with the mode's saved cursor.
@@ -132,7 +132,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, lessonId: lesson.id }) });
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
       const result = await response.json() as { ok: boolean; data?: CourseLearningModeResult };
       if (!response.ok || !result.ok) throw new Error("mode-save");
       if (!modeMounted.current) return;

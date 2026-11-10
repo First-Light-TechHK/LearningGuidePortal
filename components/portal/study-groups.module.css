@@ -91,7 +91,8 @@
 .emptySessions img { width: 150px; height: 113px; margin-top: 80px; object-fit: cover; opacity: 1; }
 .joinBanner { background: #f6f9fe; border: 1px solid #e4e7ec; border-radius: 8px; color: #1d6bff; font-size: 13px; font-weight: 600; padding: 15px 16px; margin: 0 0 12px; }
 .joinNote { text-align: center; color: #000; opacity: .4; font-size: 12px; margin: 40px 0 20px; white-space: pre-line; }
-.memberCol { background: #fbfcfe; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; min-height: 640px; }
+/* BUG-0315: the column hugs its content instead of stretching to the session list, so its buttons sit right under the last member however many sessions there are. */
+.memberCol { background: #fbfcfe; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; align-self: start; }
 .memberCol h3 { margin: 0; font-size: 18px; font-weight: 600; }
 .memberCol ul, .memberList { list-style: none; margin: 16px 0; padding: 0; min-height: 0; overflow-y: auto; max-height: 420px; }
 /* BUG-0097: the created state owns the whole panel — a 450px card centred in the panel flow. */
@@ -107,9 +108,8 @@
 .memberCol li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e4e7ec; font-size: 12px; color: #000; opacity: .8; overflow-wrap: anywhere; }
 .memberAvatar { width: 28px; height: 28px; border-radius: 17px; background: #e8f1ff; color: #1d6bff; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
 .hostTag { margin-left: auto; background: #e8f1ff; color: #1d6bff; border-radius: 8px; padding: 2px 8px; font-size: 10px; font-weight: 600; }
-.hostFoot { margin: auto -20px 0; display: grid; gap: 8px; }
-/* 599:867/869/871 host footer buttons land at y 872/916/960: 36px tall, 12px/600 labels on a 44px pitch, the block's last edge 42px below the column's content line. */
-.hostFootWithCopy { margin-bottom: -42px; }
+/* 599:867/869/871: 36px buttons, 12px/600 labels on a 44px pitch, full column width. BUG-0315: they follow the list, not the column's bottom edge. */
+.hostFoot { margin: 0 -20px; display: grid; gap: 8px; }
 .hostFoot p { margin: 0 0 12px; color: #000; opacity: .4; font-size: 12px; text-align: center; }
 .hostFoot .primary, .hostFoot .ghost, .hostFoot .danger { width: 100%; height: 36px; font-size: 12px; }
 .toast { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); width: min(450px, calc(100% - 32px)); }
@@ -463,10 +463,8 @@
   .filters { flex-direction: column; }
   .filters select, .filters input { width: 100%; }
   .main { padding: 16px; }
-  /* Narrow widths: the 66px left offset would overflow (<706px cards), and the
-     host-footer -42px shift is a desktop-only alignment — reset both. */
+  /* Narrow widths: the 66px left offset would overflow (<706px cards) — reset it. */
   .endCard { margin: -35px auto 0; }
-  .hostFootWithCopy { margin-bottom: 0; }
   /* QA M23: at 375px the session card stacks its buttons under the text and
      the member column has no desktop height. */
   .session { grid-template-columns: minmax(0, 1fr); row-gap: 12px; padding: 16px; }

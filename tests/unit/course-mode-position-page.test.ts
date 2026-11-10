@@ -73,7 +73,7 @@ test("mode switching resumes the last visited point after backward review, with 
       // The active point updates before the browser applies the reader's scheduled scroll.
       await page.waitForFunction(() => window.scrollY > 0 && Math.abs(document.querySelector('[data-text-point-id="b-text-2"]')!.getBoundingClientRect().top - 12) < 2);
       assert.equal(await page.locator("[data-text-reader]").evaluate(element => element.scrollTop), 0, "desktop reading also uses page scrolling");
-      assert.deepEqual(modeRequests[1], { mode: "text", lessonId: "a" });
+      assert.deepEqual(modeRequests[1], { mode: "text", lessonId: "a", accessContext: "entitled" });
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-text-last-position.png` });
       await select.selectOption("video");
       await page.locator('[data-lesson-id="a"] video').waitFor();

@@ -112,7 +112,7 @@ test("the join label reads Join Now and Hosting is only for the Host", () => {
   const source = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
   assert.match(source, /\{copy\.joinGroup\}/);
   assert.match(source, /selected\.role === "host" \? <span className=\{styles\.hostChip\}>\{copy\.hosting\}<\/span> : null/);
-  assert.match(source, /selected\.role === "host" \? <div className=\{`\$\{styles\.hostFoot\} \$\{styles\.hostFootWithCopy\}`\}>/);
+  assert.match(source, /selected\.role === "host" \? <div className=\{styles\.hostFoot\}>/);
   assert.equal(source.includes("{copy.hosting}</span> : null"), true);
 });
 
@@ -385,7 +385,12 @@ test("the final design tokens pin the join gate, session chips, and secondary bu
   assert.match(css, /\.sheet \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 230px; gap: 30px;[^}]*padding: 8px 8px 30px 30px/); // 599:930 article 510..1152, Detail Side 1182..1412
   assert.match(css, /\.sheet > article \{ margin-top: 22px; \}/);
   assert.match(css, /\.memberCol \{[^}]*padding: 20px[^}]*\}/);
-  assert.match(css, /\.hostFoot \{ margin: auto -20px 0/);
+  // BUG-0315: the Members column hugs its content and the buttons follow the
+  // list; nothing pushes them down to the bottom of a long session list.
+  assert.match(css, /\.memberCol \{[^}]*align-self: start;[^}]*\}/);
+  assert.doesNotMatch(css, /\.memberCol \{[^}]*min-height: 640px[^}]*\}/);
+  assert.match(css, /\.hostFoot \{ margin: 0 -20px; display: grid; gap: 8px; \}/);
+  assert.equal(css.includes("hostFootWithCopy"), false);
   assert.match(css, /\.hostFoot p \{[^}]*text-align: center[^}]*\}/); // 599:770 hosting note
   assert.match(css, /\.joinAction \.primary \{ min-width: 230px; height: 36px; font-size: 12px; \}/); // 599:1035 CTA 230x36, 599:1036 12px SemiBold
   assert.match(css, /\.sessionState\[data-state="scheduled"\] \{[^}]*background: #e0f5e5;[^}]*color: #26ad61/); // 599:685 Upcoming badge
@@ -597,7 +602,6 @@ test("the Live Session end card follows 599:1398 and its CTA never overlaps the 
   assert.match(css, /\.endCard \.meta \+ \.endBody \{ margin-top: 48px; \}/);
   // Narrow screens reset the desktop-only offsets so the card cannot overflow.
   assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.endCard \{ margin: -35px auto 0; \}[\s\S]*\}/);
-  assert.match(css, /@media \(max-width: 800px\) \{[\s\S]*\.hostFootWithCopy \{ margin-bottom: 0; \}[\s\S]*\}/);
 
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   // 599:1398 shows no focus row in the end card; only the live stage keeps one.
@@ -612,11 +616,10 @@ test(":has() is gone from the stylesheet and the single-tile layout is a plain c
   const css = readFileSync(new URL("../../components/portal/study-groups.module.css", import.meta.url), "utf8");
   assert.equal(css.includes(":has("), false);
   assert.match(css, /\.videosSingle \{ grid-template-columns: minmax\(0, 490px\); justify-content: center; \}/);
-  assert.match(css, /\.hostFootWithCopy \{ margin-bottom: -42px; \}/);
   const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
   assert.match(room, /\$\{styles\.videos\}\$\{tiles\.length <= 1 \? ` \$\{styles\.videosSingle\}` : ""\}/);
   const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
-  assert.match(app, /selected\.role === "host" \? <div className=\{`\$\{styles\.hostFoot\} \$\{styles\.hostFootWithCopy\}`\}><p>\{copy\.hostingNote\}<\/p>/);
+  assert.match(app, /selected\.role === "host" \? <div className=\{styles\.hostFoot\}><p>\{copy\.hostingNote\}<\/p>/);
 });
 
 test("creating a group hands the whole panel to the success state and reopening Create is clean", () => {

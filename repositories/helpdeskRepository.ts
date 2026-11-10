@@ -590,7 +590,17 @@ function textsFromRow(value: unknown): AssistTexts | null {
   if (!raw || typeof raw !== "object") return null;
   const entry = raw as Record<string, unknown>;
   const text = (key: string) => (typeof entry[key] === "string" ? entry[key] as string : null);
-  return { opening: text("opening"), closing: text("closing"), reply: text("reply"), explanation: text("explanation"), nodeType: entry.nodeType === "answer" || entry.nodeType === "choice" ? entry.nodeType : null };
+  const texts: AssistTexts = { opening: text("opening"), closing: text("closing"), reply: text("reply"), explanation: text("explanation"), nodeType: entry.nodeType === "answer" || entry.nodeType === "choice" ? entry.nodeType : null };
+  // v8: a several-asks answer's further cards and missed asks (left out when none).
+  const more = Array.isArray(entry.more) ? entry.more.flatMap((item: unknown) => {
+    const card = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    return typeof card.faqId === "string" && typeof card.question === "string" && typeof card.answer === "string"
+      ? [{ faqId: card.faqId, question: card.question, answer: card.answer, blocks: Array.isArray(card.blocks) ? card.blocks.filter((id): id is string => typeof id === "string") : [] }]
+      : [];
+  }) : [];
+  if (more.length) texts.more = more;
+  if (typeof entry.missed === "number" && Number.isInteger(entry.missed) && entry.missed > 0) texts.missed = entry.missed;
+  return texts;
 }
 
 const SESSION_COLUMNS = "id::text, learner_id, locale, release_version, started_at, last_turn_at, ended_at, end_reason, turns, unsolved_streak, current_node_id::text, signals";

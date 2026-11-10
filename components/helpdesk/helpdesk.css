@@ -511,7 +511,7 @@
 .helpdesk-chat-answer-text ol, .helpdesk-chat-answer-text ul { display: flex; flex-direction: column; gap: 4px; margin: 0; padding-left: 20px; }
 .helpdesk-chat-answer-text strong { font-weight: 600; }
 .helpdesk-chat-answer-text a { color: var(--hc-primary); text-underline-offset: 2px; }
-.helpdesk-chat-opening, .helpdesk-chat-closing, .helpdesk-chat-reply { align-self: stretch; color: var(--hc-ink); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.helpdesk-chat-opening, .helpdesk-chat-closing, .helpdesk-chat-reply, .helpdesk-chat-missed { align-self: stretch; color: var(--hc-ink); font-size: 14px; line-height: 22px; overflow-wrap: anywhere; white-space: pre-wrap; }
 .helpdesk-chat-choice-prompt { font-weight: 500; }
 /* A new reply reveals top-down like streamed text, and its parts follow one after another. The mask lives only in
    the keyframes, so once the reveal ends nothing clips the focus rings. */

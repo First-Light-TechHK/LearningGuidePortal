@@ -48,7 +48,7 @@ import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backo
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 import { applyDataMigrations } from "./dataMigrations";
 import { isValidAccountName, normaliseName, validateAccountName } from "@/lib/nameValidation";
-import { CourseLearningModeError, isCourseLearningMode, type CourseLearningMode, type CourseLearningModeResult } from "@/contracts/course-learning-mode";
+import { CourseLearningModeError, isCourseLearningMode, isCourseLearningModeContext, type CourseLearningMode, type CourseLearningModeContext, type CourseLearningModePreferences, type CourseLearningModeResult } from "@/contracts/course-learning-mode";
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -59,6 +59,8 @@ const TRIAL_DAYS = 3;
 
 export type Locale = "en-GB" | "zh-CN";
 export type ProductUser = {
+  courseLearningModePreferences?: Record<string, CourseLearningModePreferences>;
+  /** Historical unscoped choices are retained, but cannot establish a formal-learning preference. */
   courseLearningModes?: Record<string, CourseLearningMode>;
   id: string;
   email: string | null;
@@ -610,13 +612,21 @@ export async function persistCatalogueMigrations() {
 export async function getCourseLearningMode(userId: string, courseId: string): Promise<CourseLearningMode | null> {
   const data = await ensureProductData();
   const user = data.users.find(item => item.id === userId && item.status === "active");
-  const modes = user?.courseLearningModes;
-  const mode = modes && Object.hasOwn(modes, courseId) ? modes[courseId] : null;
+  const course = data.courses.find(item => item.id === courseId && item.status === "published");
+  if (!user || !course) return null;
+  const entitled = Boolean(activeEntitlement(data, userId, course.id));
+  const preferences = user.courseLearningModePreferences;
+  const scoped = preferences && Object.hasOwn(preferences, courseId) ? preferences[courseId] : undefined;
+  // Only verified formal Study history can recover an older formal preference.
+  // The legacy shared User field cannot tell a preview choice from a paid one.
+  const record = entitled ? studyHistoryFor(data, userId, course).record : undefined;
+  const mode = scoped?.[entitled ? "entitled" : "preview"] || record?.selectedMode || record?.currentMode;
   return isCourseLearningMode(mode) ? mode : null;
 }
 
-export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string): Promise<CourseLearningModeResult> {
+export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string, expectedContext?: CourseLearningModeContext): Promise<CourseLearningModeResult> {
   if (!isCourseLearningMode(mode)) throw new CourseLearningModeError("invalid");
+  if (expectedContext !== undefined && !isCourseLearningModeContext(expectedContext)) throw new CourseLearningModeError("invalid");
   if (lessonId !== undefined && (typeof lessonId !== "string" || !lessonId.trim() || lessonId.length > 200)) throw new CourseLearningModeError("invalid");
   return editData(data => {
     const user = data.users.find(item => item.id === userId && item.status === "active");
@@ -624,6 +634,8 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
     const course = data.courses.find(item => item.id === courseId && item.status === "published");
     if (!course) throw new CourseLearningModeError("notFound");
     const entitled = Boolean(activeEntitlement(data, userId, course.id));
+    const accessContext = entitled ? "entitled" : "preview";
+    if (expectedContext !== undefined && expectedContext !== accessContext) throw new CourseLearningModeError("access_changed");
     const history = studyHistoryFor(data, userId, course);
     const record = entitled ? history.record : undefined;
     let position: CourseLearningModeResult["position"];
@@ -640,7 +652,9 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
       });
       position = courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
     }
-    user.courseLearningModes = { ...user.courseLearningModes, [course.id]: mode };
+    const previous = user.courseLearningModePreferences;
+    const scoped = previous && Object.hasOwn(previous, course.id) ? previous[course.id] : {};
+    user.courseLearningModePreferences = { ...previous, [course.id]: { ...scoped, [accessContext]: mode } };
     if (record) {
       const index = data.studyRecords.findIndex(item => item.id === record.id);
       if (index >= 0) data.studyRecords[index] = record;
@@ -1182,6 +1196,7 @@ export async function confirmEmailBinding(rawToken: string, options: { confirmed
       const history = [data.quotes, data.orders, data.subscriptions, data.entitlements, data.studyRecords, data.studyEvents, data.conversations];
       if (history.some(rows => rows.some(row => row.userId === user.id))
         || Object.keys(user.courseLearningModes || {}).length
+        || Object.keys(user.courseLearningModePreferences || {}).length
         || data.courses.some(course => course.authorIds?.includes(user.id))
         || data.authoringActivities?.some(row => row.actorId === user.id || row.targetUserId === user.id)
         || data.notifications.some(row => row.userId === user.id && row.title !== "Welcome to Learning Guide")
@@ -2118,7 +2133,7 @@ export async function getLearningOverview(userId: string) {
       const lessons = course?.sections.flatMap((section) => section.lessons) || [];
       const courseEvents = course ? studyHistoryFor(data, userId, course).events : [];
       const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
-      const preferredMode = record?.selectedMode || record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModes?.[courseId] || "text";
+      const preferredMode = record?.selectedMode || record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModePreferences?.[courseId]?.entitled || "text";
       const modes = course ? availableCourseLearningModes(course) : [];
       const mode = modes.includes(preferredMode) ? preferredMode : modes[0] || "text";
       const pointProgress = course && record?.knowledgePositions ? knowledgeProgress(course, mode, record.knowledgePositions[mode]) : null;

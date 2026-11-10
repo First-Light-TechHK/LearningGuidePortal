@@ -21,8 +21,10 @@ const STYLES_CSS = readFileSync(join(PROJECT_ROOT, "app", "styles.css"), "utf-8"
 test("Ask AI Tutor normalizes indented prose and moves Sources under the answer without changing fenced code", () => {
   const input = "![图](/api/user/courses/modeling-life/images/22222222-2222-4222-8222-222222222222.png)\n\n    **标量**是一个数。[1]\n    - 正数方向不变\n\n    Sources\n    [1] Lesson 1\n\n```text\n    **code**\n```";
   const { markdown, sources } = tutorAnswerParts(input);
-  assert.match(markdown, /\n\n\*\*标量\*\*是一个数/);
-  assert.match(markdown, /\n\n- 正数方向不变/);
+  // Indentation stays in the text but means nothing to the parser (remarkTutorNoIndentedCode);
+  // the list still gets its own block.
+  assert.match(markdown, /\n\n[ \t]*\*\*标量\*\*是一个数/);
+  assert.match(markdown, /\n\n[ \t]*- 正数方向不变/);
   // The same source list the Study Group room shows, not a quote inside the prose.
   assert.deepEqual(sources, ["[1] Lesson 1"]);
   assert.doesNotMatch(markdown, /Sources/);

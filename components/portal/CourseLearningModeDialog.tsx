@@ -7,7 +7,7 @@ import { PortalButton } from "./ui/PortalButton";
 import Image from "next/image";
 import { useId, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import type { CourseLearningMode } from "@/contracts/course-learning-mode";
+import type { CourseLearningMode, CourseLearningModeContext } from "@/contracts/course-learning-mode";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { PortalDialog } from "./PortalDialog";
@@ -17,8 +17,8 @@ export function CourseLearningModeDialog(props: Parameters<typeof CourseLearning
   return <PortalProvider locale={props.locale}><CourseLearningModeDialogContent {...props}/></PortalProvider>;
 }
 
-function CourseLearningModeDialogContent({ courseId, locale, signedIn, pendingMode = null, destinationHref }: {
-  courseId: string; locale: Locale; signedIn: boolean; pendingMode?: CourseLearningMode | null; destinationHref?: string;
+function CourseLearningModeDialogContent({ courseId, locale, signedIn, pendingMode = null, destinationHref, accessContext = "preview" }: {
+  courseId: string; locale: Locale; signedIn: boolean; pendingMode?: CourseLearningMode | null; destinationHref?: string; accessContext?: CourseLearningModeContext;
 }) {
   const copy = getMessages(locale).courseLearningMode;
   const router = useRouter(), pathname = usePathname(), titleId = useId(), descriptionId = useId(), groupName = useId();
@@ -44,8 +44,9 @@ function CourseLearningModeDialogContent({ courseId, locale, signedIn, pendingMo
     }
     setBusy(true);
     try {
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, accessContext }) });
       const result = await response.json();
+      if (response.status === 409 && result.code === "access_changed") { router.refresh(); return; }
       if (!response.ok || !result.ok) throw new Error("save");
       removePendingMode();
       setOpen(false);

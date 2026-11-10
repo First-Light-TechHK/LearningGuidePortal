@@ -154,7 +154,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
         )}
       </>}
       <PortalFooter locale={locale} />
-      {course && user && needsMode && entryDestination ? <CourseLearningModeDialog key={`${user.id}:${course.id}:${entryLessonId}`} courseId={course.id} locale={locale} signedIn destinationHref={entryDestination}/> : null}
+      {course && user && needsMode && entryDestination ? <CourseLearningModeDialog key={`${user.id}:${course.id}:${entryLessonId}:${entryLesson?.access}`} courseId={course.id} locale={locale} signedIn destinationHref={entryDestination} accessContext={entryLesson?.access === "entitled" ? "entitled" : "preview"}/> : null}
       </StreamedContent>
     </main>
   );
