@@ -40,6 +40,11 @@
 .actions button:disabled { opacity:.5; cursor:wait; }
 .historyToggle { display:flex; align-items:center; gap:8px; padding:8px 0; border:0; background:none; color:#1a2945; font-size:13px; font-weight:600; cursor:pointer; text-align:left; }
 .historyToggle img,.pastToggle img { flex-shrink:0; }
+.historyToggle img { transition:transform 280ms cubic-bezier(.22,1,.36,1); }
+.historyToggle[aria-expanded=true] img { transform:rotate(180deg); }
+.historyDisclosure { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows 280ms cubic-bezier(.22,1,.36,1),opacity 200ms ease; }
+.historyDisclosure[data-expanded=true] { grid-template-rows:1fr; opacity:1; }
+.historyClip { min-height:0; overflow:hidden; }
 .history { padding:20px 16px; margin:0 0 24px; border-radius:8px; background:#f7faff; color:#1a2945; font-size:13px; }
 .history > p { margin:0; }
 .tableWrap { overflow-x:auto; }
@@ -88,3 +93,4 @@
 @media(max-width:1100px) { .page:global(.portal-account-page) { grid-template-columns:240px minmax(0,1fr); }.page > :global(.account-nav) { width:240px; padding:32px 16px; }.inner { padding:32px 24px 64px; }.summary { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; }.product { grid-row:span 2; }.historyToggle { grid-column:2; }.card { padding:0 20px; } }
 @media(max-width:720px) { .page:global(.portal-account-page) { display:block; }.page > :global(.account-nav) { width:100%; padding:16px 20px; }.inner { min-height:600px; padding:28px 20px 48px; }.inner > h1 { font-size:26px; line-height:34px; }.intro { font-size:14px; }.summary { padding:20px 0; gap:20px 16px; }.product { grid-column:1 / -1; grid-row:auto; }.historyToggle { grid-column:1 / -1; }.card { padding:0 16px; }.history { padding:16px 12px; margin-bottom:20px; }.sections { gap:32px; }.cancelDialog { inset:16px 0 auto; max-height:calc(100dvh - 32px); padding:24px; }.cancelDialog[open] { gap:24px; }.cancelHeader h2 { font-size:22px; }.cancelActions { flex-direction:column-reverse; } }
 @media(max-height:800px) { .cancelDialog { inset:16px 0 auto; max-height:calc(100dvh - 32px); } }
+@media(prefers-reduced-motion:reduce) { .historyDisclosure,.historyToggle img { transition:none; } }

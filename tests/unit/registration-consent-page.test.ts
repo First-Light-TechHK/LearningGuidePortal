@@ -20,9 +20,9 @@ test("registration requires explicit terms/privacy consent for submit and social
   try {
     for (const locale of ["en-GB", "zh-CN"] as const) {
       const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, locale: locale === "en-GB" ? "zh-CN" : "en-GB" });
-      const copy = getMessages(locale).auth, requests: any[] = [];
+      const copy = getMessages(locale).auth, requests: Record<string, unknown>[] = [];
       let code = "REGISTRATION_CONSENT_REQUIRED", release: (() => void) | undefined, entered: (() => void) | undefined, hold = false;
-      await page.route("http://registration.test/**", async route => {
+      await page.context().route("http://registration.test/**", async route => {
         const pathname = new URL(route.request().url()).pathname;
         if (pathname === "/api/auth/register") {
           requests.push(route.request().postDataJSON());
@@ -79,6 +79,7 @@ test("registration requires explicit terms/privacy consent for submit and social
         await provider.click();
         assert.equal(await page.getByRole('alert').textContent(), copy.registrationConsentRequired);
         assert.equal(await checkbox.evaluate(e => e === document.activeElement), true);
+        assert.equal(await page.locator('.auth-signup-terms').evaluate(e => e.getAnimations()[0]?.effect?.getTiming().iterations), 2);
         assert.equal(requests.length, 0);
         await page.mouse.move(0, 0); await tooltip.waitFor({ state: 'hidden' });
         await provider.focus(); await tooltip.waitFor();
@@ -87,6 +88,18 @@ test("registration requires explicit terms/privacy consent for submit and social
         assert.equal(requests.length, 0, 'keyboard activation also cannot register without consent');
         await provider.focus(); await provider.press('Space');
         assert.equal(await checkbox.evaluate(e => e === document.activeElement), true);
+      }
+      await providers.last().click({ button: 'middle' });
+      assert.equal(requests.length, 0, 'the consent-required button has no OAuth destination for auxiliary clicks');
+      assert.equal(await page.locator('input[type="email"]').inputValue(), 'consent@example.test');
+      for (const [name, pathname] of [[copy.termsOfUse, 'terms-of-service'], [copy.privacyNotice, 'privacy-policy']]) {
+        const legalLink = page.getByRole('link', { name, exact: true });
+        assert.equal(await legalLink.getAttribute('href'), `/${locale}/${pathname}`);
+        const popupPromise = page.waitForEvent('popup'); await legalLink.click();
+        const popup = await popupPromise; await popup.waitForURL(`**/${locale}/${pathname}`);
+        assert.equal(new URL(popup.url()).pathname, `/${locale}/${pathname}`); await popup.close();
+        assert.equal(await checkbox.isChecked(), false, 'reading a policy does not accept it');
+        assert.equal(await page.locator('input[type="email"]').inputValue(), 'consent@example.test');
       }
       assert.equal(new URL(page.url()).pathname, `/${locale}/portal/sign-up`);
       await page.locator('input[autocomplete="new-password"]').press('Enter');
@@ -98,6 +111,7 @@ test("registration requires explicit terms/privacy consent for submit and social
       assert.equal(requests.length, 0);
       await checkbox.check(); assert.equal(await submit.isEnabled(), true);
       assert.equal(await checkbox.evaluate(e => (e as HTMLInputElement).validationMessage), "");
+      assert.equal(await page.locator('.auth-signup-terms').evaluate(e => e.getAnimations().length), 0);
       assert.equal(await page.getByRole('alert').count(), 0);
       assert.equal(await checkbox.getAttribute('aria-invalid'),null);assert.equal(await checkbox.getAttribute('aria-describedby'),null);
       for (const provider of await providers.all()) assert.ok((await provider.getAttribute('href'))?.includes('/api/auth/'));
@@ -128,6 +142,33 @@ test("registration requires explicit terms/privacy consent for submit and social
         assert.equal(await provider.getAttribute('href'), null);
       }
       release?.(); await page.waitForURL(`**/${locale}/portal/check-email?email=consent%40example.test&returnTo=${encodeURIComponent(`/${locale}/account/my-learning`)}`);
+      for (const provider of ['google', 'wechat']) {
+        await page.goto(`http://registration.test/${locale}/portal/sign-up`);
+        await page.addScriptTag({ content: bundle.outputFiles[0].text });
+        await page.evaluate(locale => (window as any).mount(locale), locale);
+        await page.locator('[name="termsAccepted"]').check();
+        await page.locator(`.auth-provider-links a[href^="/api/auth/${provider}?"]`).click();
+        await page.waitForURL(`**/api/auth/${provider}?**`);
+        const url = new URL(page.url());
+        assert.equal(url.searchParams.get('locale'), locale);
+        assert.equal(url.searchParams.get('returnTo'), `/${locale}/account/my-learning`);
+      }
+      // Sign-in providers have no registration consent requirement.
+      await page.goto(`http://registration.test/${locale}/portal/sign-in`);
+      await page.addScriptTag({ content: bundle.outputFiles[0].text });
+      await page.evaluate(locale => (window as any).mount(locale, false, 'sign-in'), locale);
+      assert.equal(await page.locator('[name="termsAccepted"]').count(), 0);
+      await page.locator('.auth-provider-links a[href^="/api/auth/google?"]').click();
+      await page.waitForURL('**/api/auth/google?**');
+      // Mount a fresh form with the OS motion preference already set.
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.goto(`http://registration.test/${locale}/portal/sign-up`);
+      await page.addScriptTag({ content: bundle.outputFiles[0].text });
+      await page.evaluate(locale => (window as any).mount(locale), locale);
+      await page.locator('.auth-provider-links button').first().click();
+      assert.equal(await page.locator('[name="termsAccepted"]').getAttribute('aria-invalid'), 'true');
+      assert.equal(await page.locator('.auth-signup-terms').evaluate(e => e.getAnimations().length), 0);
+      assert.equal(await page.getByRole('alert').textContent(), copy.registrationConsentRequired);
       await page.close();
     }
   } finally { await browser.close(); }

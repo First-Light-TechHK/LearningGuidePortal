@@ -54,6 +54,9 @@ test("video pages always offer entitled manual completion, isolate content, save
       const markComplete=()=>bar.getByRole("button",{name:getMessages(locale).videoCompletion.markComplete,exact:true});
       assert.equal(await markComplete().isEnabled(),true,"manual completion is available before metadata or playback");
       assert.equal(completions.length,0,"showing the button must not save completion");
+      assert.equal(await page.locator('[data-text-completion]').count(),0,'video has no duplicate action below the player');
+      assert.equal(await markComplete().locator('xpath=ancestor::header').count(),1,'manual completion is inside the lesson header');
+      assert.equal((await bar.textContent())!.includes('%'),false,'video header hides progress');
       await page.screenshot({path:`test-results/video-completion/${locale}-initial.png`,fullPage:true});
       await markComplete().click();await page.getByRole("dialog").waitFor();
       assert.equal((completions[0] as {seconds:number}).seconds,0);
@@ -86,8 +89,8 @@ test("video pages always offer entitled manual completion, isolate content, save
       await complete.click();await bar.getByRole("alert").waitFor();assert.equal(await complete.isEnabled(),true);
       fail=false;await complete.click();
       await page.getByRole("dialog").waitFor();
-      assert.ok((await bar.textContent())!.includes(getMessages(locale).learning.completed));
-      assert.equal(await bar.getByRole("button").count(),0);
+      assert.equal(await bar.getAttribute("data-completed"),"true");
+      assert.equal(await markComplete().isEnabled(),true);
       const modal=page.getByRole("dialog");
       await modal.getByRole("heading",{name:getMessages(locale).lessonCompleted.nextActionTitle,exact:true}).waitFor();
       assert.equal(await modal.getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).count(),1);
@@ -121,7 +124,7 @@ test("video pages always offer entitled manual completion, isolate content, save
       fail=false; await bar.getByRole("button").click(); await page.getByRole("dialog").waitFor();
       await page.keyboard.press("Escape"); assert.equal(await page.getByRole("dialog").count(),0);
       await mount("switch");await progress(98);await bar.waitFor();
-      await page.getByRole("button",{name:"1.2 Second video",exact:true}).click();await bar.waitFor();assert.equal(await bar.getAttribute("data-completed"),"false");assert.ok((await bar.textContent())!.includes("0%"));
+      await page.getByRole("button",{name:"1.2 Second video",exact:true}).click();await bar.waitFor();assert.equal(await bar.getAttribute("data-completed"),"false");assert.equal((await bar.textContent())!.includes("%"),false);
       await progress(98);await bar.waitFor();await page.setViewportSize({width:390,height:844});
       await page.screenshot({path:`test-results/video-completion/${locale}-mobile.png`,fullPage:true});
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -129,7 +132,7 @@ test("video pages always offer entitled manual completion, isolate content, save
       await page.locator("video").evaluate(element=>element.dispatchEvent(new Event("ended"))); assert.equal(await page.getByRole("dialog").count(),0,"unentitled previews never show completion dialog");
       const savedCount=completions.length;
       await mount("completed",true,false,true);await progress(36.749,37.5);assert.equal(await bar.count(),1);await progress(36.75,37.5);await bar.waitFor();
-      assert.equal(await bar.getByRole("button").count(),0);assert.ok((await bar.textContent())!.includes(getMessages(locale).learning.completed));await page.locator("video").evaluate(element=>element.dispatchEvent(new Event("ended")));await page.getByRole("dialog").waitFor();assert.equal(completions.length,savedCount);await page.keyboard.press("Escape");
+      assert.equal(await markComplete().isEnabled(),true);assert.equal(await bar.getAttribute("data-completed"),"true");await page.locator("video").evaluate(element=>element.dispatchEvent(new Event("ended")));await page.getByRole("dialog").waitFor();assert.equal(completions.length,savedCount);await page.keyboard.press("Escape");
       await mount("per-content",true,false,true,null,["video"]);
       await bar.waitFor();assert.equal(await bar.getAttribute("data-completed"),"true");
       await page.getByRole("button",{name:"1.2 Second video",exact:true}).click();
