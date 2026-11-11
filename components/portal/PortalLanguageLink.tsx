@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronDown } from "lucide-react";
+import { Globe } from "lucide-react";
 import type { Locale } from "@/lib/i18n/config";
 
 export function PortalLanguageLink({ locale, label }: { locale: Locale; label: string }) {
@@ -16,5 +16,5 @@ export function PortalLanguageLink({ locale, label }: { locale: Locale; label: s
   const remember = () => {
     void fetch("/api/me/locale", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale: otherLocale }) }).catch(() => undefined);
   };
-  return <Link prefetch={false} className="portal-language" href={href + (query ? `?${query}` : "")} onClick={remember} aria-label={locale === "en-GB" ? "切换到简体中文" : "Switch to English (UK)"}><span>{label}</span><ChevronDown size={13} aria-hidden="true" /></Link>;
+  return <Link prefetch={false} className="portal-language" href={href + (query ? `?${query}` : "")} onClick={remember} aria-label={locale === "en-GB" ? "切换到简体中文" : "Switch to English (UK)"}><Globe className="portal-language-globe" size={14} strokeWidth={1.8} aria-hidden="true" /><span>{label}</span><span className="portal-language-caret" aria-hidden="true" /></Link>;
 }

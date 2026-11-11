@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { UnderstandingOverviewDisplay } from "@/contracts/understanding-overview";
 import type { AssessmentKind } from "@/contracts/lesson-assessment";
@@ -32,21 +33,21 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
   const courseHref=`/${locale}/portal/courses/${encodeURIComponent(courseId)}`;
   return <div className={styles.page} data-course-id={courseId}>
     <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb}><Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span>/</span>{category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span>/</span></>}<Link href={courseHref}>{courseTitle}</Link><span>/</span><span aria-current="page">{copy.title}</span></nav>
-    <div className={styles.content}><Link className={styles.back} href={backHref}>{"\u2190"} {copy.back}</Link>
-      <article className={styles.panel}><header><h1>{copy.title}</h1><p>{copy.description}</p></header>
+    <div className={styles.content}>
+      <article className={styles.panel}><header className={styles.header}><Link className={styles.back} href={backHref} aria-label={copy.back}><ArrowLeft size={18} aria-hidden="true"/></Link><div className={styles.headingCopy}><h1>{copy.title}</h1><p>{copy.description}</p></div></header>
         {error&&<p role="alert">{error} <button onClick={()=>void refresh()}>{records.retry}</button></p>}
-        <section className={styles.courseAssessment}><h2>{copy.courseAssessment}</h2><div><strong>{tests.fluency}</strong><button type="button" disabled>{tests.comingSoon}</button></div></section>
-        <section className={styles.lessonAssessments} aria-label={copy.lessonAssessments}><h2>{copy.lessonAssessments}</h2>
+        <section className={styles.lessonAssessments} aria-label={copy.lessonAssessments}>
+          {/* <h2>{copy.lessonAssessments}</h2> */}
           <div className={`${styles.columns} ${styles.tableHeader}`} aria-hidden="true"><span>{copy.lessonAssessment}</span><span>{copy.status}</span><span>{copy.latestResult}</span><span>{copy.action}</span></div>
           {!view.lessons.length&&<p role="status">{records.empty}</p>}
           <div className={styles.lessons}>{view.lessons.map(lesson=>{
             const open=expanded.includes(lesson.id), locked=lesson.state==="locked", completed=lesson.state==="completed";
             return <section className={`${styles.lesson} ${completed?styles.completedLesson:""}`} key={lesson.id} data-lesson-id={lesson.id}>
-              <button className={styles.lessonHeader} type="button" aria-expanded={open} aria-controls={`assessment-${lesson.number}`} onClick={()=>setExpanded(current=>open?current.filter(id=>id!==lesson.id):[...current,lesson.id])}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3><span className={`${styles.badge} ${completed?styles.completeBadge:locked?styles.lockedBadge:""}`}>{completed?copy.completed:locked?(view.lessons.indexOf(lesson)>0?copy.unlocksAfter.replace("{number}",String(view.lessons.indexOf(lesson))):copy.locked):copy.available}</span>{!locked&&<span aria-hidden="true" className={styles.chevron}><Image src="/portal/understanding/lesson-chevron-up.png" alt="" width={11} height={7}/></span>}</button>
+              <button className={styles.lessonHeader} type="button" aria-expanded={open} aria-controls={`assessment-${lesson.number}`} onClick={()=>setExpanded(current=>open?current.filter(id=>id!==lesson.id):[...current,lesson.id])}><span className={styles.number}>{lesson.number}</span><h3>{lesson.title}</h3>{!locked&&<span aria-hidden="true" className={styles.chevron}><Image src="/portal/understanding/lesson-chevron-up.png" alt="" width={11} height={7}/></span>}</button>
               {open && <div id={`assessment-${lesson.number}`}>{(["knowledge","application"] as const).map(kind=>{
                 const summary=lesson[kind], finished=summary.status==="completed"||summary.status==="submitted";
                 const unavailable = summary.total === 0;
-                const status=locked||unavailable?"—":summary.status==="not_started"?copy.available:summary.status==="in_progress"?copy.inProgress:summary.status==="submitted"?records.submitted:copy.completed;
+                const status=locked||unavailable?"—":summary.status==="not_started"?records.notStarted:summary.status==="in_progress"?copy.inProgress:summary.status==="submitted"?records.submitted:copy.completed;
                 return <div className={`${styles.columns} ${styles.row}`} key={kind} data-assessment-kind={kind}>
                   <strong>{tests[kind]}</strong><span className={`${styles.status} ${finished?styles.green:summary.status==="not_started"||locked?styles.available:""} ${!locked&&summary.status!=="not_started"?styles.statusDot:""}`}>{status}</span>
                   <b data-latest-result>{locked||summary.latestResult==null?"—":typeof summary.latestResult==="number"?`${summary.latestResult}%`:copy.strong}</b>

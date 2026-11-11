@@ -284,7 +284,7 @@ test("Help Centre: public, searchable, by topic, deep-linkable; Contact Support 
   const { context, page: learnerPage } = await newLearner(browser, "zh-CN");
   await learnerPage.goto("/zh-CN/account/my-learning/settings");
   const nav = learnerPage.locator("nav.account-nav").getByRole("link", { name: getMessages("zh-CN").account.help });
-  await expect(nav).toHaveAttribute("href", "/zh-CN/help");
+  await expect(nav).toHaveCount(0);
   await learnerPage.goto("/zh-CN/account/my-learning/help");
   await learnerPage.waitForURL("**/zh-CN/help");
   await learnerPage.goto("/zh-CN/my-learning/help");

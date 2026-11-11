@@ -61,12 +61,34 @@ test("mode switching resumes the last visited point after backward review, with 
       }]));
       await page.evaluate(lessons => { (window as any).lessons = lessons; }, lessons);
       await page.evaluate(props => (window as any).mount(props), { locale, courseId: "course", courseTitle: "Mode progress", category: "Science", description: "", lesson: lessons.a, outline: ["a", "b"].map((id, i) => ({ id, number: `0${i + 1}`, title: `Lesson ${id}`, href: `/${locale}/account/learn/course?lessonId=${id}`, modes: ["text", "video"] })), poster: "/portal/course-study.jpg", entitled: true, initialCompleted: false, nextHref: null, studyEndpoint: "/api/study/events", preferredMode: "video", initialContentId: "a-video-1" });
-      const select = page.getByRole("combobox", { name: getMessages(locale).previewVideoDesign.learningMode });
+      const modeSwitch = page.getByRole("combobox", { name: getMessages(locale).previewVideoDesign.learningMode });
+      const modeControl = page.locator('[data-reading-outline] .lg-ant-select');
+      const setMode = async (mode: "text" | "video") => {
+        await modeSwitch.click();
+        await page.getByRole('option', { name: mode === 'text' ? getMessages(locale).previewVideoDesign.textMode : getMessages(locale).previewVideoDesign.videoMode, exact: true }).click();
+      };
+      const controlBox = (await modeControl.boundingBox())!;
+      assert.ok(controlBox.width <= 120 && controlBox.height <= 24, 'mode select remains compact');
+      assert.ok((await modeControl.innerText()).includes(getMessages(locale).previewVideoDesign.videoMode));
+      const arrow = (await modeControl.locator('.lg-ant-select-suffix').boundingBox())!;
+      const label = (await modeControl.locator('.lg-ant-select-content').boundingBox())!;
+      assert.ok(arrow.x - label.x - label.width <= 10, 'arrow stays close to the selected mode');
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-select-initial.png` });
+      await modeSwitch.click();
+      const popup = page.locator('.lg-ant-select-dropdown:visible');
+      await popup.evaluate(element => Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.ok(Math.abs((await popup.boundingBox())!.width - (await modeControl.boundingBox())!.width) <= 1, 'popup matches the compact select width');
+      for (const option of await popup.locator('.lg-ant-select-item-option').all()) {
+        assert.equal(await option.evaluate(element => getComputedStyle(element).fontSize), '12px');
+        assert.ok((await option.boundingBox())!.height <= 25, 'options use compact rows');
+      }
+      await page.screenshot({ path: `test-results/course-mode-position/${locale}-select-options.png` });
       const video = page.locator("video.la-lesson-video");
       await page.waitForFunction(() => document.querySelector<HTMLVideoElement>("video.la-lesson-video")!.readyState >= 2);
-      await select.selectOption("text"); await page.getByRole("alert").filter({ hasText: getMessages(locale).courseLearningMode.saveError }).waitFor();
-      assert.equal(await select.inputValue(), "video", "failed saves retain the current Lesson/mode for retry");
-      fail = false; await select.selectOption("text");
+      await modeSwitch.focus(); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter"); await page.getByRole("alert").filter({ hasText: getMessages(locale).courseLearningMode.saveError }).waitFor();
+      assert.equal((await modeControl.innerText()).includes(getMessages(locale).previewVideoDesign.videoMode), true, "failed saves retain the current Lesson/mode for retry");
+      fail = false; await setMode("text");
       await page.locator('[data-lesson-id="b"] [data-text-reader]').waitFor();
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="b"] [aria-current="step"]')?.textContent?.includes("text 2"));
       assert.equal(await page.evaluate(() => new URL((window as any).destination, location.href).searchParams.get("contentId")), "b-text-2");
@@ -75,38 +97,41 @@ test("mode switching resumes the last visited point after backward review, with 
       assert.equal(await page.locator("[data-text-reader]").evaluate(element => element.scrollTop), 0, "desktop reading also uses page scrolling");
       assert.deepEqual(modeRequests[1], { mode: "text", lessonId: "a" });
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-text-last-position.png` });
-      await select.selectOption("video");
+      await setMode("video");
       await page.locator('[data-lesson-id="a"] video').waitFor();
       await page.waitForFunction(() => { const media = document.querySelector<HTMLVideoElement>("video.la-lesson-video"); return media && media.readyState >= 2 && Math.abs(media.currentTime - .5) < .03; });
       assert.equal(await video.evaluate(element => (element as HTMLVideoElement).paused), true, "switching locates the chapter without autoplay");
       assert.equal(modeRequests.at(-1)?.lessonId, "b");
       positions.text = { lessonId: "a", contentId: "a-text-4" };
-      await select.selectOption("text");
+      await setMode("text");
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="a"] [aria-current="step"]')?.textContent?.includes("text 4"));
       const reviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-text-3");
       await page.getByRole("button", { name: /^1\.3 text 3/ }).click();
       await reviewed;
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
-      await select.selectOption("video"); await video.waitFor();
-      await select.selectOption("text");
+      // Point selection schedules page scrolling; let it finish before switching
+      // away so the test represents the settled reading position.
+      await page.waitForFunction(() => Math.abs(document.querySelector('[data-text-point-id="a-text-3"]')!.getBoundingClientRect().top - 12) < 2);
+      await setMode("video"); await video.waitFor();
+      await setMode("text");
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
       // The step updates before the reader scrolls to it. These screenshots stay inside
       // the viewport: a full-page one can resize the page to 1x1 for a moment, the text
       // reflows, and the reader saves whichever point that leaves on screen.
       await page.waitForFunction(() => window.scrollY > 0 && Math.abs(document.querySelector('[data-text-point-id="a-text-3"]')!.getBoundingClientRect().top - 12) < 2);
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-reviewed-1-3.png` });
-      await select.selectOption("video"); await video.waitFor();
+      await setMode("video"); await video.waitFor();
       const videoReviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-video-1");
       await page.getByRole("button", { name: /^1\.1 video 1/ }).click();
       await videoReviewed; await video.evaluate(element => (element as HTMLVideoElement).pause());
-      await select.selectOption("text");
+      await setMode("text");
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
-      await select.selectOption("video");
+      await setMode("video");
       await page.waitForFunction(() => { const media = document.querySelector<HTMLVideoElement>("video.la-lesson-video"); return media && media.readyState >= 2 && media.paused && media.currentTime < .03; });
       assert.equal(await page.locator('[aria-current="step"]').textContent(), "1.1 video 1", "video review also replaces the previous later cursor");
       positions.text = { lessonId: "b", contentId: "b-text-3" };
       await page.setViewportSize({ width: 390, height: 844 });
-      await select.selectOption("text");
+      await setMode("text");
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="b"] [aria-current="step"]')?.textContent?.includes("text 3"));
       await page.waitForFunction(() => {
         const reader = document.querySelector('[data-text-reader]'), target = document.querySelector('[data-text-point-id="b-text-3"]');

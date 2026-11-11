@@ -93,7 +93,9 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
       await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-at-end')==='true');
       const buttonBox=(await completion.boundingBox())!;
       assert.equal(await completion.evaluate(element=>getComputedStyle(element.parentElement!).position),'fixed','completion stays reachable at the viewport bottom');
-      assert.ok(Math.abs(buttonBox.y+buttonBox.height-height)<=2,'floating action stays within the viewport');
+      assert.ok(Math.abs(buttonBox.y+buttonBox.height-height+30)<=2,'floating action stays 30px above the viewport bottom');
+      assert.equal(await completion.evaluate(element=>getComputedStyle(element).borderRadius),'8px');
+      if(width>1200)assert.ok(Math.abs(buttonBox.x-(await page.locator('[data-reading-tools]').boundingBox())!.x)<=1,'completion aligns with Deep Learning');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       assert.ok(await page.locator('main').evaluate(element=>element.getBoundingClientRect().bottom+window.scrollY)>=height,'learning background reaches viewport bottom');
       await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-on-surface')==='true');

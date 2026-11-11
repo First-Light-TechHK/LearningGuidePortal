@@ -1769,7 +1769,7 @@
     "previewDescription": "Continue within the configured preview range.",
     "previewSaveError": "Your progress could not be saved. Please try again.",
     "progressUnavailable": "Learning progress could not be loaded.",
-    "welcome": "Welcome back, {name}",
+    "welcome": "Welcome, {name}",
     "description": "Your courses are listed by when you first started learning.",
     "yourLearning": "Your learning",
     "courseStates": "In progress & completed courses",

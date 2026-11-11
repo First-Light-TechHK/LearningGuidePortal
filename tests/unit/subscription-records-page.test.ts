@@ -63,7 +63,30 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await page.keyboard.press("Escape");
     assert.equal(await page.getByText(copy.subscriptionDesign.points, { exact: true }).count(), 0);
     assert.equal(await page.getByRole("table").count(), 0);
-    await card("science").getByRole("button", { name: copy.subscriptionDesign.paymentHistory }).click();
+    const historyToggle=card("science").getByRole("button", { name: copy.subscriptionDesign.paymentHistory });
+    const history=page.locator('[id="payments-science"]');
+    assert.equal(await history.getAttribute("inert"),"");
+    assert.equal(await history.evaluate(element=>element.getBoundingClientRect().height),0);
+    await historyToggle.click();
+    await page.waitForFunction(()=>{
+      const element=document.getElementById("payments-science")!;
+      const height=element.getBoundingClientRect().height;
+      return height>0 && height<element.firstElementChild!.scrollHeight;
+    });
+    assert.equal(await history.getAttribute("aria-hidden"),"false");
+    await history.evaluate(element=>element.getAnimations().forEach(animation=>animation.finish()));
+    const expandedHeight=await history.evaluate(element=>element.getBoundingClientRect().height);
+    assert.ok(expandedHeight>0);
+    await historyToggle.click();
+    assert.equal(await history.getAttribute("inert"),"","links stop receiving focus as soon as closing starts");
+    await page.waitForFunction(height=>{
+      const current=document.getElementById("payments-science")!.getBoundingClientRect().height;
+      return current>0 && current<height;
+    },expandedHeight);
+    // Reverse an in-flight close, keeping this card independent of its neighbours.
+    await historyToggle.click();
+    await page.waitForFunction(()=>document.getElementById("payments-science")!.getBoundingClientRect().height===document.getElementById("payments-science")!.firstElementChild!.scrollHeight);
+    assert.equal(await historyToggle.getAttribute("aria-expanded"),"true");
     assert.deepEqual(await page.getByRole("columnheader").allTextContents(), [copy.subscriptionDesign.paymentDate, copy.learning.amount, copy.subscriptionDesign.status, copy.learning.validPeriod, copy.learning.receipt]);
     assert.equal(await card("science").locator('td[data-status="paid"]').count(), 2);
     assert.equal(await card("science").locator('td[data-status="failed"]').count(), 1);
@@ -85,7 +108,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
     assert.equal(await card("science").locator('div[data-colour="science"]').evaluate(e => e.getBoundingClientRect().width), 120);
     assert.equal(await card("science").evaluate(e => e.getBoundingClientRect().x), 384);
     await page.locator('img[src*="/subscriptions/design/"]').evaluateAll(async images => Promise.all(images.map(img => (img as HTMLImageElement).decode())));
-    for (const icon of await page.locator('img[src*="/subscriptions/design/"]:visible').all()) assert.equal(await icon.evaluate(e => e.getBoundingClientRect().width), 16);
+    for (const icon of await page.locator('img[src*="/subscriptions/design/"]:visible').all()) assert.equal(await icon.evaluate(e => (e as HTMLElement).offsetWidth), 16, "rotation preserves the icon's 16px layout size");
     await page.screenshot({ path: `${output}/${locale}-current-v4.png`, fullPage: true });
     await card("chinese").getByRole("button", { name: copy.learning.payNow , exact: true }).click();
     await page.getByRole("alert").waitFor(); assert.equal(await page.getByRole("alert").textContent(), "Fixture billing failure");
@@ -123,6 +146,15 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
     assert.equal(requests.at(-1).action, "resume");
     for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false); await page.screenshot({ path: `${output}/${locale}-current-v4-${width}.png`, fullPage: true }); }
+    await page.emulateMedia({reducedMotion:"reduce"});
+    await historyToggle.click();
+    assert.equal(await history.evaluate(element=>element.getAnimations().length),0);
+    assert.equal(await history.evaluate(element=>element.getBoundingClientRect().height),0);
+    assert.equal(await card("science").getByRole("table").count(),0);
+    await historyToggle.click();
+    assert.equal(await history.evaluate(element=>element.getAnimations().length),0);
+    assert.ok(await history.evaluate(element=>element.getBoundingClientRect().height)>0);
+    await page.emulateMedia({reducedMotion:"no-preference"});
     // The upgraded product has the original Category payment, rather than a duplicate past card.
     const source = { ...chinese, state: "expired" }, everything = { ...make("everything", "Everything", "active", "2027-01-31"), stripeSubscriptionId: source.stripeSubscriptionId };
     const oldScience = make("old-science", "Science", "expired", "2026-06-30");

@@ -43,10 +43,10 @@ test("lesson tools show access hints only for unentitled previews and retain ena
     }
     await page.addScriptTag({ content: bundle.outputFiles.find(file => file.path.endsWith("js"))!.text });
     const messages = getMessages(locale), copy = messages.previewVideoDesign;
-    const mount = (key: string, entitled: boolean, type = "video", title = "Looking closely") => page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), {
+    const mount = (key: string, entitled: boolean, type = "video", title = "Looking closely", readingHtml = "<p>Reading content.</p>", outlineCount = 1) => page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), {
       key, locale, entitled, courseId: "course", courseTitle: "The Art of Seeing", category: "Art", description: "Learn to observe a work of art with attention, curiosity and confidence.",
-      lesson: { id: "lesson", title, body: type === "legacy" ? "Legacy reading content." : "", durationMinutes: 2, contents: type === "legacy" ? [] : [{ id: "content", type, title: "Observe composition", mode: "lecture", nodes: [], ...(type === "text" ? { html: "<p>Reading content.</p>" } : { url: "/fixture.mp4" }) }] },
-      outline: [{ id: "lesson", title, number: "01", href: "/lesson" }], poster: "/portal/course-study.jpg", initialCompleted: false, nextHref: "/next", studyEndpoint: "/api/study/events",
+      lesson: { id: "lesson", title, body: type === "legacy" ? "Legacy reading content." : "", durationMinutes: 2, contents: type === "legacy" ? [] : [{ id: "content", type, title: "Observe composition", mode: "lecture", nodes: [], ...(type === "text" ? { html: readingHtml } : { url: "/fixture.mp4" }) }] },
+      outline: Array.from({ length: outlineCount }, (_, index) => ({ id: index ? `lesson-${index}` : "lesson", title, number: String(index + 1).padStart(2, "0"), href: `/lesson-${index}` })), poster: "/portal/course-study.jpg", initialCompleted: false, nextHref: "/next", studyEndpoint: "/api/study/events",
     });
     const tools = page.getByRole("complementary", { name: copy.deepLearning });
     for (const entitled of [true, false]) {
@@ -60,7 +60,16 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       const column = (await tools.boundingBox())!;
       assert.equal(column.width, 160);
       assert.equal(column.x - (card.x + card.width), 24, "column is beside the player card");
-      assert.equal(column.y - card.y, 10, "column follows the actual player position");
+      const outlineHeading = page.locator('[data-reading-outline] h2');
+      assert.ok(Math.abs((await tools.getByRole('heading').boundingBox())!.y - (await outlineHeading.boundingBox())!.y) <= 1, 'video sidebar headings align');
+      await page.setViewportSize({ width: 1440, height: 700 });
+      await page.evaluate(() => window.scrollTo(0, 200));
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const stickyTop = (await tools.getByRole('heading').boundingBox())!.y;
+      assert.ok(Math.abs(stickyTop - (await outlineHeading.boundingBox())!.y) <= 1, 'video sidebars stay aligned after scrolling');
+      assert.ok(Math.abs(stickyTop - 12) <= 1);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.setViewportSize({ width: 1440, height: 1024 });
       await page.screenshot({ path: `test-results/lesson-tools/${locale}-${entitled ? "active" : "locked"}-layout.png`, fullPage: true });
       const tooltip = tools.getByRole("tooltip", { includeHidden: true });
       assert.equal(await tooltip.count(), entitled ? 0 : 1);
@@ -131,7 +140,7 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       await page.setViewportSize({ width: 1440, height: 1024 });
     }
     await mount("long-title", true, "video", "A long lesson title that wraps onto multiple lines to check alignment with the actual player below the heading");
-    assert.equal((await tools.boundingBox())!.y - (await page.locator(".la-player").locator("..").boundingBox())!.y, 10);
+    assert.ok(Math.abs((await tools.getByRole("heading").boundingBox())!.y - (await page.locator("[data-reading-outline] h2").boundingBox())!.y) <= 1);
     await mount("access-change", false); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 1);
     await mount("access-change", true); assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
     assert.equal(await tools.getAttribute("aria-describedby"), null);assert.equal(await tools.getAttribute("tabindex"), null);
@@ -142,6 +151,53 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       assert.equal(await page.locator(".preview-progress button").count(), 0);
       assert.equal(await page.getByRole("button", { name: messages.videoCompletion.markComplete, exact: true }).isVisible(), true);
       if (type === "text") await page.screenshot({ path: `test-results/lesson-tools/${locale}-text.png`, fullPage: true });
+    }
+    async function assertCompletionPosition(width: number) {
+      await page.waitForFunction(() => {
+        const button = document.querySelector('[data-text-completion] button')?.getBoundingClientRect();
+        const tools = document.querySelector('[data-reading-tools]')?.getBoundingClientRect();
+        return button && tools && Math.abs(innerHeight - button.bottom - 30) < 1 && (innerWidth > 1200 ? Math.abs(button.left - tools.left) < 1 : Math.abs(innerWidth - button.right - 24) < 1);
+      });
+      const button = page.locator('[data-text-completion] button');
+      const box = (await button.boundingBox())!;
+      assert.ok(box.x >= 0 && box.x + box.width <= width, 'completion remains inside the viewport');
+      assert.equal(await button.evaluate(element => getComputedStyle(element).borderRadius), '8px');
+    }
+    const longReading = '<p>Read slowly and observe the relationships in this lesson.</p>'.repeat(80);
+    for (const width of [1440, 1920, 2560]) {
+      await page.setViewportSize({ width, height: 900 });
+      await mount(`aligned-${width}`, true, "text", "A long text lesson title that can wrap onto several lines", longReading);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.waitForFunction(() => [...document.querySelectorAll('[data-reading-outline],[data-reading-tools]')].every(element => element.getAttribute('data-reading-sticky') === 'true'));
+      const outline = page.locator('[data-reading-outline]');
+      const left = (await outline.getByRole('heading').boundingBox())!;
+      const right = (await tools.getByRole('heading').boundingBox())!;
+      assert.ok(Math.abs(left.y - right.y) <= 1, 'both sidebar headings start together');
+      assert.ok(Math.abs(left.y - (await page.locator('article > header').boundingBox())!.y) <= 1, 'sidebars start alongside the lesson header');
+      await assertCompletionPosition(width);
+      if (width === 1440) await page.screenshot({ path: `test-results/lesson-tools/${locale}-reading-aligned-top.png` });
+      for (const scrollTop of [300, 700]) {
+        await page.evaluate(top => window.scrollTo(0, top), scrollTop);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const leftTop = (await outline.getByRole('heading').boundingBox())!.y;
+        const rightTop = (await tools.getByRole('heading').boundingBox())!.y;
+        assert.ok(Math.abs(leftTop - rightTop) <= 1, 'both headings stay aligned after scrolling');
+        assert.ok(Math.abs(leftTop - 12) <= 1, `sticky content is 12px from the viewport top, received ${leftTop}`);
+        await assertCompletionPosition(width);
+      }
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      if (width === 1440) await page.screenshot({ path: `test-results/lesson-tools/${locale}-reading-aligned-scroll.png` });
+    }
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await mount('long-outline', true, 'text', 'Looking closely', longReading, 40);
+    await page.waitForFunction(() => document.querySelector('[data-reading-outline]')?.getAttribute('data-reading-sticky') === 'false');
+    assert.notEqual(await page.locator('[data-reading-outline]').evaluate(element => getComputedStyle(element).position), 'sticky', 'an oversized outline remains page-scrollable');
+    for (const width of [1200, 768, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await mount(`reading-narrow-${width}`, true, 'text', 'Looking closely', longReading);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      assert.ok((await tools.boundingBox())!.y >= (await page.locator('article').boundingBox())!.y + (await page.locator('article').boundingBox())!.height - 1, 'narrow screens keep tools after the reading article');
+      await assertCompletionPosition(width);
     }
     assert.deepEqual(errors, []);
     await page.close();
