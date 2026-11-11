@@ -15,7 +15,7 @@ const displayFixture = (name:string,locale:string): OverviewDisplay => ({name,co
 }))});
 
 test("Overview matches horizontal Figma cards in both locales and adapts to mobile",async()=>{
-  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {OverviewDesign} from './components/portal/OverviewDesign';import {AccountNav} from './components/portal/AccountNav';import {getMessages} from './lib/i18n/messages';import styles from './components/portal/overview-design.module.css';const root=createRoot(document.getElementById('root'));window.mount=props=>root.render(<main className={'portal-page portal-account-page '+styles.page}><header className='portal-header' style={{height:68}}>Learning Guide</header><AccountNav locale={props.locale} copy={getMessages(props.locale).account}/><OverviewDesign {...props}/></main>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"overview.js",platform:"browser",jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/(image|link|navigation)$/},args=>({path:args.path,namespace:"next"}));b.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path==="next/navigation"?"export function usePathname(){return location.pathname}":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>}":"import React from 'react';export default function Image(p){return <img {...p}/>}"}));}}]});
+  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {OverviewDesign} from './components/portal/OverviewDesign';import {AccountNav} from './components/portal/AccountNav';import {getMessages} from './lib/i18n/messages';import styles from './components/portal/overview-design.module.css';const root=createRoot(document.getElementById('root'));window.mount=props=>root.render(<main className={'portal-page portal-account-page '+styles.page}><header className='portal-header' style={{height:68}}>Learning Guide</header><AccountNav locale={props.locale} copy={getMessages(props.locale).account}/><OverviewDesign {...props}/><footer className="portal-footer" style={{height:260}}>Learning Guide</footer></main>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"overview.js",platform:"browser",jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/(image|link|navigation)$/},args=>({path:args.path,namespace:"next"}));b.onLoad({filter:/.*/,namespace:"next"},args=>({resolveDir:process.cwd(),loader:"tsx",contents:args.path==="next/navigation"?"export function usePathname(){return location.pathname}":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>}":"import React from 'react';export default function Image(p){return <img {...p}/>}"}));}}]});
   const browser=await chromium.launch();await mkdir("test-results/overview-v1",{recursive:true});
   try {for(const locale of ["en-GB","zh-CN"]){
     const page=await browser.newPage({viewport:{width:1440,height:1298}});
@@ -38,6 +38,31 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
     assert.ok((await cards.first().getByRole("link").getAttribute("href"))?.includes("contentId=video-0"));
     await page.screenshot({path:`test-results/overview-v1/${locale}-desktop.png`,fullPage:true});
     for(const width of [2560,1920,1440,1200,768,390,320]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);if(width>1300){assert.equal((await page.locator(".account-nav").boundingBox())!.x,Math.max(40,(width-1440)/2),"sidebar and content share the centred Personal Settings frame");const cardBox=(await cards.first().boundingBox())!;assert.equal(cardBox.width,946);assert.ok(Math.abs((cardBox.x-280)-(width-cardBox.x-cardBox.width))<1,"wide-screen content is centred beside the sidebar");}if(width===390)await page.screenshot({path:`test-results/overview-v1/${locale}-mobile.png`,fullPage:true});}
+    await page.setViewportSize({width:1440,height:800});
+    const longDisplay=displayFixture(name,locale);
+    longDisplay.courses=Array.from({length:12},(_,index)=>({...longDisplay.courses[index%3],id:`long-${index}`}));
+    await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:longDisplay});
+    await page.waitForFunction(()=>document.querySelectorAll('[data-overview-course]').length===12);
+    const support=page.locator('.account-nav-support'), nav=page.locator('.account-nav');
+    assert.equal(await support.getByRole('img',{name:getMessages(locale as "en-GB"|"zh-CN").account.contact,exact:true}).count(),1);
+    assert.equal(await support.locator('strong').count(),0,'support heading is replaced by its accessible headset icon');
+    assert.equal(await support.getByRole('link').getAttribute('href'),`/${locale}/account/my-learning/support`);
+    for(const top of [0,500]){
+      await page.evaluate(top=>window.scrollTo(0,top),top);
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      const card=(await support.boundingBox())!, sidebar=(await nav.boundingBox())!;
+      assert.ok(Math.abs(card.y+card.height-776)<=2,'support floats 24px above the viewport bottom');
+      assert.ok(card.x>=sidebar.x && card.x+card.width<=sidebar.x+sidebar.width,'support stays horizontally within the white sidebar');
+    }
+    await page.screenshot({path:`test-results/overview-v1/${locale}-support-floating.png`});
+    await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const atEnd=(await support.boundingBox())!, sidebarEnd=(await nav.boundingBox())!;
+    const footerTop=(await page.locator('footer').boundingBox())!.y;
+    assert.ok(Math.abs(sidebarEnd.y+sidebarEnd.height-atEnd.y-atEnd.height-58)<=2,'support stops above the sidebar bottom padding');
+    assert.ok(atEnd.y+atEnd.height<footerTop,'support never overlaps the footer');
+    await page.screenshot({path:`test-results/overview-v1/${locale}-support-bottom-boundary.png`});
+    await page.evaluate(()=>window.scrollTo(0,0));
     const preview=displayFixture(name,locale);preview.courses=[{...preview.courses[0],title:"Chinese Humanities preview",lessonCount:4,progress:0,currentLesson:1,action:"preview",href:`/${locale}/portal/courses/chinese/public-lesson?viewMode=video&contentId=preview-point`}];
     await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:preview});
     const previewMessages=getMessages(locale as "en-GB"|"zh-CN");

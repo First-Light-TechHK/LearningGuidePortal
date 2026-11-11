@@ -121,14 +121,16 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
           {pendingUpgrade ? <Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(pendingUpgrade.id)}#order-${encodeURIComponent(pendingUpgrade.id)}`}>{getMessages(locale).orderManagement.viewOrders}</Link> : subscription && allowCategoryUpgrade && state === "active" && subscription.scope === "category" && subscription.device !== "mobile" && subscription.stripeSubscriptionId ? <Link href={`/${locale}/subscription?upgradeFrom=${encodeURIComponent(subscription.id)}`}>{copy.upgrade}</Link> : null}
         </div></div>
         <div className={styles.time} data-state={state}><strong>{state === "grace" ? view.gracePeriod : record.past ? state === "unavailable" ? copy.validPeriod : view.expiredOn : copy.validUntil}</strong><span>{until ? date(until) : view.periodUnavailable}</span></div>
-        <button className={styles.historyToggle} type="button" aria-expanded={Boolean(expanded[record.id])} aria-controls={`payments-${record.id}`} onClick={() => setExpanded(items => ({ ...items, [record.id]: !items[record.id] }))}>{view.paymentHistory}<Image src={`/portal/subscriptions/design/chevron-${expanded[record.id] ? "up" : "down"}.svg`} width={16} height={16} alt=""/></button>
+        <button className={styles.historyToggle} type="button" aria-expanded={Boolean(expanded[record.id])} aria-controls={`payments-${record.id}`} onClick={() => setExpanded(items => ({ ...items, [record.id]: !items[record.id] }))}>{view.paymentHistory}<Image src="/portal/subscriptions/design/chevron-down.svg" width={16} height={16} alt=""/></button>
       </div>
-      {expanded[record.id] ? <div className={styles.history} id={`payments-${record.id}`}>
+      <div className={styles.historyDisclosure} id={`payments-${record.id}`} data-expanded={Boolean(expanded[record.id])} aria-hidden={!expanded[record.id]} inert={!expanded[record.id]}>
+        <div className={styles.historyClip}><div className={styles.history}>
         {record.orders.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{view.paymentDate}</th><th>{copy.amount}</th><th>{view.status}</th><th>{copy.validPeriod}</th><th>{copy.receipt}</th></tr></thead><tbody>{record.orders.map(payment => {
           const note = payment.kind === "upgrade" ? payment.upgradeProration ? view.proratedUpgrade : view.upgradeType : payment.plan?.id !== subscription?.plan?.id ? payment.presentation?.name || payment.plan?.name : null;
           return <tr key={payment.id}><td>{date(payment.createdAt)}</td><td>{formatPlanPrice(locale, payment)}{note && <small>{note}</small>}</td><td data-status={payment.status}>{paymentStatus(payment)}</td><td>{payment.servicePeriodStart && payment.servicePeriodEnd ? `${date(payment.servicePeriodStart)} – ${date(payment.servicePeriodEnd)}` : "—"}</td><td>{canViewSubscriptionReceipt(payment) ? <a href={`/api/my-learning/orders/${encodeURIComponent(payment.id)}/receipt?locale=${locale}`} target="_blank" rel="noreferrer">{view.viewReceipt}</a> : "—"}</td></tr>;
         })}</tbody></table></div> : <p>{view.noHistory}</p>}
-      </div> : null}
+        </div></div>
+      </div>
     </article>;
   };
 

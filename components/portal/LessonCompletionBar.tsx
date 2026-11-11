@@ -11,8 +11,9 @@ import styles from "./lesson-completion.module.css";
 import { completeLessonOutline } from "@/lib/completeLessonOutline";
 import { createClientEventId } from "@/lib/clientEventId";
 
-export function LessonCompletionBar({ onCompleted, locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, percentage, seconds, initialCompleted, assessmentAvailability, visible = true, contentId, endedRequest = 0, nextHref = null, endpoint = "/api/study/events" }: {
+export function LessonCompletionBar({ onCompleted, locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, percentage, seconds, initialCompleted, assessmentAvailability, actionOnly = false, visible = true, contentId, endedRequest = 0, nextHref = null, endpoint = "/api/study/events" }: {
   onCompleted?: () => void;
+  actionOnly?: boolean;
   assessmentAvailability?: AssessmentAvailability;
   nextLesson?: { number: string; title: string };
   locale: Locale; courseId: string; lessonId: string; lessonNumber: string; lessonTitle?: string; percentage: number; seconds: number; initialCompleted: boolean;
@@ -64,10 +65,10 @@ export function LessonCompletionBar({ onCompleted, locale, courseId, lessonId, l
     }
   }, [percentage, initialCompleted, complete]);
   const showBar = visible || completed || initialCompleted;
-  return <>{showBar && <section className={styles.bar} aria-label={copy.label} data-completed={completed || initialCompleted}>
+  return <>{showBar && <section className={`${styles.bar} ${actionOnly ? styles.actionOnly : ""}`} aria-label={copy.label} data-completed={completed || initialCompleted}>
     {completed || initialCompleted ? <span className={styles.completed}><Image src="/portal/lesson-complete/check-filled.svg" width={16} height={16} alt=""/>{messages.learning.completed}</span> : <>
       <Image src="/portal/lesson-complete/check-circle.svg" width={16} height={16} alt=""/>
-      <span className={styles.percent}>{percent}%</span><span className={styles.divider} aria-hidden="true"/>
+      {!actionOnly && <><span className={styles.percent}>{percent}%</span><span className={styles.divider} aria-hidden="true"/></>}
       <button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button>
     </>}
     {error && <p className={styles.error} role="alert">{error}{continuationFailed && <button type="button" disabled={busy} onClick={() => void continueLesson()}>{messages.assessmentRecords.retry}</button>}</p>}

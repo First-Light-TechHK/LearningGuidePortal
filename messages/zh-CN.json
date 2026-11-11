@@ -479,7 +479,8 @@
     "eyebrow": "Learning Guide Portal",
     "title": "通过引导式课程学习",
     "description": "先浏览课程和公开首课，再在课程范围内使用 AI Tutor 持续学习。",
-    "navigation": {"primaryLabel": "主导航", 
+    "navigation": {
+      "primaryLabel": "主导航",
       "courses": "课程",
       "studyGroups": "学习小组",
       "pricing": "订阅",
@@ -1357,7 +1358,8 @@
       "课程访问权限由服务返回的订阅和 entitlement 决定。只有课程启用时，公开首课才会开放。续费、取消和退款条件会在确认页和 Stripe 托管支付流程中显示。",
       "AI Tutor 用于学习支持，不应被当作专业、法律、医疗或财务建议。"
     ],
-    "cookiesLabel": "Cookie 偏好设置", "cookiesTitle": "Cookie 设置",
+    "cookiesLabel": "Cookie 偏好设置",
+    "cookiesTitle": "Cookie 设置",
     "cookiesIntro": "必要 Cookie 用于保持登录和安全功能。可选分析 Cookie 在你主动选择前保持关闭。",
     "acceptOptional": "允许可选 Cookie",
     "rejectOptional": "仅使用必要 Cookie",
@@ -1769,7 +1771,7 @@
     "previewDescription": "继续学习开放预览的课程内容。",
     "previewSaveError": "学习进度保存失败，请重试。",
     "progressUnavailable": "暂时无法加载学习进度。",
-    "welcome": "欢迎回来，{name}",
+    "welcome": "欢迎，{name}",
     "description": "课程按您首次开始学习的时间排列。",
     "yourLearning": "您的学习",
     "courseStates": "学习中和已完成的课程",

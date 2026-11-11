@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { Select } from "antd";
+import { PortalProvider } from "./ui/PortalProvider";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { TutorChat } from "./TutorChat";
@@ -67,7 +69,6 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   useEffect(() => { setPlayingId(null); }, [lesson.id]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
   useLayoutEffect(() => {
-    if (mode !== "text") return;
     const page = pageRef.current;
     if (!page) return;
     const outline = page.querySelector<HTMLElement>("[data-reading-outline]");
@@ -169,6 +170,16 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     { icon: "understanding", title: copy.understanding, href: entitled ? `/${locale}/portal/courses/${encodeURIComponent(courseId)}/understanding?lessonId=${encodeURIComponent(lesson.id)}${studyEndpoint === "/api/study/preview" ? "&from=preview" : ""}` : undefined },
     { icon: "explore", title: copy.explore, action: "explore" },
   ];
+  const toolsPanel = (<aside className={styles.tools} data-reading-tools aria-label={copy.deepLearning} tabIndex={!entitled ? 0 : undefined} aria-describedby={!entitled ? toolId : undefined}><h2>{copy.deepLearning}</h2>
+            {tools.map(tool => {
+              const body = <><span className={styles.toolIcon} aria-hidden="true"><Image src={`/portal/study/${tool.icon}.svg`} alt="" width={16} height={16}/></span><span className={styles.toolLabel}>{tool.title}</span></>;
+              return <div key={tool.icon} className={styles.toolItem}>
+                {tool.href ? <Link className={styles.tool} href={tool.href}>{body}</Link> : <button type="button" className={styles.tool} disabled={!entitled} aria-expanded={tool.action === "tutor" ? tutorOpen : undefined} onClick={tool.action === "tutor" ? () => setTutorOpen(value => !value) : openExploration}>{body}</button>}
+              </div>;
+            })}
+            {!entitled && <span id={toolId} className={styles.toolTooltip} role="tooltip">{copy.includedWithFullAccess}</span>}
+            <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
+          </aside>);
   return <div ref={pageRef} className={`${styles.page} ${mode === "text" ? styles.textPage : ""}`} data-course-id={courseId} data-lesson-id={lesson.id}>
     <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb}>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
@@ -179,10 +190,14 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     <div className={`${styles.layout} ${mode === "text" ? styles.textLayout : ""}`}>
       <aside className={styles.sidebar} data-reading-outline>
         <h2>{courseTitle}</h2>
-        <div className={styles.modeControl}>{hasMultipleModes ? <><select className={styles.modeSwitch} aria-label={copy.learningMode} value={mode} disabled={modeSaving} onChange={event => void switchMode(event.target.value as CourseLearningMode)}>
-          <option value="video" disabled={!modeLessonDestination(outline, lesson.id, "video", Boolean(videoContent))}>{copy.videoMode}</option>
-          <option value="text" disabled={!modeLessonDestination(outline, lesson.id, "text", Boolean(textContent) || (!contents.length && Boolean(lesson.body?.trim())))}>{copy.textMode}</option>
-        </select><Image src="/portal/learning-mode/dropdown.svg" alt="" width={10.3923} height={9} /></> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
+        <div className={styles.modeControl}>{hasMultipleModes ? <PortalProvider locale={locale}>
+          <Select<CourseLearningMode> className={styles.modeSelect} size="small" variant="borderless" aria-label={copy.learningMode} aria-busy={modeSaving} value={mode} loading={modeSaving} disabled={modeSaving} popupMatchSelectWidth virtual={false} styles={{ root: { paddingInline: 4, columnGap: 4 }, content: { flex: "0 0 auto", marginInlineEnd: 0 }, suffix: { marginInlineStart: 2 }, popup: { root: { padding: 3 }, listItem: { minHeight: 24, padding: "3px 8px", fontSize: 12, lineHeight: "18px" } } }}
+            options={[
+              { value: "video", label: copy.videoMode, disabled: !modeLessonDestination(outline, lesson.id, "video", Boolean(videoContent)) },
+              { value: "text", label: copy.textMode, disabled: !modeLessonDestination(outline, lesson.id, "text", Boolean(textContent) || (!contents.length && Boolean(lesson.body?.trim()))) },
+            ]}
+            onChange={value => void switchMode(value)} />
+        </PortalProvider> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
           {outline.map(item => { const destination = lessonOutlineDestination(item, mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
@@ -197,28 +212,18 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
         </nav>
       </aside>
       <article className={styles.main}>
-        <header className={styles.heading}><p>{current?.number}</p><h1>{lesson.title}</h1>{!entitled && <button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button>}{selected?.type === "video" && entitled && <LessonCompletionBar onCompleted={() => setLessonCompleted(true)} nextLesson={nextLesson} assessmentAvailability={assessmentAvailability} lessonTitle={lesson.title} key={`${lesson.id}:${selected.id}`} contentId={selected.id} endedRequest={ended?.contentId === selected.id ? ended.request : 0} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} percentage={videoCompletionPercent(selectedVideoProgress) || 0} seconds={Math.floor(selectedVideoProgress?.currentTime || 0)} initialCompleted={lessonCompleted || initialCompleted} nextHref={nextHref} endpoint={studyEndpoint}/>}<div className={styles.introduction}>{description}</div><Image className={styles.headingDivider} src="/portal/study/divider.svg" alt="" width={940} height={1}/></header>
+        <header className={styles.heading}><p>{current?.number}</p><h1>{lesson.title}</h1>{!entitled && <button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button>}{selected?.type === "video" && entitled && <LessonCompletionBar actionOnly onCompleted={() => setLessonCompleted(true)} nextLesson={nextLesson} assessmentAvailability={assessmentAvailability} lessonTitle={lesson.title} key={`${lesson.id}:${selected.id}`} contentId={selected.id} endedRequest={ended?.contentId === selected.id ? ended.request : 0} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} percentage={videoCompletionPercent(selectedVideoProgress) || 0} seconds={Math.floor(selectedVideoProgress?.currentTime || 0)} initialCompleted={lessonCompleted || initialCompleted} nextHref={nextHref} endpoint={studyEndpoint}/>}<div className={styles.introduction}>{description}</div><Image className={styles.headingDivider} src="/portal/study/divider.svg" alt="" width={940} height={1}/></header>
         <div className={styles.mediaRow} data-text-row>
           {mode === "text" ? <div className={styles.textSurface}><TextLessonReader key={`${lesson.id}:text`} className={`${styles.player} ${styles.textPlayer}`} label={copy.textMode} contents={contents} body={lesson.body} locale={locale} lessonNumber={current?.number || "01"} initialContentId={presentation.mode === "text" ? presentation.contentId : textContent?.id || ""} navigationRequest={textNavigation} onContentChange={setContentId} preview={textPolicy} ending={entitled ? <div className={styles.endingSpace}><span data-text-completion-trigger/></div> : undefined} previewEnd={textEnd ? <div className={styles.previewEnd} data-text-preview-end><div className={styles.lockedText} aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index}/>)}</div><div className={styles.previewFade}/><section className={styles.previewNotice} aria-label={messages.previewAccess.previewEnds}><h2><Image src="/portal/text-preview/lock.svg" alt="" width={16} height={16}/>{messages.previewAccess.previewEnds}</h2><button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button></section></div> : undefined}/>{entitled && <TextLessonCompletion onCompleted={() => setLessonCompleted(true)} initialCompleted={lessonCompleted || initialCompleted} nextLesson={nextLesson} variant="card" assessmentAvailability={assessmentAvailability} key={lesson.id} visible={mode === "text"} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} nextHref={nextHref} endpoint={studyEndpoint}/>}</div> : <div className={styles.player} key={`${lesson.id}:video`}>
             <LessonContentPlayer videoNavigationRequest={videoNavigation} exhibitContainer={exhibitContainer} contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={entitled ? undefined : trialGate} onPreviewAccess={!entitled ? () => void chooseAccessPlan() : undefined} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} onVideoStart={setPlayingId} onVideoProgress={setVideoProgress} onVideoEnded={progress => setEnded(previous => ({ contentId: progress.contentId, request: (previous?.request || 0) + 1 }))} videoPresentation={{ poster, playLabel: copy.play }} />
           </div>}
-          <aside className={styles.tools} data-reading-tools aria-label={copy.deepLearning} tabIndex={!entitled ? 0 : undefined} aria-describedby={!entitled ? toolId : undefined}><h2>{copy.deepLearning}</h2>
-            {tools.map(tool => {
-              const body = <><span className={styles.toolIcon} aria-hidden="true"><Image src={`/portal/study/${tool.icon}.svg`} alt="" width={16} height={16}/></span><span className={styles.toolLabel}>{tool.title}</span></>;
-              return <div key={tool.icon} className={styles.toolItem}>
-                {tool.href ? <Link className={styles.tool} href={tool.href}>{body}</Link> : <button type="button" className={styles.tool} disabled={!entitled} aria-expanded={tool.action === "tutor" ? tutorOpen : undefined} onClick={tool.action === "tutor" ? () => setTutorOpen(value => !value) : openExploration}>{body}</button>}
-              </div>;
-            })}
-            {!entitled && <span id={toolId} className={styles.toolTooltip} role="tooltip">{copy.includedWithFullAccess}</span>}
-            <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
-          </aside>
         </div>
-        {mode === "video" && entitled && <TextLessonCompletion onCompleted={() => setLessonCompleted(true)} initialCompleted={lessonCompleted || initialCompleted} key={`${lesson.id}:video-completion`} variant="inline" learningMode="video" locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} nextLesson={nextLesson} nextHref={nextHref} assessmentAvailability={assessmentAvailability} endpoint={studyEndpoint}/>}
         {tutorOpen && entitled && tutorOnline && <TutorDrawer onClose={() => setTutorOpen(false)}><TutorChat locale={locale} courseId={courseId} lessonId={lesson.id} copy={messages.learning} onClose={() => setTutorOpen(false)}/></TutorDrawer>}
         <div className={styles.progress}>
           <PreviewProgress enabled={entitled && !textLocked && (mode !== "video" || playingId === selected?.id)} showError={entitled && mode !== "video"} endpoint={studyEndpoint} courseId={courseId} lessonId={lesson.id} contentId={selected?.id || null} learningMode={selected ? selected.type === "video" ? "video" : "text" : !contents.length && lesson.body?.trim() ? "text" : undefined} seconds={lesson.durationMinutes * 60} initialCompleted={lessonCompleted || initialCompleted} canComplete={false} copy={{ ...messages.learning, saveError: messages.overviewDesign.previewSaveError }} />
         </div>
       </article>
+      {toolsPanel}
     </div>
     {exploreOpen && <ExplorationDialog data={explorationData} lessons={outline.map(lesson=>({number:lesson.number,title:lesson.title,unlocked:Boolean(lesson.href)}))} locale={locale} courseId={courseId} lessonNumber={current?.number || "01"} tutorAvailable={tutorOnline} onClose={() => setExploreOpen(false)} onAskTutor={() => { setExploreOpen(false); setTutorOpen(true); }}/> }
     {accessPlanOpen && !entitled && <TrialLimitModal gate={trialGate || { pricingHref, recommendations: [] }} locale={locale} onClose={() => setAccessPlanOpen(false)} />}

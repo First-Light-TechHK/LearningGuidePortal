@@ -54,6 +54,37 @@ test("five subscription designs retain bilingual responsive states, original ico
     for (let index = 0; index < fixtures.length; index++) {
       await mount(index); const kind = propsFor(index).selection.kind;
       if (index === 0) assert.equal(await page.locator(".pricing-design-card").count(), 2);
+      if (index === 0) {
+        for(const viewport of [{width:1280,height:640},{width:1366,height:650},{width:1440,height:768},{width:1536,height:864},{width:1920,height:900},{width:1024,height:768}]) {
+          await page.setViewportSize(viewport);
+          for(const term of [copy.pricingDesign.sixMonths,copy.pricingDesign.year]) {
+            await page.getByRole("button",{name:term,exact:true}).click();
+            await page.waitForFunction(()=>getComputedStyle(document.querySelector('.pricing-title-row [aria-pressed=true]')!).backgroundColor==="rgb(21, 93, 252)");
+            await page.evaluate(()=>{scrollTo(0,0);return document.fonts.ready;});
+            const geometry=await page.evaluate(()=>({
+              viewport:innerHeight,
+              topGap:document.querySelector('.pricing-title-row')!.getBoundingClientRect().top-document.querySelector('.portal-header')!.getBoundingClientRect().bottom,
+              titleGap:document.querySelector('.pricing-comparison')!.getBoundingClientRect().top-document.querySelector('.pricing-title-row')!.getBoundingClientRect().bottom,
+              actions:Array.from(document.querySelectorAll<HTMLElement>('.pricing-design-card .purchase-actions button')).map(button=>({top:button.getBoundingClientRect().top,bottom:button.getBoundingClientRect().bottom,height:button.getBoundingClientRect().height,font:parseFloat(getComputedStyle(button).fontSize),scroll:button.scrollHeight,client:button.clientHeight})),
+              cards:Array.from(document.querySelectorAll('.pricing-design-card')).map(card=>card.getBoundingClientRect().bottom),
+              overflow:document.documentElement.scrollWidth>innerWidth,
+            }));
+            assert.ok(geometry.topGap<=24 && geometry.titleGap<=20,`${locale}/${viewport.width}x${viewport.height}: compact heading spacing`);
+            assert.equal(geometry.actions.length,2);
+            for(const action of geometry.actions) {
+              assert.ok(action.top>0 && action.bottom<=geometry.viewport-8,`${locale}/${viewport.width}x${viewport.height}/${term}: action stays fully in the initial viewport: ${JSON.stringify(geometry)}`);
+              assert.ok(action.height>=44 && action.font>=14 && action.scroll<=action.client,"purchase action remains readable and operable");
+            }
+            assert.ok(geometry.cards.every(bottom=>bottom<=geometry.viewport-8),"complete cards fit without clipping");
+            assert.equal(geometry.overflow,false);
+          }
+          await page.screenshot({path:`${output}/${locale}-compact-${viewport.width}x${viewport.height}.png`});
+        }
+        await page.setViewportSize({width:1440,height:1024});
+        // Reset the plan and let viewport-dependent styles settle before the existing fixed-layout checks.
+        await mount(index);
+        await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+      }
       if (index === 1) { await page.locator(".pricing-upgrade-action button").waitFor({ state: "visible" }); await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".pricing-upgrade-action button")?.disabled); assert.equal(await page.locator(".pricing-upgrade-action button").isEnabled(), true); assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "US$35.86"); }
       if (index === 2) { assert.equal(await page.locator(".pricing-upgrade-action").count(), 0); assert.equal(await page.locator(".pricing-design-card").count(), 1); assert.equal(await page.locator(".pricing-category-switch button").count(), 1); }
       if (index >= 3) { assert.equal(await page.locator(".pricing-design-card").count(), 0); assert.equal(await page.locator(".pricing-owned-benefits").count(), 1); assert.equal(await page.locator(".pricing-owned-status > a").getAttribute("href"), `/${locale}/account/my-learning/subscription`); }
