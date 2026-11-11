@@ -32,7 +32,7 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
     assert.equal(await page.getByText(/Macai/).count(),0);
     const box=(await cards.first().boundingBox())!;assert.deepEqual({x:box.x,y:box.y,width:box.width,height:box.height},{x:387,y:294,width:946,height:178});
     assert.equal((await page.locator('.account-nav').boundingBox())!.x,40,"sidebar uses the same centred account frame as Personal Settings");
-    assert.deepEqual(await page.getByRole("progressbar").evaluateAll(nodes=>nodes.map(node=>node.getAttribute("aria-valuenow"))),["33","100","67"]);
+    assert.deepEqual(await page.getByRole("progressbar").evaluateAll(nodes=>nodes.map(node=>node.getAttribute("aria-valuenow"))),[]);
     for(const image of await cards.locator("img").all()){await image.evaluate(image=>(image as HTMLImageElement).decode());const parent=(await image.locator("..").boundingBox())!;assert.equal(parent.width,280);assert.equal(parent.height,130);assert.equal(await image.evaluate(image=>(image as HTMLImageElement).naturalWidth>0),true);}
     assert.equal(await cards.last().getByRole("link").getAttribute("href"),`/${locale}/subscription?courseId=actual-2`);
     assert.ok((await cards.first().getByRole("link").getAttribute("href"))?.includes("contentId=video-0"));
@@ -42,7 +42,7 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
     await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:preview});
     const previewMessages=getMessages(locale as "en-GB"|"zh-CN");
     await cards.first().getByText(previewMessages.overviewDesign.previewing,{exact:false}).waitFor();
-    assert.equal(await page.getByRole("progressbar").getAttribute("aria-valuenow"),"0");
+    assert.equal(await page.getByRole("progressbar").count(),0);
     assert.equal(await cards.first().getByText(previewMessages.learning.completed,{exact:false}).count(),0);
     assert.equal(await cards.count(),1);assert.ok((await cards.first().textContent())?.includes(previewMessages.overviewV1.lessons.replace("{count}","4")));
     assert.ok((await cards.first().getByRole("link").getAttribute("href"))?.includes("public-lesson"));
@@ -50,7 +50,7 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
     await page.setViewportSize({width:390,height:844});await page.screenshot({path:`test-results/overview-v1/${locale}-partial-preview-mobile.png`,fullPage:true});
     const unavailable=displayFixture(name,locale);unavailable.courses=[{...unavailable.courses[0],progress:null,action:"detail",href:`/${locale}/portal/courses/actual-0`}];
     await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:unavailable});
-    await page.getByRole("status").waitFor();assert.equal(await page.getByRole("progressbar").count(),0);
+    assert.equal(await page.getByRole("status").count(),0);assert.equal(await page.getByRole("progressbar").count(),0);
     assert.equal(await cards.first().getByRole("link").getAttribute("href"),`/${locale}/portal/courses/actual-0`);
     await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:{name,courses:[]}});
     await page.getByText(getMessages(locale as "en-GB"|"zh-CN").learningOverview.noLearning,{exact:true}).waitFor();

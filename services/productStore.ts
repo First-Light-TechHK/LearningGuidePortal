@@ -5,7 +5,6 @@ import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
 import { withPlanAiPoints } from "./planAiPoints";
-import { highestProgressLesson } from "./courseProgressAction";
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { courseModePosition } from "@/lib/courseModePosition";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
@@ -32,7 +31,6 @@ import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
 import { defaultPortalContent, withSharedBannerImages, type PortalContent, type PortalTranslation } from "@/lib/portalContent";
 import {
   accessStateFromSubscriptions,
-  courseProgressFromUniqueLearningPoints,
   overviewEmptyState,
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
@@ -1287,12 +1285,8 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       completedLessonIds,
     });
     const record = history.record;
-    const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? highestProgressLesson(course, record, courseEvents) : null;
-    if (record?.knowledgePositions && record.currentMode) {
-      const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
-      return { ...page, actionLessonId, progress:record.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
-    }
-    return { ...page, progress: record ? Math.max(record.progress, page.progress || 0) : page.progress, actionLessonId };
+    const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? record?.currentLessonId || course.sections.flatMap(section => section.lessons)[0]?.id || null : null;
+    return { ...page, progress: 0, actionLessonId };
   });
 }
 
@@ -2140,9 +2134,7 @@ export async function getLearningOverview(userId: string) {
       const points = course ? courseKnowledgePoints(course, mode) : [];
       const position = pointProgress?.lessonId ? pointProgress : points.find(point => point.lessonId === record?.currentLessonId) || points[0];
       const currentLessonId = position?.lessonId || record?.currentLessonId || null;
-      const legacyProgress = courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
-      const computed = pointProgress ? { progress: record?.progress || 0, progressFailed: !pointProgress.total, completed: Boolean(record && record.progress >= 100) }
-        : { ...legacyProgress, progress: legacyProgress.progress === null ? null : Math.max(record?.progress || 0, legacyProgress.progress), completed: Boolean(record && record.progress >= 100) || legacyProgress.completed };
+      const computed = { progress: 0, progressFailed: false, completed: false };
       const completedLessonIds = courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId);
       const previewLesson = course ? publicFirstLesson(course) : null;
       const previewLessons = previewLesson ? [previewLesson] : [];
@@ -2181,10 +2173,10 @@ export async function getLearningOverview(userId: string) {
         progressFailed: computed.progressFailed,
         completedAt: computed.completed ? record?.completedAt || now() : null,
         completedLessonIds: [...new Set(completedLessonIds)],
-        legacyCompletedLessonIds: [...new Set(courseEvents.filter(event => event.event === "complete" && !event.contentId).map(event => event.lessonId))],
-        completedContentIds: [...new Set(courseEvents.filter(event => event.event === "complete").flatMap(event => event.completeLesson && event.learningMode && course
-          ? courseKnowledgePoints(course, event.learningMode).filter(point => point.lessonId === event.lessonId && point.contentId).map(point => point.contentId!)
-          : event.contentId ? [event.contentId] : []))],
+        legacyCompletedLessonIds: [...new Set(completedLessonIds)],
+        // Compatibility point projections inherit the Lesson's shared completion.
+        completedContentIds: course ? [...new Set((["text", "video"] as const).flatMap(mode =>
+          courseKnowledgePoints(course, mode).filter(point => completedLessonIds.includes(point.lessonId) && point.contentId).map(point => point.contentId!)))] : [],
         nextPreviewLessonId: previewLessons.find((lesson) => !openedLessonIds.includes(lesson.id))?.id || null,
         previewAvailable: previewLessons.length > 0,
         courseTitle: course?.title || courseId,
@@ -2404,19 +2396,10 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
     }
     record.totalSeconds += seconds;
     record.totalSeconds = Math.min(totalCourseSeconds, record.totalSeconds);
-    const lessons = course.sections.flatMap((section) => section.lessons);
-    const openedIds = uniqueOpenedLearningPointIds([...history.events, event]);
-    const pointProgress = record.knowledgePositions && record.currentMode ? knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]) : null;
-    const computed = pointProgress ? { progress: pointProgress.progress, completed: pointProgress.total > 0 && pointProgress.current === pointProgress.total }
-      : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
-    // Only a greater outline percentage updates progress. Cursor and study
-    // telemetry remain independent, so revisiting earlier points is safe.
-    if ((computed.progress ?? 0) > record.progress) {
-      record.progress = computed.progress!;
-      record.highestProgress = { progress: record.progress, mode: pointProgress ? record.currentMode! : null,
-        lessonId: pointProgress?.lessonId || input.lessonId, contentId: pointProgress ? pointProgress.contentId : input.contentId || null };
-    }
-    record.completedAt = record.completedAt || (computed.completed ? now() : null);
+    // Course percentages are retired; retain only resume position and Lesson events.
+    record.progress = 0;
+    record.completedAt = null;
+    delete record.highestProgress;
     record.updatedAt = now();
     return record;
   });

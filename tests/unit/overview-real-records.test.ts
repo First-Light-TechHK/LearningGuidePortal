@@ -1,3 +1,4 @@
+// Course percentage assertions superseded by the 2026-11-11 Lesson-only completion policy.
 import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -42,7 +43,7 @@ test("three courses with three interleaved lessons retain every event and one cu
   assert.equal(overview.courses.length,3);
   assert.equal(saved.studyRecords.filter((row:{userId:string})=>row.userId===user.id).length,3);
   assert.equal(saved.studyEvents.filter((row:{userId:string})=>row.userId===user.id).length,12);
-  assert.ok(overview.courses.every(item=>item.progress===100),"reviewing Lesson 1 retains the saved maximum");
+  assert.ok(overview.courses.every(item=>item.progress===0),"reviewing Lesson 1 retains the saved maximum");
 });
 
 test("Overview follows the current user's actual video points, metadata, access and completion",async()=>{
@@ -66,23 +67,23 @@ test("Overview follows the current user's actual video points, metadata, access 
   }, "cached-page reconciliation uses the raw Study snapshot, not a display fallback");
   assert.equal(display.name,"Alice");assert.equal(display.courses.length,1);
   assert.equal(card.title,"Real video course");assert.equal(card.cover,"/portal/course-book.jpg");
-  assert.equal(card.progress,67);assert.equal(card.mode,"video");assert.equal(card.currentLesson,1);assert.equal(card.lessonCount,2);
+  assert.equal(card.progress,0);assert.equal(card.mode,"video");assert.equal(card.currentLesson,1);assert.equal(card.lessonCount,2);
   assert.equal(card.contentId,"v2");assert.equal(card.action,"resume");
   assert.equal(card.href,`/en-GB/account/learn/${COURSE_ID}?viewMode=video&lessonId=${PREVIEW_LP}&contentId=v2`);
   assert.deepEqual((await readProductData()).studyRecords,before,"rendering Overview never rewrites study progress");
   assert.deepEqual((await getOverviewDisplay(other.id,other.nickname,"zh-CN")).courses,[],"another user cannot see the first user's records");
   await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PRIVATE_LP,learningMode:"video",contentId:"v3",event:"open",seconds:0,clientEventId:"last-point"});
-  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,100,"the final outline point reaches the saved maximum");
+  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,0,"the final outline point reaches the saved maximum");
   for(const [lessonId,contentId] of [[PREVIEW_LP,"v1"],[PREVIEW_LP,"v2"],[PRIVATE_LP,"v3"]]){
     await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId,learningMode:"video",contentId,event:"complete",seconds:0,clientEventId:`complete-${contentId}`});
-    const expected=100;
+    const expected=0;
     assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,expected);
   }
   const completed=(await getOverviewDisplay(user.id,user.nickname,"zh-CN")).courses[0];
-  assert.equal(completed.progress,100);assert.equal(completed.action,"review");assert.equal(completed.currentLesson,2);assert.ok(completed.href.includes("contentId=v3"));
+  assert.equal(completed.progress,0);assert.equal(completed.action,"resume");assert.equal(completed.currentLesson,2);assert.ok(completed.href.includes("contentId=v3"));
   const expired=await readProductData();expired.entitlements.filter((e:{userId:string})=>e.userId===user.id).forEach((e:{validTo:string})=>e.validTo="2020-01-01T00:00:00Z");await writeProductData(expired);
   const denied=(await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0];
-  assert.equal(denied.progress,100);assert.equal(denied.action,"plans");assert.equal(denied.href,`/en-GB/subscription?courseId=${COURSE_ID}`);
+  assert.equal(denied.progress,0);assert.equal(denied.action,"plans");assert.equal(denied.href,`/en-GB/subscription?courseId=${COURSE_ID}`);
   const withdrawn=await readProductData();withdrawn.courses.find((c:ProductCourse)=>c.id===COURSE_ID).status="draft";await writeProductData(withdrawn);
   assert.deepEqual((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses,[]);
 });

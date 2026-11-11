@@ -1,3 +1,4 @@
+// Course percentage assertions superseded by the 2026-11-11 Lesson-only completion policy.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
@@ -6,7 +7,7 @@ import { verifiedUser, readProductData, writeProductData, COURSE_ID, PREVIEW_LP,
 import { knowledgeProgress } from "../../lib/knowledgeProgress";
 import type { ProductCourse } from "../../services/productStore";
 
-test("course outline percentages only increase across revisits, modes, concurrency and lesson completion", async () => {
+test("Course percentages stay retired across revisits, modes, concurrency and Lesson completion", async () => {
   const { restore } = await isolate("lg-maximum-progress-");
   try {
     const store = await import("../../services/productStore");
@@ -20,31 +21,31 @@ test("course outline percentages only increase across revisits, modes, concurren
     ]).flat();
     await writeProductData(data);
     const send = (lessonId: string, contentId: string, learningMode: "video" | "text", clientEventId = randomUUID()) => store.recordStudyEvent({ userId: user.id, courseId: COURSE_ID, lessonId, contentId, learningMode, event: "open", seconds: 0, clientEventId });
-    assert.equal((await send(PREVIEW_LP, "t1", "text"))!.progress, 20, "the initial text point counts immediately");
-    assert.equal((await send(PREVIEW_LP, "t3", "text"))!.progress, 60);
+    assert.equal((await send(PREVIEW_LP, "t1", "text"))!.progress, 0, "the initial text point counts immediately");
+    assert.equal((await send(PREVIEW_LP, "t3", "text"))!.progress, 0);
     const old = await send(PREVIEW_LP, "t2", "text");
-    assert.equal(old!.progress, 60); assert.equal(old!.knowledgePositions?.text?.contentId, "t2", "resume position may move without lowering progress");
-    assert.deepEqual(old!.highestProgress, { progress: 60, mode: "text", lessonId: PREVIEW_LP, contentId: "t3" });
+    assert.equal(old!.progress, 0); assert.equal(old!.knowledgePositions?.text?.contentId, "t2", "resume position may move without lowering progress");
+    assert.equal(old!.highestProgress, undefined);
     const sameId = randomUUID(); const same = await send(PREVIEW_LP, "t3", "text", sameId);
     const beforeReplay = (await readProductData()).studyEvents.length;
     assert.deepEqual(await send(PREVIEW_LP, "t1", "text", sameId), same);
     assert.equal((await readProductData()).studyEvents.length, beforeReplay);
     const complete = { userId: user.id, courseId: COURSE_ID, lessonId: PREVIEW_LP, learningMode: "text" as const, event: "complete" as const, completeLesson: true, seconds: 0, clientEventId: randomUUID() };
-    const first = await store.recordStudyEvent(complete); assert.equal(first!.progress, 60);
+    const first = await store.recordStudyEvent(complete); assert.equal(first!.progress, 0);
     assert.deepEqual(await store.recordStudyEvent(complete), first);
     let overview = (await store.getLearningOverview(user.id)).courses[0];
-    assert.deepEqual(overview.completedContentIds.sort(), ["t1", "t2", "t3"]);
+    assert.deepEqual(overview.completedContentIds.sort(), ["t1", "t2", "t3", "v1", "v2", "v3"]);
     assert.deepEqual(overview.completedLessonIds, [PREVIEW_LP]);
-    assert.equal((await send(PREVIEW_LP, "v1", "video"))!.progress, 60, "switching mode retains the course maximum");
+    assert.equal((await send(PREVIEW_LP, "v1", "video"))!.progress, 0, "switching mode retains the course maximum");
     await Promise.all([send(PRIVATE_LP, "t4", "text"), send(PREVIEW_LP, "v2", "video")]);
-    assert.equal((await store.getLearningOverview(user.id)).courses[0].progress, 80);
-    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).actionLessonId, PRIVATE_LP, "Start follows the maximum even if a concurrent video cursor returns to the first Lesson");
+    assert.equal((await store.getLearningOverview(user.id)).courses[0].progress, 0);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).actionLessonId, PREVIEW_LP, "Start follows the latest Lesson cursor");
     const final = await store.recordStudyEvent({ ...complete, lessonId: PRIVATE_LP, clientEventId: randomUUID() });
-    assert.equal(final!.progress, 100); assert.ok(final!.completedAt);
+    assert.equal(final!.progress, 0); assert.equal(final!.completedAt, null);
     await send(PREVIEW_LP, "t1", "text");
-    overview = (await store.getLearningOverview(user.id)).courses[0]; assert.equal(overview.progress, 100);
-    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).progress, 100);
-    assert.equal((await (await import("../../services/overviewDisplay")).getOverviewDisplay(user.id, user.nickname, "en-GB")).courses[0].progress, 100);
+    overview = (await store.getLearningOverview(user.id)).courses[0]; assert.equal(overview.progress, 0);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).progress, 0);
+    assert.equal((await (await import("../../services/overviewDisplay")).getOverviewDisplay(user.id, user.nickname, "en-GB")).courses[0].progress, 0);
     const legacy = await readProductData();
     const legacyCourse = structuredClone(course); legacyCourse.id = "legacy-max"; legacyCourse.slug = "legacy-max";
     legacyCourse.sections.flatMap((section: any) => section.lessons).forEach((lesson: any) => { delete lesson.contents; lesson.body = "Legacy reading"; });
@@ -52,13 +53,13 @@ test("course outline percentages only increase across revisits, modes, concurren
     legacy.studyRecords.push({ id: "legacy-max-record", userId: user.id, courseId: legacyCourse.id, currentLessonId: PREVIEW_LP, progress: 90, totalSeconds: 0, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completedAt: null });
     await writeProductData(legacy);
     await store.recordStudyEvent({ userId: user.id, courseId: legacyCourse.id, lessonId: PREVIEW_LP, event: "open", seconds: 0, clientEventId: randomUUID() });
-    assert.equal((await store.getLearningOverview(user.id)).courses.find(item => item.courseId === legacyCourse.id)!.progress, 90, "legacy history also displays its saved maximum");
+    assert.equal((await store.getLearningOverview(user.id)).courses.find(item => item.courseId === legacyCourse.id)!.progress, 0, "legacy history also displays its saved maximum");
     const other = await verifiedUser(store, "video-maximum@example.test");
     const otherQuote = await store.createQuote(other.id, "everything-pc-6"); await store.completeDemoCheckout(other.id, otherQuote.quote.id);
     assert.equal((await store.getLearningOverview(other.id)).courses.length, 0);
     const video = await store.recordStudyEvent({ ...complete, userId: other.id, learningMode: "video", clientEventId: randomUUID() });
-    assert.equal(video!.progress, 60);
-    assert.deepEqual((await store.getLearningOverview(other.id)).courses[0].completedContentIds.sort(), ["v1", "v2", "v3"]);
+    assert.equal(video!.progress, 0);
+    assert.deepEqual((await store.getLearningOverview(other.id)).courses[0].completedContentIds.sort(), ["t1", "t2", "t3", "v1", "v2", "v3"]);
     const routes = await import("../../app/api/study/events/route");
     const preview = await import("../../app/api/study/preview/route");
     const body = { ...complete, clientEventId: randomUUID() };

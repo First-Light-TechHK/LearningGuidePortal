@@ -161,12 +161,12 @@ test("switching a started course updates My Learning before video playback witho
   await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lesson.id, contentId: text.id, learningMode: "text", event: "open", seconds: 0, clientEventId: "mode-sync-text" });
   assert.equal((await getOverviewDisplay(user.id, user.nickname, "en-GB")).courses.find(card => card.courseId === course.id)?.mode, "text", "existing Study modes retain priority over older entry preferences until an explicit switch");
   const before = structuredClone(await store.ensureProductData()), previous = before.studyRecords.find(record => record.userId === user.id)!;
-  assert.equal(previous.progress, 86);
+  assert.equal(previous.progress, 0);
   for (const mode of ["video", "text"] as const) {
     await store.saveCourseLearningMode(user.id, course.id, mode);
     const card: OverviewDisplayCourse = (await getOverviewDisplay(user.id, user.nickname, "en-GB")).courses.find(card => card.courseId === course.id)!;
     assert.equal(card.mode, mode);assert.equal(new URL(card.href, "https://local.test").searchParams.get("viewMode"), mode);
-    assert.equal(card.progress, 86);
+    assert.equal(card.progress, 0);
     const after = await store.ensureProductData(), record = after.studyRecords.find(record => record.userId === user.id)!;
     assert.deepEqual(record.knowledgePositions, previous.knowledgePositions);
     assert.deepEqual(record.highestProgress, previous.highestProgress);

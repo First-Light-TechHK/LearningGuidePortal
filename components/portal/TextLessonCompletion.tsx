@@ -11,7 +11,9 @@ import { createClientEventId } from "@/lib/clientEventId";
 import { LessonCompletedDialog } from "./LessonCompletedDialog";
 import styles from "./text-lesson-completion.module.css";
 
-export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, nextHref, variant = "row", learningMode = "text", assessmentAvailability, visible = true, endpoint = "/api/study/events" }: {
+export function TextLessonCompletion({ onCompleted, locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, nextHref, variant = "row", learningMode = "text", assessmentAvailability, visible = true, initialCompleted = false, endpoint = "/api/study/events" }: {
+  initialCompleted?: boolean;
+  onCompleted?: () => void;
   assessmentAvailability?: AssessmentAvailability;
   nextLesson?: { number: string; title: string };
   locale: Locale; courseId: string; lessonId: string; lessonNumber: string; lessonTitle: string;
@@ -74,21 +76,21 @@ export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber,
       for (const property of ["--text-completion-height", "--completion-center", "--completion-max-width"]) surface.style.removeProperty(property);
     };
   }, [visible, variant]);
-  const request = useRef<string | null>(null), inFlight = useRef(false), saved = useRef(false);
+  const request = useRef<string | null>(null), inFlight = useRef(false), saved = useRef(initialCompleted);
   async function complete() {
     if (inFlight.current) return;
-    if (saved.current) { setDialogOpen(true); return; }
+    if (saved.current || initialCompleted) { setDialogOpen(true); return; }
     inFlight.current = true; setBusy(true); setError("");
     request.current ||= createClientEventId();
     try {
       await completeLessonOutline(endpoint, courseId, lessonId, learningMode, request.current);
-      saved.current = true; setDialogOpen(true);
+      saved.current = true; onCompleted?.(); setDialogOpen(true); router.refresh();
     } catch { setError(messages.overviewDesign.previewSaveError); }
     finally { inFlight.current = false; setBusy(false); }
   }
   if (!visible) return null;
   return <><div ref={card} className={variant === "card" ? styles.card : variant === "inline" ? styles.inline : styles.row} data-text-completion data-at-end={atEnd} data-on-surface={onSurface} inert={variant === "card" && !onSurface ? true : undefined}>
-    <button type="button" className={variant !== "row" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{variant !== "row" ? <>{busy ? messages.learning.processing : messages.videoCompletion.markComplete}{busy ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</> : busy ? messages.learning.processing : messages.videoCompletion.markComplete}</button>
+    <button type="button" className={variant !== "row" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{saved.current || initialCompleted ? messages.learning.completed : variant !== "row" ? <>{busy ? messages.learning.processing : messages.videoCompletion.markComplete}{busy ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</> : busy ? messages.learning.processing : messages.videoCompletion.markComplete}</button>
     {error && <p role="alert">{error}</p>}
   </div>
     {dialogOpen && <LessonCompletedDialog nextLesson={nextLesson} isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}
