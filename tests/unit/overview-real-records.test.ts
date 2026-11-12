@@ -1,3 +1,4 @@
+// Course percentage assertions superseded by the 2026-11-11 Lesson-only completion policy.
 import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -18,6 +19,14 @@ before(async()=>{
 });
 after(async()=>{stop();process.chdir(cwd);process.env=environment;if(directory&&path.dirname(directory)===tmpdir())await rm(directory,{recursive:true,force:true});});
 
+let checkpointId=0;
+async function checkpoint(userId:string,courseId:string,lessonId:string,mode:"video"|"text",contentId:string,positionMs=12345){
+  const snapshot=await store.getLessonBookmarks(userId,courseId), values=snapshot.bookmarks[lessonId] || {};
+  return store.saveLessonBookmark(userId,{courseId,lessonId,mode,contentId,contentVersion:snapshot.versions[lessonId][mode],expectedRevision:values[mode]?.revision || 0,
+    expectedLessonRevision:Object.values(values).reduce((sum,item)=>sum+item.revision,0),clientEventId:`overview-checkpoint-${++checkpointId}`,
+    ...(mode==="video"?{positionMs}:{paragraphId:`${contentId}:paragraph:0`})});
+}
+
 test("three courses with three interleaved lessons retain every event and one current card per course", async () => {
   const user=await verifiedUser(store,"three-courses@example.test"), data=await readProductData();
   const template=data.courses.find((course:ProductCourse)=>course.id===COURSE_ID);
@@ -33,6 +42,7 @@ test("three courses with three interleaved lessons retain every event and one cu
   for(const index of [0,1,2,0]) for(const course of courses){
     const lesson=course.sections[0].lessons[index];
     await store.recordStudyEvent({userId:user.id,courseId:course.id,lessonId:lesson.id,learningMode:"text",contentId:lesson.contents[0].id,event:"open",seconds:0,clientEventId:`parallel-${count++}`});
+    await checkpoint(user.id,course.id,lesson.id,"text",lesson.contents[0].id);
     const display=await getOverviewDisplay(user.id,user.nickname,"en-GB");
     const card=display.courses.find(item=>item.courseId===course.id)!;
     assert.equal(card.lessonId,lesson.id);assert.equal(card.contentId,lesson.contents[0].id);
@@ -42,7 +52,7 @@ test("three courses with three interleaved lessons retain every event and one cu
   assert.equal(overview.courses.length,3);
   assert.equal(saved.studyRecords.filter((row:{userId:string})=>row.userId===user.id).length,3);
   assert.equal(saved.studyEvents.filter((row:{userId:string})=>row.userId===user.id).length,12);
-  assert.ok(overview.courses.every(item=>item.progress===100),"reviewing Lesson 1 retains the saved maximum");
+  assert.ok(overview.courses.every(item=>item.progress===0),"reviewing Lesson 1 retains the saved maximum");
 });
 
 test("Overview follows the current user's actual video points, metadata, access and completion",async()=>{
@@ -57,6 +67,12 @@ test("Overview follows the current user's actual video points, metadata, access 
   const {quote}=await store.createQuote(user.id,"everything-pc-6");await store.completeDemoCheckout(user.id,quote.id);
   assert.deepEqual((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses,[],"owning Everything does not invent study records");
   await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,learningMode:"video",contentId:"v2",event:"open",seconds:0,clientEventId:"real-point"});
+  const legacy=await readProductData();
+  Object.assign(legacy.studyRecords.find((record:{userId:string})=>record.userId===user.id),{progress:100,completedAt:"2026-01-01T00:00:00Z"});
+  await writeProductData(legacy);
+  const fresh=(await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0];
+  assert.equal(fresh.action,"start");assert.equal(fresh.learningState,"not_started");assert.equal(fresh.bookmark,null);
+  await checkpoint(user.id,COURSE_ID,PREVIEW_LP,"video","v2");
   const before=(await readProductData()).studyRecords;
   const display=await getOverviewDisplay(user.id,user.nickname,"en-GB"), card=display.courses[0];
   const raw=(await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!;
@@ -66,23 +82,35 @@ test("Overview follows the current user's actual video points, metadata, access 
   }, "cached-page reconciliation uses the raw Study snapshot, not a display fallback");
   assert.equal(display.name,"Alice");assert.equal(display.courses.length,1);
   assert.equal(card.title,"Real video course");assert.equal(card.cover,"/portal/course-book.jpg");
-  assert.equal(card.progress,67);assert.equal(card.mode,"video");assert.equal(card.currentLesson,1);assert.equal(card.lessonCount,2);
+  assert.equal(card.progress,0);assert.equal(card.mode,"video");assert.equal(card.currentLesson,1);assert.equal(card.lessonCount,2);
+  assert.equal(card.learningState,"in_progress");assert.equal(card.lessonTitle,lessons[0].title);assert.equal(card.bookmark?.lpNumber,"1.2");
   assert.equal(card.contentId,"v2");assert.equal(card.action,"resume");
   assert.equal(card.href,`/en-GB/account/learn/${COURSE_ID}?viewMode=video&lessonId=${PREVIEW_LP}&contentId=v2`);
   assert.deepEqual((await readProductData()).studyRecords,before,"rendering Overview never rewrites study progress");
   assert.deepEqual((await getOverviewDisplay(other.id,other.nickname,"zh-CN")).courses,[],"another user cannot see the first user's records");
   await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PRIVATE_LP,learningMode:"video",contentId:"v3",event:"open",seconds:0,clientEventId:"last-point"});
-  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,100,"the final outline point reaches the saved maximum");
+  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].lessonId,PREVIEW_LP,"an open event cannot replace the latest genuine checkpoint");
+  await checkpoint(user.id,COURSE_ID,PRIVATE_LP,"video","v3");
+  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].bookmark?.lpNumber,"2.1");
+  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,0,"the final outline point reaches the saved maximum");
   for(const [lessonId,contentId] of [[PREVIEW_LP,"v1"],[PREVIEW_LP,"v2"],[PRIVATE_LP,"v3"]]){
     await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId,learningMode:"video",contentId,event:"complete",seconds:0,clientEventId:`complete-${contentId}`});
-    const expected=100;
+    const expected=0;
     assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].progress,expected);
+    if(lessonId!==PRIVATE_LP) assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].action,"resume","duplicate completion of one Lesson cannot complete the entire Course");
   }
   const completed=(await getOverviewDisplay(user.id,user.nickname,"zh-CN")).courses[0];
-  assert.equal(completed.progress,100);assert.equal(completed.action,"review");assert.equal(completed.currentLesson,2);assert.ok(completed.href.includes("contentId=v3"));
+  assert.equal(completed.progress,0);assert.equal(completed.action,"review");assert.equal(completed.learningState,"completed");assert.equal(completed.currentLesson,1);assert.equal(completed.bookmark,null);assert.equal(new URL(completed.href,"http://test").searchParams.get("lessonId"),PREVIEW_LP);assert.equal(new URL(completed.href,"http://test").searchParams.has("contentId"),false);
+  await checkpoint(user.id,COURSE_ID,PREVIEW_LP,"video","v1",0);
+  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].action,"review","a new review checkpoint cannot undo Course completion");
+  const expanded=await readProductData(), expandedCourse=expanded.courses.find((item:ProductCourse)=>item.id===COURSE_ID);
+  expandedCourse.sections[0].lessons.push({...structuredClone(expandedCourse.sections[0].lessons[0]),id:"newly-published-lesson"});
+  await writeProductData(expanded);
+  assert.equal((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0].learningState,"in_progress","all current Lessons must be completed, including newly added ones");
+  expandedCourse.sections[0].lessons.pop();await writeProductData(expanded);
   const expired=await readProductData();expired.entitlements.filter((e:{userId:string})=>e.userId===user.id).forEach((e:{validTo:string})=>e.validTo="2020-01-01T00:00:00Z");await writeProductData(expired);
   const denied=(await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses[0];
-  assert.equal(denied.progress,100);assert.equal(denied.action,"plans");assert.equal(denied.href,`/en-GB/subscription?courseId=${COURSE_ID}`);
+  assert.equal(denied.progress,0);assert.equal(denied.action,"plans");assert.equal(denied.href,`/en-GB/subscription?courseId=${COURSE_ID}`);
   const withdrawn=await readProductData();withdrawn.courses.find((c:ProductCourse)=>c.id===COURSE_ID).status="draft";await writeProductData(withdrawn);
   assert.deepEqual((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses,[]);
 });

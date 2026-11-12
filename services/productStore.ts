@@ -1,3 +1,5 @@
+import { lessonBookmarkInput, LessonBookmarkError, type LessonBookmarks } from "@/contracts/lesson-bookmark";
+import { lessonBookmarkContext, resolveBookmarkLp } from "./lessonBookmarkPolicy";
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent, type PlanPurchaseAvailability } from "@/contracts/payment";
 import type { PaymentReview, OrderAction } from "@/contracts/order-management";
 import { entitledStudyHistory } from "@/lib/entitledStudyHistory";
@@ -5,7 +7,6 @@ import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
 import { withPlanAiPoints } from "./planAiPoints";
-import { highestProgressLesson } from "./courseProgressAction";
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { courseModePosition } from "@/lib/courseModePosition";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
@@ -32,7 +33,6 @@ import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
 import { defaultPortalContent, withSharedBannerImages, type PortalContent, type PortalTranslation } from "@/lib/portalContent";
 import {
   accessStateFromSubscriptions,
-  courseProgressFromUniqueLearningPoints,
   overviewEmptyState,
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
@@ -215,6 +215,7 @@ export type ProductEntitlement = {
   device?: "pc" | "mobile";
 };
 export type ProductStudyRecord = {
+  lessonBookmarks?: LessonBookmarks;
   accessContext?: "entitled" | "preview";
   selectedMode?: CourseLearningMode;
   highestProgress?: HighestCourseProgress;
@@ -624,8 +625,9 @@ export async function getCourseLearningMode(userId: string, courseId: string): P
   return isCourseLearningMode(mode) ? mode : null;
 }
 
-export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string, expectedContext?: CourseLearningModeContext): Promise<CourseLearningModeResult> {
+export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string, expectedContext?: CourseLearningModeContext, intent?: "entry"): Promise<CourseLearningModeResult> {
   if (!isCourseLearningMode(mode)) throw new CourseLearningModeError("invalid");
+  if (intent !== undefined && (intent !== "entry" || !lessonId)) throw new CourseLearningModeError("invalid");
   if (expectedContext !== undefined && !isCourseLearningModeContext(expectedContext)) throw new CourseLearningModeError("invalid");
   if (lessonId !== undefined && (typeof lessonId !== "string" || !lessonId.trim() || lessonId.length > 200)) throw new CourseLearningModeError("invalid");
   return editData(data => {
@@ -650,7 +652,9 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
         const content = preview.contents?.find(content => content.id === point.contentId);
         return Boolean(content && (content.startSeconds || 0) < (preview.preview?.videoLimitSeconds ?? 60));
       });
-      position = courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
+      position = intent === "entry" ? accessiblePoints.find(point => point.lessonId === lessonId) || accessiblePoints[0] || null
+        : courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
+      if (intent === "entry" && !position) throw new CourseLearningModeError("invalid");
     }
     const previous = user.courseLearningModePreferences;
     const scoped = previous && Object.hasOwn(previous, course.id) ? previous[course.id] : {};
@@ -1287,12 +1291,14 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       completedLessonIds,
     });
     const record = history.record;
-    const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? highestProgressLesson(course, record, courseEvents) : null;
-    if (record?.knowledgePositions && record.currentMode) {
-      const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
-      return { ...page, actionLessonId, progress:record.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
-    }
-    return { ...page, progress: record ? Math.max(record.progress, page.progress || 0) : page.progress, actionLessonId };
+    const continuable = new Set(Object.entries(record?.lessonBookmarks || {}).filter(([lessonId, modes]) =>
+      !completedLessonIds.includes(lessonId) && Object.values(modes).some(bookmark => {
+        try { return bookmark.contentVersion === lessonBookmarkContext(course, lessonId, bookmark.mode).contentVersion; }
+        catch (error) { if (error instanceof LessonBookmarkError) return false; throw error; }
+      })).map(([lessonId]) => lessonId));
+    const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? record?.currentLessonId || course.sections.flatMap(section => section.lessons)[0]?.id || null : null;
+    return { ...page, syllabus: page.syllabus.map(lesson => lesson.access !== "entitled" ? lesson : completedLessonIds.includes(lesson.lessonId)
+      ? { ...lesson, completed: true } : continuable.has(lesson.lessonId) ? { ...lesson, continuable: true } : lesson), progress: 0, actionLessonId };
   });
 }
 
@@ -2140,9 +2146,7 @@ export async function getLearningOverview(userId: string) {
       const points = course ? courseKnowledgePoints(course, mode) : [];
       const position = pointProgress?.lessonId ? pointProgress : points.find(point => point.lessonId === record?.currentLessonId) || points[0];
       const currentLessonId = position?.lessonId || record?.currentLessonId || null;
-      const legacyProgress = courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
-      const computed = pointProgress ? { progress: record?.progress || 0, progressFailed: !pointProgress.total, completed: Boolean(record && record.progress >= 100) }
-        : { ...legacyProgress, progress: legacyProgress.progress === null ? null : Math.max(record?.progress || 0, legacyProgress.progress), completed: Boolean(record && record.progress >= 100) || legacyProgress.completed };
+      const computed = { progress: 0, progressFailed: false, completed: false };
       const completedLessonIds = courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId);
       const previewLesson = course ? publicFirstLesson(course) : null;
       const previewLessons = previewLesson ? [previewLesson] : [];
@@ -2181,10 +2185,10 @@ export async function getLearningOverview(userId: string) {
         progressFailed: computed.progressFailed,
         completedAt: computed.completed ? record?.completedAt || now() : null,
         completedLessonIds: [...new Set(completedLessonIds)],
-        legacyCompletedLessonIds: [...new Set(courseEvents.filter(event => event.event === "complete" && !event.contentId).map(event => event.lessonId))],
-        completedContentIds: [...new Set(courseEvents.filter(event => event.event === "complete").flatMap(event => event.completeLesson && event.learningMode && course
-          ? courseKnowledgePoints(course, event.learningMode).filter(point => point.lessonId === event.lessonId && point.contentId).map(point => point.contentId!)
-          : event.contentId ? [event.contentId] : []))],
+        legacyCompletedLessonIds: [...new Set(completedLessonIds)],
+        // Compatibility point projections inherit the Lesson's shared completion.
+        completedContentIds: course ? [...new Set((["text", "video"] as const).flatMap(mode =>
+          courseKnowledgePoints(course, mode).filter(point => completedLessonIds.includes(point.lessonId) && point.contentId).map(point => point.contentId!)))] : [],
         nextPreviewLessonId: previewLessons.find((lesson) => !openedLessonIds.includes(lesson.id))?.id || null,
         previewAvailable: previewLessons.length > 0,
         courseTitle: course?.title || courseId,
@@ -2404,19 +2408,10 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
     }
     record.totalSeconds += seconds;
     record.totalSeconds = Math.min(totalCourseSeconds, record.totalSeconds);
-    const lessons = course.sections.flatMap((section) => section.lessons);
-    const openedIds = uniqueOpenedLearningPointIds([...history.events, event]);
-    const pointProgress = record.knowledgePositions && record.currentMode ? knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]) : null;
-    const computed = pointProgress ? { progress: pointProgress.progress, completed: pointProgress.total > 0 && pointProgress.current === pointProgress.total }
-      : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
-    // Only a greater outline percentage updates progress. Cursor and study
-    // telemetry remain independent, so revisiting earlier points is safe.
-    if ((computed.progress ?? 0) > record.progress) {
-      record.progress = computed.progress!;
-      record.highestProgress = { progress: record.progress, mode: pointProgress ? record.currentMode! : null,
-        lessonId: pointProgress?.lessonId || input.lessonId, contentId: pointProgress ? pointProgress.contentId : input.contentId || null };
-    }
-    record.completedAt = record.completedAt || (computed.completed ? now() : null);
+    // Course percentages are retired; retain only resume position and Lesson events.
+    record.progress = 0;
+    record.completedAt = null;
+    delete record.highestProgress;
     record.updatedAt = now();
     return record;
   });
@@ -2904,4 +2899,64 @@ export async function isLegacyStripeSubscription(subscriptionId: string) {
 export async function isSnapshotStripeCheckout(sessionId: string) {
  const data = await ensureProductData();
  return data.orders.some(order => order.stripeCheckoutSessionId === sessionId && Boolean(order.price));
+}
+
+
+/** Read only: entering a Lesson cannot manufacture a watched/read position. */
+export async function getLessonBookmarks(userId: string, courseId: string) {
+  const data = await ensureProductData();
+  const course = data.courses.find(item => item.id === courseId && item.status === "published");
+  if (!course || !activeEntitlement(data, userId, courseId)) throw new LessonBookmarkError("forbidden", 403);
+  const record = data.studyRecords.find(item => item.userId === userId && item.courseId === courseId);
+  const versions: Record<string, Partial<Record<"video" | "text", string>>> = {};
+  for (const lesson of course.sections.flatMap(section => section.lessons)) {
+    versions[lesson.id] = {};
+    for (const mode of ["video", "text"] as const) {
+      try { versions[lesson.id][mode] = lessonBookmarkContext(course, lesson.id, mode).contentVersion; }
+      catch (error) { if (!(error instanceof LessonBookmarkError)) throw error; }
+    }
+  }
+  return { bookmarks: record?.lessonBookmarks || {}, versions };
+}
+
+/** Transactional optimistic concurrency: late tabs cannot overwrite newer positions. */
+export async function saveLessonBookmark(userId: string, body: unknown) {
+  const parsed = lessonBookmarkInput.safeParse(body);
+  if (!parsed.success) throw new LessonBookmarkError("invalid_request", 400);
+  const input = parsed.data;
+  return editData(data => {
+    const course = data.courses.find(item => item.id === input.courseId && item.status === "published");
+    if (!course || !activeEntitlement(data, userId, input.courseId)) throw new LessonBookmarkError("forbidden", 403);
+    const lpNumber = resolveBookmarkLp(course, input);
+    const rawIndex = data.studyRecords.findIndex(item => item.userId === userId && item.courseId === input.courseId);
+    const raw = rawIndex >= 0 ? data.studyRecords[rawIndex] : undefined;
+    let record = studyHistoryFor(data, userId, course).record;
+    if (record && raw?.lessonBookmarks) record.lessonBookmarks = raw.lessonBookmarks;
+    const previous = raw?.lessonBookmarks?.[input.lessonId]?.[input.mode];
+    if (previous?.clientEventId === input.clientEventId) {
+      if (previous.contentId !== input.contentId || previous.contentVersion !== input.contentVersion || previous.positionMs !== input.positionMs || previous.paragraphId !== input.paragraphId) throw new LessonBookmarkError("event_conflict", 409);
+      return previous;
+    }
+    const lessonRevision = Object.values(raw?.lessonBookmarks?.[input.lessonId] || {}).reduce((total, item) => total + item.revision, 0);
+    if (lessonRevision !== input.expectedLessonRevision || (previous?.revision || 0) !== input.expectedRevision) throw new LessonBookmarkError("stale_bookmark", 409);
+    const timestamp = new Date(Math.max(Date.now(), ...Object.values(raw?.lessonBookmarks?.[input.lessonId] || {}).map(item => Date.parse(item.updatedAt) + 1))).toISOString();
+    if (!record) {
+      record = { id: raw?.id || id("study"), lessonBookmarks: raw?.lessonBookmarks, userId, courseId: input.courseId, startedAt: timestamp, updatedAt: timestamp, currentLessonId: input.lessonId,
+        totalSeconds: 0, progress: 0, completedAt: null, accessContext: "entitled" };
+
+    }
+    if (rawIndex >= 0) data.studyRecords[rawIndex] = record; else data.studyRecords.unshift(record);
+    const { courseId: _course, lessonId: _lesson, expectedRevision: _revision, expectedLessonRevision: _lessonRevision, ...position } = input;
+    const bookmark = { ...position, revision: (previous?.revision || 0) + 1, updatedAt: timestamp, lpNumber };
+    record.lessonBookmarks = { ...record.lessonBookmarks, [input.lessonId]: { ...record.lessonBookmarks?.[input.lessonId], [input.mode]: bookmark } };
+    record.currentLessonId = input.lessonId;
+    record.currentMode = input.mode;
+    const user = data.users.find(item => item.id === userId);
+    if (user) user.courseLearningModePreferences = { ...user.courseLearningModePreferences, [input.courseId]: {
+      ...user.courseLearningModePreferences?.[input.courseId], entitled: input.mode,
+    } };
+    record.knowledgePositions = { ...record.knowledgePositions, [input.mode]: { lessonId: input.lessonId, contentId: input.contentId } };
+    record.updatedAt = timestamp;
+    return bookmark;
+  });
 }

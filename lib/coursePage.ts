@@ -22,6 +22,9 @@ export type CourseIdentity = {
 };
 
 export type CourseSyllabusItem = {
+  /** Server-verified unfinished Lesson with a current-version reading bookmark. */
+  continuable?: boolean;
+  completed?: boolean;
   lessonId: string;
   title: string;
   access: SyllabusAccess;

@@ -1,3 +1,4 @@
+// Course percentage assertions superseded by the 2026-11-11 Lesson-only completion policy.
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -39,7 +40,7 @@ after(async () => {
   }
 });
 
-test("ML-FR-008: opening a Learning Point counts immediately at 50% for a 2-LP course", async () => {
+test("ML-FR-008: opening a Learning Point retains its cursor without Course progress", async () => {
   const user = await verifiedUser(store, "ml-fr-007-open@example.test");
   await purchaseCourse(store, user.id);
   await openLearningPoint(store, user.id, PREVIEW_LP, "open-first-lp");
@@ -49,9 +50,9 @@ test("ML-FR-008: opening a Learning Point counts immediately at 50% for a 2-LP c
   assert.ok(card, "started course is on Overview");
   assert.equal(card.openedLearningPointCount, 1);
   assert.equal(card.totalLearningPoints, 2);
-  assert.equal(card.progress, 50);
+  assert.equal(card.progress, 0);
   assert.equal(card.progressFailed, false);
-  assert.notEqual(card.progress, 0);
+  assert.equal(card.progress, 0);
 });
 
 test("ML-FR-008: repeating the same Learning Point does not increase progress", async () => {
@@ -64,7 +65,7 @@ test("ML-FR-008: repeating the same Learning Point does not increase progress", 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
   assert.equal(card?.openedLearningPointCount, 1);
-  assert.equal(card?.progress, 50);
+  assert.equal(card?.progress, 0);
 });
 
 test("ML-FR-009: text and video events on the same lesson count as one Learning Point", async () => {
@@ -90,7 +91,7 @@ test("ML-FR-009: text and video events on the same lesson count as one Learning 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
   assert.equal(card?.openedLearningPointCount, 1);
-  assert.equal(card?.progress, 50);
+  assert.equal(card?.progress, 0);
 });
 
 test("ML-FR-007: completing a lesson by duration must not report 56% time progress", async () => {
@@ -106,11 +107,11 @@ test("ML-FR-007: completing a lesson by duration must not report 56% time progre
   });
 
   assert.notEqual(record?.progress, 56);
-  assert.equal(record?.progress, 50);
+  assert.equal(record?.progress, 0);
 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
-  assert.equal(card?.progress, 50);
+  assert.equal(card?.progress, 0);
   assert.equal(card?.cardState, "learning");
 });
 
@@ -145,11 +146,11 @@ test("ML-FR-007: three fresh 300s video_progress bursts do not change unique-LP 
 
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
-  assert.equal(card?.progress, 50);
+  assert.equal(card?.progress, 0);
   assert.equal(card?.openedLearningPointCount, 1);
 });
 
-test("ML-FR-010: opening every Learning Point is Completed at 100%, not a percent label", async () => {
+test("ML-FR-010: opening every Learning Point does not complete the Course", async () => {
   const user = await verifiedUser(store, "ml-fr-007-done@example.test");
   await purchaseCourse(store, user.id);
   await openLearningPoint(store, user.id, PREVIEW_LP, "done-1");
@@ -159,10 +160,10 @@ test("ML-FR-010: opening every Learning Point is Completed at 100%, not a percen
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
   assert.equal(card?.openedLearningPointCount, 2);
   assert.equal(card?.totalLearningPoints, 2);
-  assert.equal(card?.progress, 100);
-  assert.equal(card?.cardState, "completed");
-  assert.equal(card?.cta, "review_course");
-  assert.ok(card?.completedAt);
+  assert.equal(card?.progress, 0);
+  assert.equal(card?.cardState, "learning");
+  assert.equal(card?.cta, "continue_learning");
+  assert.equal(card?.completedAt, null);
 });
 
 test("preview opens are excluded from paid unique-LP progress after purchase", async () => {
@@ -174,6 +175,6 @@ test("preview opens are excluded from paid unique-LP progress after purchase", a
   const overview = await store.getLearningOverview(user.id);
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
   assert.equal(card?.openedLearningPointCount, 1);
-  assert.equal(card?.progress, 50);
+  assert.equal(card?.progress, 0);
   assert.equal(card?.cardState, "learning");
 });

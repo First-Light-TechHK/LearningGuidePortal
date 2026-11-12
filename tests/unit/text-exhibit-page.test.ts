@@ -80,20 +80,27 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
       await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),{...viewProps,key:`viewport-${width}-${height}`,shell:true,headerHeight});
       const reader=page.locator('[data-text-reader]');
       await reader.locator('[data-text-ready="true"]').first().waitFor();
+      // Rich-text readiness precedes the reader's scheduled initial-position restore.
+      // Let that frame and its resize observers finish before testing manual scrolling.
+      await page.evaluate(async()=>{await document.fonts.ready;await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
       const bounds=await reader.evaluate(element=>{const rect=element.getBoundingClientRect();return {height:rect.height,bottom:rect.bottom,scroll:element.scrollHeight,client:element.clientHeight,reserved:parseFloat(getComputedStyle(element).getPropertyValue("--text-reader-reserved"))}});
       assert.equal(await reader.evaluate(element=>getComputedStyle(element).overflowY),'visible');
       assert.ok(Math.abs(bounds.scroll-bounds.client)<=1,'reading expands to its full height');
       await reader.evaluate(element=>element.scrollTop=100);
       assert.equal(await reader.evaluate(element=>element.scrollTop),0,'reader cannot trap scrolling');
       await page.evaluate(()=>window.scrollTo(0,200));
+      await page.waitForFunction(()=>window.scrollY>0);
       assert.ok(await page.evaluate(()=>window.scrollY)>0,'page owns reading scroll');
       await page.evaluate(()=>window.scrollTo(0,0));
+      await page.waitForFunction(()=>window.scrollY===0);
       const completion=page.locator('[data-text-completion] button');
       await reader.locator('[data-text-completion-trigger]').scrollIntoViewIfNeeded();
       await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-at-end')==='true');
       const buttonBox=(await completion.boundingBox())!;
       assert.equal(await completion.evaluate(element=>getComputedStyle(element.parentElement!).position),'fixed','completion stays reachable at the viewport bottom');
-      assert.ok(Math.abs(buttonBox.y+buttonBox.height-height)<=2,'floating action stays within the viewport');
+      assert.ok(Math.abs(buttonBox.y+buttonBox.height-height+30)<=2,'floating action stays 30px above the viewport bottom');
+      assert.equal(await completion.evaluate(element=>getComputedStyle(element).borderRadius),'8px');
+      if(width>1200)assert.ok(Math.abs(buttonBox.x-(await page.locator('[data-reading-tools]').boundingBox())!.x)<=1,'completion aligns with Deep Learning');
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
       assert.ok(await page.locator('main').evaluate(element=>element.getBoundingClientRect().bottom+window.scrollY)>=height,'learning background reaches viewport bottom');
       await page.waitForFunction(()=>document.querySelector('[data-text-completion]')?.getAttribute('data-on-surface')==='true');

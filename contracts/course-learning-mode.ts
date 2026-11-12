@@ -1,7 +1,7 @@
 export type CourseLearningMode = "video" | "text";
 export type CourseLearningModeContext = "preview" | "entitled";
 export type CourseLearningModePreferences = Partial<Record<CourseLearningModeContext, CourseLearningMode>>;
-export type CourseLearningModeInput = { mode: CourseLearningMode; lessonId?: string; accessContext?: CourseLearningModeContext };
+export type CourseLearningModeInput = { mode: CourseLearningMode; lessonId?: string; accessContext?: CourseLearningModeContext; intent?: "entry" };
 export type CourseModePosition = { lessonId: string; contentId: string | null };
 export type CourseLearningModeResult = { courseId: string; mode: CourseLearningMode; position?: CourseModePosition | null };
 export type CourseModeSnapshot = {

@@ -1,4 +1,5 @@
 {
+  "lessonBookmark": {"reload": "Reload", "video": "Video · Watched to {lp}", "text": "Text · Read to {lp}", "saveError": "Your reading position could not be saved. Retry or reload to resume from the latest saved position."},
   "orderManagement": {
     "title": "Orders to resolve",
     "history": "Closed orders",
@@ -273,13 +274,11 @@
     "description": "Check your understanding, or continue to next lesson.",
     "knowledge": "Knowledge Test",
     "application": "Application Test",
-    "fluency": "Fluency Test",
     "questions": "Questions",
     "openResponse": "Open response",
     "forLesson": "For this lesson",
     "courseAssessment": "Course-level AI assessment",
     "start": "Start test",
-    "comingSoon": "Coming soon",
     "continue": "Continue",
     "unavailable": "This lesson does not have a test available yet."
   },
@@ -312,8 +311,11 @@
     "error": "Upgrade price calculation failed."
   },
   "overviewV1": {
+    "continueLabel": "Continue:",
+    "continueLesson": "Lesson {number} · {title}",
+    "completed": "Completed",
     "learning": "Your learning",
-    "description": "Showing all courses you have started",
+    "description": "Courses you’ve started in your plan",
     "lessons": "{count} lessons",
     "video": "Video Mode",
     "text": "Text Mode",
@@ -323,8 +325,9 @@
       "european": "European Humanities"
     },
     "actions": {
-      "resume": "Resume Learning",
-      "review": "Review Course",
+      "start": "Start",
+      "resume": "Continue learning",
+      "review": "Review course",
       "plans": "View plans"
     }
   },
@@ -458,6 +461,10 @@
     "more": "More",
     "preview": "Preview",
     "start": "Start",
+    "continue": "Continue",
+    "review": "Review",
+    "completed": "Completed",
+    "lastStudied": "Last studied",
     "provides": "This course provides",
     "features": [
       "Video & text dual-mode learning",
@@ -1769,7 +1776,7 @@
     "previewDescription": "Continue within the configured preview range.",
     "previewSaveError": "Your progress could not be saved. Please try again.",
     "progressUnavailable": "Learning progress could not be loaded.",
-    "welcome": "Welcome back, {name}",
+    "welcome": "Welcome, {name}",
     "description": "Your courses are listed by when you first started learning.",
     "yourLearning": "Your learning",
     "courseStates": "In progress & completed courses",

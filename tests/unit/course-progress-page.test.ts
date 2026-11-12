@@ -126,7 +126,7 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.screenshot({path:`test-results/text-completion/${locale}-completed.png`,fullPage:true});
     await page.keyboard.press("Escape");
     assert.equal(await page.evaluate(() => (window as any).destination),undefined);
-    await next.click();await page.getByRole("dialog").waitFor();
+    await page.getByRole("button", {name:getMessages(locale).learning.completed,exact:true}).click();await page.getByRole("dialog").waitFor();
     assert.equal(requests.filter(body=>body.completeLesson).length,2,"reopening a saved completion does not write again");
     await page.getByRole("dialog").getByRole("button",{name:getMessages(locale).lessonCompleted.nextLesson,exact:true}).click();
     await page.waitForFunction(() => (window as any).destination === "/next");

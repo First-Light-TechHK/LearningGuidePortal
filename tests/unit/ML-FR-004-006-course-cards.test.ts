@@ -92,7 +92,7 @@ test("ML-FR-006: subscribed user who opened a Learning Point is Continue learnin
   const card = overview.courses.find((item) => item.courseId === COURSE_ID);
   assert.equal(card?.cardState, "learning");
   assert.equal(card?.cta, "continue_learning");
-  assert.equal(card?.progress, 50);
+  assert.equal(card?.progress, 0);
 });
 
 test("ML-FR-006: cancel-at-period-end still lists a started course as subscribed learning", async () => {

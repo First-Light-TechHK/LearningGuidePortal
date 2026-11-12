@@ -121,7 +121,7 @@ test("both locale Course entries prompt again after preview purchase and stop af
       b.onResolve({ filter: /^(next\/|@\/services\/|@\/components\/portal\/)/ }, args => ({ path: args.path, namespace: "entry" }));
       b.onLoad({ filter: /.*/, namespace: "entry" }, args => ({ contents:
         args.path.endsWith(".css") ? "export default {}"
-        : args.path.endsWith("productStore") ? "export const getCoursePage=(...a)=>globalThis.splitModeEntry.store.getCoursePage(...a);export const getProductCourse=(...a)=>globalThis.splitModeEntry.store.getProductCourse(...a);export const getCourseLearningMode=(...a)=>globalThis.splitModeEntry.store.getCourseLearningMode(...a);export const listPlans=(...a)=>globalThis.splitModeEntry.store.listPlans(...a);"
+        : args.path.endsWith("productStore") ? "export const getLessonBookmarks=(...a)=>globalThis.splitModeEntry.store.getLessonBookmarks(...a);export const getCoursePage=(...a)=>globalThis.splitModeEntry.store.getCoursePage(...a);export const getProductCourse=(...a)=>globalThis.splitModeEntry.store.getProductCourse(...a);export const getCourseLearningMode=(...a)=>globalThis.splitModeEntry.store.getCourseLearningMode(...a);export const listPlans=(...a)=>globalThis.splitModeEntry.store.listPlans(...a);"
         : args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.splitModeEntry.user}"
         : args.path.endsWith("/s3") ? "export async function signCourseMediaUrl(){return ''}"
         : args.path === "next/navigation" ? "export function redirect(url){throw new Error('redirect:'+url)}"
@@ -140,14 +140,17 @@ test("both locale Course entries prompt again after preview purchase and stop af
     for (const locale of ["en-GB", "zh-CN"]) await assert.rejects(() => page(locale), /redirect:.*public-lesson/);
     const { quote } = await store.createQuote(user.id, "science-pc-6"); await store.completeDemoCheckout(user.id, quote.id);
     for (const locale of ["en-GB", "zh-CN"]) {
-      assert.equal(chooser(await page(locale, false)), null, "opening details alone still does not prompt");
+      assert.equal(chooser(await page(locale, false))?.props.accessContext, "entitled", "the first subscribed Course visit prompts without another Start click");
       const dialog = chooser(await page(locale));
       assert.equal(dialog.props.accessContext, "entitled");
       assert.ok(dialog.props.destinationHref.includes("/account/learn/"));
       assert.equal(dialog.props.pendingMode, undefined, "preview choice is not preselected");
     }
     await store.saveCourseLearningMode(user.id, course.id, "text");
-    for (const locale of ["en-GB", "zh-CN"]) await assert.rejects(() => page(locale), /redirect:.*account\/learn/);
+    for (const locale of ["en-GB", "zh-CN"]) {
+      await assert.rejects(() => page(locale), /redirect:.*account\/learn/);
+      assert.equal(chooser(await page(locale,false)),null,"the saved formal preference suppresses subsequent automatic choosers");
+    }
   } finally { delete (globalThis as any).splitModeEntry; }
 });
 
@@ -161,12 +164,12 @@ test("switching a started course updates My Learning before video playback witho
   await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lesson.id, contentId: text.id, learningMode: "text", event: "open", seconds: 0, clientEventId: "mode-sync-text" });
   assert.equal((await getOverviewDisplay(user.id, user.nickname, "en-GB")).courses.find(card => card.courseId === course.id)?.mode, "text", "existing Study modes retain priority over older entry preferences until an explicit switch");
   const before = structuredClone(await store.ensureProductData()), previous = before.studyRecords.find(record => record.userId === user.id)!;
-  assert.equal(previous.progress, 86);
+  assert.equal(previous.progress, 0);
   for (const mode of ["video", "text"] as const) {
     await store.saveCourseLearningMode(user.id, course.id, mode);
     const card: OverviewDisplayCourse = (await getOverviewDisplay(user.id, user.nickname, "en-GB")).courses.find(card => card.courseId === course.id)!;
     assert.equal(card.mode, mode);assert.equal(new URL(card.href, "https://local.test").searchParams.get("viewMode"), mode);
-    assert.equal(card.progress, 86);
+    assert.equal(card.progress, 0);
     const after = await store.ensureProductData(), record = after.studyRecords.find(record => record.userId === user.id)!;
     assert.deepEqual(record.knowledgePositions, previous.knowledgePositions);
     assert.deepEqual(record.highestProgress, previous.highestProgress);
