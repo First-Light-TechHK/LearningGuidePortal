@@ -94,7 +94,7 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       const textSaved=page.waitForRequest(request=>request.url().endsWith("/api/study/events")&&request.postDataJSON()?.contentId==="text");
       await setMode("text");
       await textSaved;
-      assert.equal(await page.evaluate(()=>(window as unknown as {modeDestination:string}).modeDestination),"/lesson?viewMode=text&contentId=text");
+      assert.equal(await page.evaluate(()=>(window as unknown as {modeDestination:string}).modeDestination),"/lesson?viewMode=text&contentId=text&modeSwitch=1");
       assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).getAttribute("href"),"/video-lesson?viewMode=video");
       assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).getAttribute("href"),"/text-lesson?viewMode=text");
       assert.equal(await page.getByRole("link",{name:/Locked text lesson/}).count(),0);
