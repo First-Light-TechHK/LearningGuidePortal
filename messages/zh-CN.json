@@ -1,4 +1,5 @@
 {
+  "lessonBookmark": {"reload": "重新加载", "video": "视频 · 已观看至 {lp}", "text": "文字 · 已阅读至 {lp}", "saveError": "无法保存阅读位置。请重试，或重新加载以恢复到最近保存的位置。"},
   "orderManagement": {
     "title": "待处理订单",
     "history": "已关闭订单",

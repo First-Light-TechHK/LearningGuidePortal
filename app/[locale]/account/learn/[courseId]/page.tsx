@@ -1,7 +1,8 @@
+import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
 import { nextLessonHref } from "@/lib/lessonContinuation";
 import { redirect, notFound } from "next/navigation";
 import { currentProductUser } from "@/services/productAuth";
-import { checkEntitlement, getLearningOverview, getProductCourse, getCourseLearningMode } from "@/services/productStore";
+import { checkEntitlement, getLearningOverview, getProductCourse, getCourseLearningMode, getLessonBookmarks } from "@/services/productStore";
 import { localeFrom } from "@/lib/i18n/config";
 import { PreviewLessonView } from "@/components/portal/PreviewLessonView";
 import { PortalHeader } from "@/components/portal/PortalHeader";
@@ -37,15 +38,19 @@ export default async function LearningPage({ params, searchParams }: { params: P
   const lesson = lessonId ? lessons.find((item) => item.id === lessonId) : lessons[0];
   if (!lesson) notFound();
   lesson.contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id)) : undefined;
-  const preferredMode = isCourseLearningMode(viewMode) ? viewMode : await getCourseLearningMode(user.id, course.id);
+  const bookmarkSnapshot = await getLessonBookmarks(user.id, course.id);
+  const latestBookmark = latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.id, bookmarkSnapshot.versions[lesson.id]);
+  const preferredMode = isCourseLearningMode(viewMode) ? viewMode : latestBookmark?.mode || await getCourseLearningMode(user.id, course.id);
+  const bookmark = preferredMode ? bookmarkSnapshot.bookmarks[lesson.id]?.[preferredMode] : undefined;
+  const resumeContentId = bookmark && bookmark.contentVersion === bookmarkSnapshot.versions[lesson.id]?.[bookmark.mode] ? bookmark.contentId : null;
   const overview = await getLearningOverview(user.id);
   const study = overview.courses.find((item) => item.courseId === course.id);
   const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView explorationData={courseExploration(course)} assessmentAvailability={lessonAssessmentAvailability(lesson)} completedContentIds={study?.completedContentIds || []} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""}
-      lesson={{ id: lesson.id, title: lesson.title, body: lesson.body, durationMinutes: lesson.durationMinutes, contents: lesson.contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, true)} poster={poster} preferredMode={preferredMode} initialContentId={contentId || (study?.currentLessonId === lesson.id ? study.currentContentId : null)} entitled tutorOnline={tutorAvailability.online}
+    <PreviewLessonView bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={user.id} explorationData={courseExploration(course)} assessmentAvailability={lessonAssessmentAvailability(lesson)} completedContentIds={study?.completedContentIds || []} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""}
+      lesson={{ id: lesson.id, title: lesson.title, body: lesson.body, durationMinutes: lesson.durationMinutes, contents: lesson.contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, true)} poster={poster} preferredMode={preferredMode} initialContentId={resumeContentId || contentId || null} entitled tutorOnline={tutorAvailability.online}
       studyEndpoint="/api/study/events" initialCompleted={study?.completedLessonIds.includes(lesson.id) || false} nextHref={nextLessonHref(locale, course.id, lessons, lesson.id)} />
   </main>;
 }

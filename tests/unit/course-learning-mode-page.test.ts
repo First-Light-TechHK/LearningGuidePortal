@@ -17,7 +17,7 @@ test("first course entry skips the chooser for single-mode courses in both local
         args.path.endsWith(".css") ? "export default {}"
         : args.path.endsWith("productStore") ? `
           export async function getProductCourse(){return {id:'course',sections:[{lessons:globalThis.modePageState.lessons}]}};
-          export async function getCourseLearningMode(){return globalThis.modePageState.savedMode};
+          export async function getLessonBookmarks(){return {bookmarks:{},versions:{}}};export async function getCourseLearningMode(){return globalThis.modePageState.savedMode};
           export async function listPlans(){return []};
           export async function getCoursePage(){return {pageState:globalThis.modePageState.pageState,identity:{title:'Course',track:'Art',lessonCount:1,totalMinutes:1},syllabus:[{lessonId:'lesson',title:'Lesson',openable:true,access:'previewable'}],cta:'start_preview',accessState:'none',actionLessonId:'lesson'}};
         ` : args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.modePageState.user}"

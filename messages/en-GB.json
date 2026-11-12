@@ -1,4 +1,5 @@
 {
+  "lessonBookmark": {"reload": "Reload", "video": "Video · Watched to {lp}", "text": "Text · Read to {lp}", "saveError": "Your reading position could not be saved. Retry or reload to resume from the latest saved position."},
   "orderManagement": {
     "title": "Orders to resolve",
     "history": "Closed orders",

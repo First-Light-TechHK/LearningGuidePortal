@@ -1,3 +1,5 @@
+import { getLessonBookmarks } from "@/services/productStore";
+import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
 import { nextLessonHref } from "@/lib/lessonContinuation";
 import { notFound, redirect } from "next/navigation";
 import { localeFrom } from "@/lib/i18n/config";
@@ -34,7 +36,11 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${query.size ? `?${query}` : ""}`)}`);
   }
   const access = await checkEntitlement(user.id, course.id);
-  const preferredMode = isCourseLearningMode(viewMode) ? viewMode : await getCourseLearningMode(user.id, course.id);
+  const bookmarkSnapshot = access.allowed ? await getLessonBookmarks(user.id, course.id) : undefined;
+  const latestBookmark = bookmarkSnapshot ? latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.id, bookmarkSnapshot.versions[lesson.id]) : undefined;
+  const preferredMode = isCourseLearningMode(viewMode) ? viewMode : latestBookmark?.mode || await getCourseLearningMode(user.id, course.id);
+  const bookmark = preferredMode ? bookmarkSnapshot?.bookmarks[lesson.id]?.[preferredMode] : undefined;
+  const resumeContentId = bookmark && bookmark.contentVersion === bookmarkSnapshot?.versions[lesson.id]?.[bookmark.mode] ? bookmark.contentId : null;
   const overview = await getLearningOverview(user.id);
   const record = overview?.courses.find(item => item.courseId === course.id);
   const publishedCourses = await listPublishedCourses();
@@ -58,6 +64,6 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView initialContentId={contentId} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
+    <PreviewLessonView bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={access.allowed ? user.id : undefined} initialContentId={resumeContentId || contentId} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
   </main>;
 }

@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import type { LessonBookmarkSnapshot } from "@/contracts/lesson-bookmark";
+import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
+import { useLessonBookmarks } from "./useLessonBookmarks";
 import { Select } from "antd";
 import { PortalProvider } from "./ui/PortalProvider";
 import Image from "next/image";
@@ -28,7 +31,8 @@ import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { AssessmentAvailability, LessonPreviewConfiguration } from "@/contracts/lesson-resources";
 import type { ExplorationDisplay } from "@/contracts/exploration";
 
-export function PreviewLessonView({ locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
+export function PreviewLessonView({ bookmarkSnapshot, bookmarkOwnerId, locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
+  bookmarkSnapshot?: LessonBookmarkSnapshot; bookmarkOwnerId?: string;
   locale: Locale; courseId: string; courseTitle: string; category: string; description: string;
   lesson: { id: string; title: string; body: string; durationMinutes: number; contents?: LessonContent[]; preview?: LessonPreviewConfiguration };
   explorationData?: ExplorationDisplay; assessmentAvailability?: AssessmentAvailability;
@@ -68,6 +72,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
   const selectedVideoProgress = videoProgress?.contentId === selected?.id ? videoProgress : null;
   useEffect(() => { setPlayingId(null); }, [lesson.id]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
+  const resume = useLessonBookmarks({ root: pageRef, courseId, lessonId: lesson.id, mode, enabled: entitled, ownerId: bookmarkOwnerId, initial: bookmarkSnapshot, contents, onRestoreContent: setContentId });
   useLayoutEffect(() => {
     const page = pageRef.current;
     if (!page) return;
@@ -118,6 +123,7 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
+      await resume.flush();
       const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: destination.mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
       const result = await response.json() as { ok?: boolean };
       if (!response.ok || !result.ok) throw new Error("mode-save");
@@ -134,17 +140,20 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
     modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
+      await resume.flush();
       const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
       const result = await response.json() as { ok: boolean; data?: CourseLearningModeResult };
       if (!response.ok || !result.ok) throw new Error("mode-save");
       if (!modeMounted.current) return;
-      const destination = modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id,result.data?.position);
+      const saved = resume.bookmarks[lesson.id]?.[mode];
+      const localPosition = bookmarkSnapshot && currentHasMode ? { lessonId: lesson.id, contentId: saved && saved.contentVersion === bookmarkSnapshot.versions[lesson.id]?.[mode] ? saved.contentId : content?.id || null } : result.data?.position;
+      const destination = modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id,localPosition);
       if (!destination) throw new Error("mode-destination");
       setNodeRequest(undefined);
       setVideoProgress(null);
       setEnded(null);
       if(destination.lessonId===lesson.id) {
-        const targetId = result.data?.position?.lessonId === lesson.id ? result.data.position.contentId || "" : content?.id || "";
+        const targetId = localPosition?.lessonId === lesson.id ? localPosition.contentId || "" : content?.id || "";
         setContentId(targetId);
         setTextNavigation(mode === "text" && targetId ? { id: targetId, request: Date.now() } : undefined);
       }
@@ -198,14 +207,16 @@ export function PreviewLessonView({ locale, courseId, courseTitle, category, des
             ]}
             onChange={value => void switchMode(value)} />
         </PortalProvider> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
+        {resume.error && <p className={styles.modeError} role="alert">{messages.lessonBookmark.saveError}<button type="button" onClick={() => resume.reloadRequired ? window.location.reload() : void resume.flush()}>{resume.reloadRequired ? messages.lessonBookmark.reload : messages.assessmentRecords.retry}</button></p>}
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
-          {outline.map(item => { const destination = lessonOutlineDestination(item, mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
+          {outline.map(item => { const bookmark = entitled ? latestLessonBookmark(resume.bookmarks, item.id, bookmarkSnapshot?.versions[item.id]) : undefined; const destination = lessonOutlineDestination(item, bookmark?.mode || mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
             {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} onClick={event => {
               if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
               if (modeSaving) { event.preventDefault();return; }
-              if (destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
+              if (bookmarkSnapshot || destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
             }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
+            {bookmark && <p className={styles.bookmark} data-lesson-bookmark={item.id}>{(bookmark.mode === "video" ? messages.lessonBookmark.video : messages.lessonBookmark.text).replace("{lp}", bookmark.lpNumber)}</p>}
             {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
           </div>; })}
           {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}

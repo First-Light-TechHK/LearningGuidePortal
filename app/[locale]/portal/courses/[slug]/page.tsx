@@ -1,3 +1,5 @@
+import { getLessonBookmarks } from "@/services/productStore";
+import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -48,6 +50,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const identity = page.identity;
   const catalogHref = `/${locale}/portal/courses`;
   const hasCourseAccess = page.cta === "continue_learning";
+  const bookmarkSnapshot = user && course && hasCourseAccess ? await getLessonBookmarks(user.id, course.id) : undefined;
   const actionLesson = page.syllabus.find(lesson => lesson.lessonId === page.actionLessonId && lesson.openable && lesson.access === "entitled");
   const learningHref = course && actionLesson ? needsMode
     ? `${courseDetailHref}?lessonEntry=${encodeURIComponent(actionLesson.lessonId)}`
@@ -124,11 +127,13 @@ export default async function CourseDetailPage({ params, searchParams }: {
                         ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(lesson.lessonId)}`
                         : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(lesson.lessonId)}`;
                       const metadata = lessonMetadata.get(lesson.lessonId);
+                      const bookmark = bookmarkSnapshot ? latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.lessonId, bookmarkSnapshot.versions[lesson.lessonId]) : undefined;
                       return <article className={styles.lesson} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
                           <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
+                        {bookmark && <p className={styles.lessonBookmark} data-lesson-bookmark={lesson.lessonId}><Image src={`/portal/course-detail/bookmark-${bookmark.mode}.svg`} alt="" width={16} height={16}/>{(bookmark.mode === "video" ? messages.lessonBookmark.video : messages.lessonBookmark.text).replace("{lp}", bookmark.lpNumber)}</p>}
                         <CourseCurriculumAction lesson={lesson} href={lessonHref && !user ? signInHref : lessonHref && needsMode ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />
                       </article>;
                     })}

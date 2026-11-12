@@ -113,3 +113,5 @@
   .layout > .tools[data-reading-sticky="true"] { position:sticky; top:12px; }
 }
 @media(max-width:700px) { .layout > .tools { margin:0 20px 20px; } }
+
+.bookmark { margin: 4px 12px 8px 30px; color: #637594; font-size: 12px; line-height: 18px; }

@@ -16,7 +16,7 @@ test("course detail replaces purchase with the Figma included-plan card only for
   const bundle = await build({ entryPoints: ["app/[locale]/portal/courses/[slug]/page.tsx"], bundle: true, write: false, outfile: path.join(output, "page.cjs"), platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime"], loader: { ".css": "local-css" }, plugins: [{ name: "page-context", setup(b) {
     b.onResolve({ filter: /^(next\/|@\/services\/|@\/components\/portal\/(PortalHeader|PortalFooter|StreamedContent|CourseThumbnail|CourseLearningModeDialog|CourseDetailSync)$)/ }, args => ({ path: args.path, namespace: "context" }));
     b.onLoad({ filter: /.*/, namespace: "context" }, args => ({ loader: "tsx", resolveDir: root, contents:
-      args.path.endsWith("productStore") ? "export const getCoursePage=(...a)=>globalThis.courseCardTest.store.getCoursePage(...a);export const getProductCourse=(...a)=>globalThis.courseCardTest.store.getProductCourse(...a);export const getCourseLearningMode=(...a)=>globalThis.courseCardTest.store.getCourseLearningMode(...a);export const listPlans=(...a)=>globalThis.courseCardTest.store.listPlans(...a);"
+      args.path.endsWith("productStore") ? "export const getLessonBookmarks=(...a)=>globalThis.courseCardTest.store.getLessonBookmarks(...a);export const getCoursePage=(...a)=>globalThis.courseCardTest.store.getCoursePage(...a);export const getProductCourse=(...a)=>globalThis.courseCardTest.store.getProductCourse(...a);export const getCourseLearningMode=(...a)=>globalThis.courseCardTest.store.getCourseLearningMode(...a);export const listPlans=(...a)=>globalThis.courseCardTest.store.listPlans(...a);"
       : args.path.endsWith("productAuth") ? "export const currentProductUser=async()=>globalThis.courseCardTest.user;"
       : args.path.endsWith("/s3") ? "export const signCourseMediaUrl=async value=>value?.startsWith('/courses/')?value:'/portal/course-study.jpg';"
       : args.path === "next/navigation" ? "export function redirect(href){throw new Error('redirect:'+href)}"
@@ -99,6 +99,24 @@ test("course detail replaces purchase with the Figma included-plan card only for
       assert.equal(await action.textContent(), copy.continueLearning);
       assert.equal(await action.getAttribute("href"), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`);
       assert.equal(await page.locator('[data-syllabus]').getByRole('link', { name: copy.start, exact: true }).count(), (await store.getCoursePage(COURSE_ID, owner.id)).syllabus.length, 'review progress does not hide earlier Lesson buttons');
+      const course = (await store.getProductCourse(COURSE_ID))!;
+      const lesson = course.sections.flatMap(section => section.lessons).find(lesson => lesson.id === PRIVATE_LP)!;
+      const point = lesson.contents?.find(point => point.active !== false && point.type !== 'video');
+      const bookmarks = await store.getLessonBookmarks(owner.id, COURSE_ID);
+      const saved = await store.saveLessonBookmark(owner.id, { courseId: COURSE_ID, lessonId: PRIVATE_LP, mode: 'text', contentId: point?.id || null,
+        paragraphId: `${point?.id || 'body'}:paragraph:0`, contentVersion: bookmarks.versions[PRIVATE_LP].text, expectedRevision: 0, expectedLessonRevision: 0, clientEventId: `card-bookmark-${locale}` });
+      await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
+      const bookmark = page.locator(`[data-lesson-bookmark="${PRIVATE_LP}"]`);
+      assert.equal(await bookmark.textContent(), getMessages(locale).lessonBookmark.text.replace('{lp}', saved.lpNumber));
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await bookmark.scrollIntoViewIfNeeded();
+        const image = bookmark.locator('img'); await image.evaluate(image => (image as HTMLImageElement).decode());
+        assert.deepEqual(await image.evaluate(image => ({ width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height })), { width: 16, height: 16 });
+        assert.equal(await bookmark.evaluate(e => getComputedStyle(e).fontSize), '13px');
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+        await page.screenshot({ path: path.join(output, `${locale}-bookmark-${width}.png`) });
+      }
       // Restore the fixture's no-record state for the next locale.
       const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);await writeProductData(data);
       const modeling = await store.getProductCourse("modeling-life");assert.ok(modeling);context.user = null;

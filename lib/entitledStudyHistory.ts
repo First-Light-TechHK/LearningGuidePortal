@@ -16,7 +16,7 @@ export function entitledStudyHistory(course: ProductCourse, record: ProductStudy
   const ordered = accepted.map((event, index) => ({ event, index })).sort((a, b) => Date.parse(a.event.createdAt) - Date.parse(b.event.createdAt) || a.index - b.index).map(item => item.event);
   const rebuilt: ProductStudyRecord = { id: record?.id || `study_recovered_${ordered[0].id}`, userId: ordered[0].userId, courseId: course.id,
     accessContext: "entitled", startedAt: ordered[0].createdAt, updatedAt: ordered[0].createdAt, currentLessonId: null,
-    totalSeconds: 0, progress: 0, completedAt: null, ...(record?.selectedMode ? { selectedMode: record.selectedMode } : {}) };
+    totalSeconds: 0, progress: 0, completedAt: null, lessonBookmarks: record?.lessonBookmarks, ...(record?.selectedMode ? { selectedMode: record.selectedMode } : {}) };
   const lessons = course.sections.flatMap(section => section.lessons), opened = new Set<string>();
   for (const event of ordered) {
     if (!lessons.some(lesson => lesson.id === event.lessonId)) continue;

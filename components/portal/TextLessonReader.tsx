@@ -75,6 +75,7 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
       frameId = requestAnimationFrame(() => {
         const target = sections.find(section => section.dataset.textPointId === id) || (id ? boundary.current : null);
         initialized.current = true;
+        element.dataset.bookmarkReady = "true";
         if (getComputedStyle(element).overflowY === "visible") {
           if (target && (navigationRequest || target !== sections[0])) window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top - 12, behavior: "auto" });
         } else {
@@ -94,7 +95,7 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
         <h2 className={startsWithPointTitle(point, `${Number(lessonNumber)}.${points.indexOf(point) + 1}`) ? styles.sourceTitle : undefined} id={`${prefix}-${encodeURIComponent(point.id)}-title`}>{Number(lessonNumber)}.{points.indexOf(point) + 1} {point.title}</h2>
         <LessonContentPlayer contents={[point]} locale={locale} hideNavigation/>
       </section>)}
-      {!points.length && body.trim() && <LegacyLessonBody body={body} locale={locale}/>}
+      {!points.length && body.trim() && <section data-text-point-id="body"><LegacyLessonBody body={body} locale={locale}/></section>}
       {previewEnd && <div ref={boundary} data-text-point-id={firstLocked?.id}>{previewEnd}</div>}
       {ending}
     </div>

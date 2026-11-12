@@ -1,3 +1,5 @@
+import { lessonBookmarkInput, LessonBookmarkError, type LessonBookmarks } from "@/contracts/lesson-bookmark";
+import { lessonBookmarkContext, resolveBookmarkLp } from "./lessonBookmarkPolicy";
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent, type PlanPurchaseAvailability } from "@/contracts/payment";
 import type { PaymentReview, OrderAction } from "@/contracts/order-management";
 import { entitledStudyHistory } from "@/lib/entitledStudyHistory";
@@ -213,6 +215,7 @@ export type ProductEntitlement = {
   device?: "pc" | "mobile";
 };
 export type ProductStudyRecord = {
+  lessonBookmarks?: LessonBookmarks;
   accessContext?: "entitled" | "preview";
   selectedMode?: CourseLearningMode;
   highestProgress?: HighestCourseProgress;
@@ -2887,4 +2890,60 @@ export async function isLegacyStripeSubscription(subscriptionId: string) {
 export async function isSnapshotStripeCheckout(sessionId: string) {
  const data = await ensureProductData();
  return data.orders.some(order => order.stripeCheckoutSessionId === sessionId && Boolean(order.price));
+}
+
+
+/** Read only: entering a Lesson cannot manufacture a watched/read position. */
+export async function getLessonBookmarks(userId: string, courseId: string) {
+  const data = await ensureProductData();
+  const course = data.courses.find(item => item.id === courseId && item.status === "published");
+  if (!course || !activeEntitlement(data, userId, courseId)) throw new LessonBookmarkError("forbidden", 403);
+  const record = data.studyRecords.find(item => item.userId === userId && item.courseId === courseId);
+  const versions: Record<string, Partial<Record<"video" | "text", string>>> = {};
+  for (const lesson of course.sections.flatMap(section => section.lessons)) {
+    versions[lesson.id] = {};
+    for (const mode of ["video", "text"] as const) {
+      try { versions[lesson.id][mode] = lessonBookmarkContext(course, lesson.id, mode).contentVersion; }
+      catch (error) { if (!(error instanceof LessonBookmarkError)) throw error; }
+    }
+  }
+  return { bookmarks: record?.lessonBookmarks || {}, versions };
+}
+
+/** Transactional optimistic concurrency: late tabs cannot overwrite newer positions. */
+export async function saveLessonBookmark(userId: string, body: unknown) {
+  const parsed = lessonBookmarkInput.safeParse(body);
+  if (!parsed.success) throw new LessonBookmarkError("invalid_request", 400);
+  const input = parsed.data;
+  return editData(data => {
+    const course = data.courses.find(item => item.id === input.courseId && item.status === "published");
+    if (!course || !activeEntitlement(data, userId, input.courseId)) throw new LessonBookmarkError("forbidden", 403);
+    const lpNumber = resolveBookmarkLp(course, input);
+    const rawIndex = data.studyRecords.findIndex(item => item.userId === userId && item.courseId === input.courseId);
+    const raw = rawIndex >= 0 ? data.studyRecords[rawIndex] : undefined;
+    let record = studyHistoryFor(data, userId, course).record;
+    if (record && raw?.lessonBookmarks) record.lessonBookmarks = raw.lessonBookmarks;
+    const previous = raw?.lessonBookmarks?.[input.lessonId]?.[input.mode];
+    if (previous?.clientEventId === input.clientEventId) {
+      if (previous.contentId !== input.contentId || previous.contentVersion !== input.contentVersion || previous.positionMs !== input.positionMs || previous.paragraphId !== input.paragraphId) throw new LessonBookmarkError("event_conflict", 409);
+      return previous;
+    }
+    const lessonRevision = Object.values(raw?.lessonBookmarks?.[input.lessonId] || {}).reduce((total, item) => total + item.revision, 0);
+    if (lessonRevision !== input.expectedLessonRevision || (previous?.revision || 0) !== input.expectedRevision) throw new LessonBookmarkError("stale_bookmark", 409);
+    const timestamp = new Date(Math.max(Date.now(), ...Object.values(raw?.lessonBookmarks?.[input.lessonId] || {}).map(item => Date.parse(item.updatedAt) + 1))).toISOString();
+    if (!record) {
+      record = { id: raw?.id || id("study"), lessonBookmarks: raw?.lessonBookmarks, userId, courseId: input.courseId, startedAt: timestamp, updatedAt: timestamp, currentLessonId: input.lessonId,
+        totalSeconds: 0, progress: 0, completedAt: null, accessContext: "entitled" };
+
+    }
+    if (rawIndex >= 0) data.studyRecords[rawIndex] = record; else data.studyRecords.unshift(record);
+    const { courseId: _course, lessonId: _lesson, expectedRevision: _revision, expectedLessonRevision: _lessonRevision, ...position } = input;
+    const bookmark = { ...position, revision: (previous?.revision || 0) + 1, updatedAt: timestamp, lpNumber };
+    record.lessonBookmarks = { ...record.lessonBookmarks, [input.lessonId]: { ...record.lessonBookmarks?.[input.lessonId], [input.mode]: bookmark } };
+    record.currentLessonId = input.lessonId;
+    record.currentMode = input.mode;
+    record.knowledgePositions = { ...record.knowledgePositions, [input.mode]: { lessonId: input.lessonId, contentId: input.contentId } };
+    record.updatedAt = timestamp;
+    return bookmark;
+  });
 }
