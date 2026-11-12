@@ -21,6 +21,10 @@ export function PortalLanguageLink({ locale, label }: { locale: Locale; label: s
     remember();
     if (!destination.lesson || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    void saveBeforeLessonLanguageChange().then(() => window.location.assign(destination.href));
+    void saveBeforeLessonLanguageChange().then(mode => {
+      const target = new URL(destination.href, window.location.origin);
+      if (mode) target.searchParams.set("viewMode", mode);
+      window.location.assign(target.pathname + target.search + target.hash);
+    });
   }} aria-label={locale === "en-GB" ? "切换到简体中文" : "Switch to English (UK)"}><Globe className="portal-language-globe" size={14} strokeWidth={1.8} aria-hidden="true" /><span>{label}</span><span className="portal-language-caret" aria-hidden="true" /></Link>;
 }

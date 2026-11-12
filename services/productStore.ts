@@ -1297,7 +1297,8 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
         catch (error) { if (error instanceof LessonBookmarkError) return false; throw error; }
       })).map(([lessonId]) => lessonId));
     const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? record?.currentLessonId || course.sections.flatMap(section => section.lessons)[0]?.id || null : null;
-    return { ...page, syllabus: page.syllabus.map(lesson => lesson.access === "entitled" && continuable.has(lesson.lessonId) ? { ...lesson, continuable: true } : lesson), progress: 0, actionLessonId };
+    return { ...page, syllabus: page.syllabus.map(lesson => lesson.access !== "entitled" ? lesson : completedLessonIds.includes(lesson.lessonId)
+      ? { ...lesson, completed: true } : continuable.has(lesson.lessonId) ? { ...lesson, continuable: true } : lesson), progress: 0, actionLessonId };
   });
 }
 

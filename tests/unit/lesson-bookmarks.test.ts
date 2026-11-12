@@ -48,6 +48,7 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, expectedRevision: 2, contentVersion: "old", clientEventId: "old-content" }), /content_changed/);
     await store.recordStudyEvent({ userId: user.id, courseId: COURSE_ID, lessonId: PREVIEW_LP, event: "complete", seconds: 0, clientEventId: "complete" });
     assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.find(lesson => lesson.lessonId === PREVIEW_LP)?.continuable, undefined, "completed Lessons are not labelled Continue");
+    assert.equal((await store.getCoursePage(COURSE_ID,user.id)).syllabus.find(lesson=>lesson.lessonId===PREVIEW_LP)?.completed,true);
     assert.deepEqual((await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks[PREVIEW_LP], saved);
     const expired = await readProductData();
     expired.entitlements.filter((item: { userId: string }) => item.userId === user.id).forEach((item: { validTo: string }) => { item.validTo = "2000-01-01"; });

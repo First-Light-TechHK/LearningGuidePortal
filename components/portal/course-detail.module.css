@@ -98,5 +98,13 @@
 
 .page .lessonBookmark { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex: 0 1 200px; margin: 0; color: #637594; font-size: 13px; font-weight: 500; line-height: 20px; }
 .lessonBookmark img { flex: none; }
+.lastStudied { position:relative; background:#f0f5ff; border-color:#d2e0fa; }
+.lastStudiedTag { position:absolute; top:-11px; left:15px; padding:3px 8px; border:1px solid #c8d2e2; border-radius:20px; background:#fff; color:#637594; font-size:11px; font-weight:600; line-height:13px; }
+.page .preview[data-course-cta-link="continue_learning"] { gap:4px; width:110px; min-width:110px; min-height:40px; padding:10px 0; border-radius:7px; background:transparent; color:#1d6bff; font-size:14px; font-weight:600; box-shadow:none; transform:none; }
+.page .preview[data-course-cta-link="continue_learning"][data-course-primary="true"] { background:#1d6bff; color:#fff; }
+@media (hover:hover) and (pointer:fine) {
+  .page .preview[data-course-cta-link="continue_learning"]:hover { background:#e8f1ff; }
+  .page .preview[data-course-cta-link="continue_learning"][data-course-primary="true"]:hover { background:#124ce5; }
+}
 @media (max-width: 1100px) { .page .lessonBookmark { flex-basis: 160px; } }
 @media (max-width: 540px) { .page .lessonBookmark { flex: 1 1 auto; justify-content: flex-start; } }

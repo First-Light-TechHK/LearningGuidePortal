@@ -1,10 +1,12 @@
 export const lessonLanguageSaveEvent = "learning-guide:save-before-language";
-export type LessonLanguageSave = { waitUntil: (save: Promise<void>) => void };
+export type LessonLanguageSave = { waitUntil: (save: Promise<void>) => void; setMode: (mode: "video" | "text") => void };
 
 export async function saveBeforeLessonLanguageChange() {
   const pending: Promise<void>[] = [];
-  window.dispatchEvent(new CustomEvent<LessonLanguageSave>(lessonLanguageSaveEvent, { detail: { waitUntil: save => pending.push(save) } }));
+  let mode: "video" | "text" | undefined;
+  window.dispatchEvent(new CustomEvent<LessonLanguageSave>(lessonLanguageSaveEvent, { detail: { waitUntil: save => pending.push(save), setMode: value => { mode = value; } } }));
   await Promise.all(pending);
+  return mode;
 }
 
 export function lessonLanguageHref(pathname: string, query: string, locale: string) {

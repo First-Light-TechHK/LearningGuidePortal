@@ -74,7 +74,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
       <StreamedContent>
-      {user && course && <CourseDetailSync slug={slug} snapshot={{ pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount, continuableLessonIds: page.syllabus.filter(lesson => lesson.continuable).map(lesson => lesson.lessonId) }}/>}
+      {user && course && <CourseDetailSync slug={slug} snapshot={{ pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount, continuableLessonIds: page.syllabus.filter(lesson => lesson.continuable).map(lesson => lesson.lessonId), completedLessonIds: page.syllabus.filter(lesson => lesson.completed).map(lesson => lesson.lessonId) }}/>}
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} serverUserId={user?.id ?? null} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">
@@ -130,12 +130,14 @@ export default async function CourseDetailPage({ params, searchParams }: {
                         : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(lesson.lessonId)}`;
                       const metadata = lessonMetadata.get(lesson.lessonId);
                       const bookmark = bookmarkSnapshot ? latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.lessonId, bookmarkSnapshot.versions[lesson.lessonId]) : undefined;
-                      return <article className={styles.lesson} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
+                      const lastStudied = lesson.lessonId === page.actionLessonId && (page.openedLearningPointCount > 0 || Boolean(bookmark));
+                      return <article className={`${styles.lesson} ${lastStudied ? styles.lastStudied : ""}`} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
                           <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
-                        {bookmark && <p className={styles.lessonBookmark} data-lesson-bookmark={lesson.lessonId}><Image src={`/portal/course-detail/bookmark-${bookmark.mode}.svg`} alt="" width={16} height={16}/>{(bookmark.mode === "video" ? messages.lessonBookmark.video : messages.lessonBookmark.text).replace("{lp}", bookmark.lpNumber)}</p>}
+                        {lastStudied && <span className={styles.lastStudiedTag}>{detail.lastStudied}</span>}
+                        {lesson.completed ? <p className={styles.lessonBookmark} data-lesson-completed={lesson.lessonId}><Image src="/portal/course-detail/completed.svg" alt="" width={16} height={16}/>{detail.completed}</p> : bookmark && <p className={styles.lessonBookmark} data-lesson-bookmark={lesson.lessonId}><Image src={`/portal/course-detail/bookmark-${bookmark.mode}.svg`} alt="" width={16} height={16}/>{(bookmark.mode === "video" ? messages.lessonBookmark.video : messages.lessonBookmark.text).replace("{lp}", bookmark.lpNumber)}</p>}
                         <CourseCurriculumAction lesson={lesson} href={lessonHref && !user ? signInHref : lessonHref && needsMode ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />
                       </article>;
                     })}

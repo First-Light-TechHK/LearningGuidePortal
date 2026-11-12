@@ -1,5 +1,7 @@
 # Phase 1：数据设计
 
+Study audit (2026-11-12): CourseSyllabusItem.completed is a nonpersisted projection of accepted server Lesson completion, exclusive with continuable. It does not restore Course percentage/completion columns. Locale navigation reports the current mode in a transient browser event; existing per-mode checkpoints and optimistic revisions remain the only persisted position facts. No DDL, new entity, migration or history reset. Retired Fluency placeholder translations/styles are UI-only removal.
+
 Post-purchase mode entry (2026-11-12): entry intent is nonpersisted. The existing formal Course mode preference is saved only after the server resolves an accessible point for that mode; no usable destination means no preference write. Confirmation and automatic chooser display do not create Study events, bookmarks, completion, purchases or Entitlements. No database schema or migration change.
 
 Course detail Lesson Continue label (2026-11-12): continuable is a nonpersisted CourseSyllabusItem projection of existing current-version bookmarks and accepted Lesson completion. No database field, event or historical record is added or rewritten.

@@ -274,13 +274,11 @@
     "description": "选择测试来检验您的理解，或继续学习",
     "knowledge": "知识测试",
     "application": "应用测试",
-    "fluency": "熟练度测试",
     "questions": "题目",
     "openResponse": "开放式回答",
     "forLesson": "本课时",
     "courseAssessment": "课程级 AI 评估",
     "start": "开始测试",
-    "comingSoon": "即将推出",
     "continue": "继续",
     "unavailable": "本课时暂无可用测试。"
   },
@@ -464,6 +462,9 @@
     "preview": "试看",
     "start": "开始",
     "continue": "继续",
+    "review": "回顾",
+    "completed": "已完成",
+    "lastStudied": "上次学习",
     "provides": "本课程提供",
     "features": [
       "视频与文本双模式学习",

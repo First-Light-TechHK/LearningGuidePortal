@@ -274,13 +274,11 @@
     "description": "Check your understanding, or continue to next lesson.",
     "knowledge": "Knowledge Test",
     "application": "Application Test",
-    "fluency": "Fluency Test",
     "questions": "Questions",
     "openResponse": "Open response",
     "forLesson": "For this lesson",
     "courseAssessment": "Course-level AI assessment",
     "start": "Start test",
-    "comingSoon": "Coming soon",
     "continue": "Continue",
     "unavailable": "This lesson does not have a test available yet."
   },
@@ -464,6 +462,9 @@
     "preview": "Preview",
     "start": "Start",
     "continue": "Continue",
+    "review": "Review",
+    "completed": "Completed",
+    "lastStudied": "Last studied",
     "provides": "This course provides",
     "features": [
       "Video & text dual-mode learning",

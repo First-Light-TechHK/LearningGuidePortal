@@ -9,6 +9,7 @@ export function CourseDetailSync({ slug, snapshot }: { slug: string; snapshot: C
   const router = useRouter();
   const { pageState, cta, actionLessonId, progress, openedLearningPointCount } = snapshot;
   const continuationKey = JSON.stringify([...(snapshot.continuableLessonIds || [])].sort());
+  const completionKey = JSON.stringify([...(snapshot.completedLessonIds || [])].sort());
   useEffect(() => {
     let controller: AbortController | undefined, refreshRequested = false;
     const check = async () => {
@@ -27,7 +28,8 @@ export function CourseDetailSync({ slug, snapshot }: { slug: string; snapshot: C
           || typeof current.openedLearningPointCount !== "number") return;
         if (current.pageState !== pageState || current.cta !== cta || current.actionLessonId !== actionLessonId
           || current.progress !== progress || current.openedLearningPointCount !== openedLearningPointCount
-          || JSON.stringify((current.syllabus || []).filter(lesson => lesson.continuable).map(lesson => lesson.lessonId).sort()) !== continuationKey) {
+          || JSON.stringify((current.syllabus || []).filter(lesson => lesson.continuable).map(lesson => lesson.lessonId).sort()) !== continuationKey
+          || JSON.stringify((current.syllabus || []).filter(lesson => lesson.completed).map(lesson => lesson.lessonId).sort()) !== completionKey) {
           refreshRequested = true;
           router.refresh();
         }
@@ -45,6 +47,6 @@ export function CourseDetailSync({ slug, snapshot }: { slug: string; snapshot: C
       window.removeEventListener("focus", check);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [slug, pageState, cta, actionLessonId, progress, openedLearningPointCount, continuationKey, router]);
+  }, [slug, pageState, cta, actionLessonId, progress, openedLearningPointCount, continuationKey, completionKey, router]);
   return null;
 }

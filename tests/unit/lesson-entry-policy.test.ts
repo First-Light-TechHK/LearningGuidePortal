@@ -15,6 +15,7 @@ test('Lesson entry selects latest unfinished mode, starts new/completed Lessons 
   assert.deepEqual(resolveLessonEntry({ ...input, completed: true }), { preferredMode: 'text', initialContentId: null, bookmarkRestore: 'start' });
   assert.deepEqual(resolveLessonEntry({ ...input, lessonId: 'new' }), { preferredMode: 'text', initialContentId: null, bookmarkRestore: 'start' });
   assert.equal(resolveLessonEntry({ ...input, completed: true, languageContinuation: true }).initialContentId, 'v2');
+  for(const completed of [false,true]) assert.deepEqual(resolveLessonEntry({...input,completed,languageContinuation:true,requestedMode:'text'}),{preferredMode:'text',initialContentId:'t2',bookmarkRestore:'lp'},'language continuation uses the current mode even when another mode has a newer bookmark');
   assert.equal(resolveLessonEntry({ ...input, requestedMode: 'text', switchingMode: true }).initialContentId, 't2');
   assert.equal(resolveLessonEntry({ ...input, snapshot: { ...snapshot, versions: { lesson: {} } } }).bookmarkRestore, 'start');
 });

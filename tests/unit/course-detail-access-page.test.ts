@@ -44,6 +44,8 @@ test("course detail replaces purchase with the Figma included-plan card only for
     const unrelated = await verifiedUser(store, "card-unrelated@example.test");await buy(unrelated.id, "science-pc-6");
     const expired = await verifiedUser(store, "card-expired@example.test");await purchaseCourse(store, expired.id);
     const snapshot = await readProductData();
+    const fixtureCourse=snapshot.courses.find((course:{id:string})=>course.id===COURSE_ID);
+    fixtureCourse.sections[0].lessons.push({...structuredClone(fixtureCourse.sections[0].lessons[0]),id:'unstarted-fixture',title:'Unstarted fixture lesson',isPublic:false});
     for (const row of [...snapshot.subscriptions, ...snapshot.entitlements].filter(row => row.userId === expired.id)) row.validTo = "2020-01-01T00:00:00Z";
     await writeProductData(snapshot);
     const fixtures = [{ name: "visitor", user: null, included: false }, { name: "course", user: owner, included: true }, { name: "category", user: category, included: true }, { name: "everything", user: everything, included: true }, { name: "trial", user: trial, included: true }, { name: "unrelated", user: unrelated, included: false }, { name: "expired", user: expired, included: false }];
@@ -105,12 +107,19 @@ test("course detail replaces purchase with the Figma included-plan card only for
       const bookmarks = await store.getLessonBookmarks(owner.id, COURSE_ID);
       const saved = await store.saveLessonBookmark(owner.id, { courseId: COURSE_ID, lessonId: PRIVATE_LP, mode: 'text', contentId: point?.id || null,
         paragraphId: `${point?.id || 'body'}:paragraph:0`, contentVersion: bookmarks.versions[PRIVATE_LP].text, expectedRevision: 0, expectedLessonRevision: 0, clientEventId: `card-bookmark-${locale}` });
+      await store.recordStudyEvent({userId:owner.id,courseId:COURSE_ID,lessonId:course.sections[0].lessons[0].id,event:'complete',seconds:0,clientEventId:`first-complete-${locale}`});
+      await store.saveLessonBookmark(owner.id,{courseId:COURSE_ID,lessonId:PRIVATE_LP,mode:'text',contentId:point?.id||null,paragraphId:`${point?.id||'body'}:paragraph:0`,contentVersion:bookmarks.versions[PRIVATE_LP].text,expectedRevision:saved.revision,expectedLessonRevision:saved.revision,clientEventId:`last-studied-${locale}`});
       await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
       const bookmark = page.locator(`[data-lesson-bookmark="${PRIVATE_LP}"]`);
       assert.equal(await bookmark.textContent(), getMessages(locale).lessonBookmark.text.replace('{lp}', saved.lpNumber));
       const lessonRow=page.locator(`[data-lesson-id="${PRIVATE_LP}"]`);
       assert.equal(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).count(),1);
       assert.equal(await lessonRow.getByRole('link',{name:copy.start,exact:true}).count(),0);
+      assert.equal(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).getAttribute('data-course-primary'),'true');
+      assert.equal(await page.locator('[data-course-primary="true"]').count(),1);
+      assert.equal(await page.locator('[data-lesson-id="unstarted-fixture"]').getByRole('link',{name:copy.start,exact:true}).getAttribute('data-course-primary'),'false');
+      assert.equal(await page.locator(`[data-lesson-id="${course.sections[0].lessons[0].id}"]`).getByRole('link',{name:copy.review,exact:true}).getAttribute('data-course-primary'),'false');
+      assert.deepEqual(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).evaluate(link=>({width:link.getBoundingClientRect().width,height:link.getBoundingClientRect().height})),{width:110,height:40});
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
         await bookmark.scrollIntoViewIfNeeded();
@@ -123,7 +132,13 @@ test("course detail replaces purchase with the Figma included-plan card only for
       await store.recordStudyEvent({userId:owner.id,courseId:COURSE_ID,lessonId:PRIVATE_LP,event:'complete',seconds:0,clientEventId:`completed-label-${locale}`});
       await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
       assert.equal(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).count(),0,'completed reentry keeps its existing label');
-      assert.equal(await lessonRow.getByRole('link',{name:copy.start,exact:true}).count(),1);
+      assert.equal(await lessonRow.getByRole('link',{name:copy.review,exact:true}).count(),1);
+      assert.equal(await lessonRow.locator('[data-lesson-completed]').textContent(),copy.completed);
+      assert.equal(await lessonRow.locator('[data-lesson-bookmark]').count(),0);
+      const completedIcon=lessonRow.locator('[data-lesson-completed] img');await completedIcon.evaluate(image=>(image as HTMLImageElement).decode());
+      assert.deepEqual(await completedIcon.evaluate(image=>({width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),{width:16,height:16});
+      assert.equal(await lessonRow.getByRole('link',{name:copy.review,exact:true}).getAttribute('data-course-primary'),'false');
+      await page.screenshot({path:path.join(output,`${locale}-completed-review.png`)});
       // Restore the fixture's no-record state for the next locale.
       const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);await writeProductData(data);
       const modeling = await store.getProductCourse("modeling-life");assert.ok(modeling);context.user = null;

@@ -35,9 +35,9 @@ test('language switching waits for the live video checkpoint, including complete
       Object.defineProperty(video, 'currentTime', { configurable: true, value: position });
     }, position);
     await page.locator('.portal-language').click();
-    await page.waitForURL('**/*resume=1');
+    await page.waitForURL(url=>url.searchParams.get('resume')==='1');
     assert.equal(checkpoint.positionMs, Math.round(position * 1000));
-    assert.equal(new URL(page.url()).searchParams.has('viewMode'), false);
+    assert.equal(new URL(page.url()).searchParams.get('viewMode'), 'video','the live mode replaces a stale URL mode');
     assert.equal(new URL(page.url()).searchParams.get('lessonId'), 'lesson');
     await page.close();
   } } finally { await browser.close(); }

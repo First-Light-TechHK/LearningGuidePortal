@@ -58,7 +58,7 @@ test('Understanding reads real API records, saves/resumes both tests, retries fa
     await knowledge.waitFor();assert.equal(await knowledge.getByText(records.notStarted,{exact:true}).count(),1);
     assert.equal(await lesson.locator('button[aria-expanded]').getByText(labels.available,{exact:true}).count(),0);
     assert.equal(await page.getByText(labels.current,{exact:true}).count(),0, 'available lessons are not all labelled as the current lesson');
-    assert.equal(await page.getByText(getMessages(locale).lessonCompleted.fluency,{exact:true}).count(),0);
+    assert.equal(await page.getByText(/Fluency Test|熟练度测试|Coming soon|即将推出/,{exact:true}).count(),0);
     assert.equal(await page.getByRole('heading',{name:labels.courseAssessment,exact:true}).count(),0);
     const back=page.getByRole('link',{name:labels.back,exact:true});
     assert.equal(await back.getAttribute('href'),`/${locale}/account/learn/${COURSE_ID}`);

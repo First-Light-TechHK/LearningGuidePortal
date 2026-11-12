@@ -186,7 +186,10 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     const visibility = () => { if (document.visibilityState === "hidden") void sampleAndFlush(); };
     const leave = () => { void sampleAndFlush(); };
     const online = () => { void flush(); };
-    const language = (event: Event) => { (event as CustomEvent<LessonLanguageSave>).detail.waitUntil(sampleAndFlush(true)); };
+    const language = (event: Event) => {
+      const detail = (event as CustomEvent<LessonLanguageSave>).detail;
+      detail.setMode(mode); detail.waitUntil(sampleAndFlush(true));
+    };
     const observer = new MutationObserver(scan);
     observer.observe(surface, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-bookmark-ready"] });
     scan(); if (pending || dirty) void flush();
