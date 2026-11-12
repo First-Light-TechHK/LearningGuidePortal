@@ -313,8 +313,11 @@
     "error": "Upgrade price calculation failed."
   },
   "overviewV1": {
+    "continueLabel": "Continue:",
+    "continueLesson": "Lesson {number} · {title}",
+    "completed": "Completed",
     "learning": "Your learning",
-    "description": "Showing all courses you have started",
+    "description": "Courses you’ve started in your plan",
     "lessons": "{count} lessons",
     "video": "Video Mode",
     "text": "Text Mode",
@@ -324,8 +327,9 @@
       "european": "European Humanities"
     },
     "actions": {
-      "resume": "Resume Learning",
-      "review": "Review Course",
+      "start": "Start",
+      "resume": "Continue learning",
+      "review": "Review course",
       "plans": "View plans"
     }
   },

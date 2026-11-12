@@ -8,7 +8,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const displayFixture = (name:string,locale:string): OverviewDisplay => ({name,courses:[33,100,67].map((progress,index)=>({
-  id:`record-${index}`,courseId:`actual-${index}`,title:["Actual video course","Completed course","Expired course"][index],category:"Science",
+  learningState:index===1?"completed":"in_progress",lessonTitle:`Actual Lesson ${index+1}`,bookmark:index===1?null:{mode:"video",lpNumber:`${index+1}.2`},id:`record-${index}`,courseId:`actual-${index}`,title:["Actual video course","Completed course","Expired course"][index],category:"Science",
   cover:["/portal/overview-v1/art.png","/portal/overview-v1/history.png","/portal/overview-v1/nature.png"][index],
   lessonCount:3,currentLesson:index+1,lessonId:`lesson-${index}`,contentId:`video-${index}`,progress,mode:"video",
   action:index===0?"resume":index===1?"review":"plans",href:index===2?`/${locale}/subscription?courseId=actual-2`:`/${locale}/account/learn/actual-${index}?lessonId=lesson-${index}&contentId=video-${index}&viewMode=video`
@@ -19,7 +19,7 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
   const browser=await chromium.launch();await mkdir("test-results/overview-v1",{recursive:true});
   try {for(const locale of ["en-GB","zh-CN"]){
     const page=await browser.newPage({viewport:{width:1440,height:1298}});
-    await page.route("http://overview.test/**",async route=>{const url=new URL(route.request().url());return url.pathname.startsWith("/portal/")?route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:"image/png"}):route.fulfill({body:'<div id="root"></div>',contentType:"text/html"});});
+    await page.route("http://overview.test/**",async route=>{const url=new URL(route.request().url());return url.pathname.startsWith("/portal/")?route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:url.pathname.endsWith(".svg")?"image/svg+xml":"image/png"}):route.fulfill({body:'<div id="root"></div>',contentType:"text/html"});});
     await page.goto(`http://overview.test/${locale}/account/my-learning`);
     for(const file of ["app/styles.css","app/portal-design.css"])await page.addStyleTag({content:await readFile(file,"utf8")});
     await page.addStyleTag({content:bundle.outputFiles.find(file=>file.path.endsWith("css"))!.text});
@@ -30,15 +30,36 @@ test("Overview matches horizontal Figma cards in both locales and adapts to mobi
     const cards=page.locator("[data-overview-course]");await cards.first().waitFor();assert.equal(await cards.count(),3);
     assert.ok((await page.locator("#overview-heading").textContent())?.includes(name));
     assert.equal(await page.getByText(/Macai/).count(),0);
-    const box=(await cards.first().boundingBox())!;assert.deepEqual({x:box.x,y:box.y,width:box.width,height:box.height},{x:387,y:294,width:946,height:178});
+    const box=(await cards.first().boundingBox())!;assert.deepEqual({x:box.x,y:box.y,width:box.width,height:box.height},{x:387,y:294,width:946,height:180});
     assert.equal((await page.locator('.account-nav').boundingBox())!.x,40,"sidebar uses the same centred account frame as Personal Settings");
     assert.deepEqual(await page.getByRole("progressbar").evaluateAll(nodes=>nodes.map(node=>node.getAttribute("aria-valuenow"))),[]);
-    for(const image of await cards.locator("img").all()){await image.evaluate(image=>(image as HTMLImageElement).decode());const parent=(await image.locator("..").boundingBox())!;assert.equal(parent.width,280);assert.equal(parent.height,130);assert.equal(await image.evaluate(image=>(image as HTMLImageElement).naturalWidth>0),true);}
+    for(const image of await cards.locator('img[width="191"]').all()){await image.evaluate(image=>(image as HTMLImageElement).decode());const parent=(await image.locator("..").boundingBox())!;assert.equal(parent.width,191);assert.equal(parent.height,130);assert.equal(await image.evaluate(image=>(image as HTMLImageElement).naturalWidth>0),true);}
     assert.equal(await cards.last().getByRole("link").getAttribute("href"),`/${locale}/subscription?courseId=actual-2`);
     assert.ok((await cards.first().getByRole("link").getAttribute("href"))?.includes("contentId=video-0"));
+    const copy=getMessages(locale as "en-GB"|"zh-CN").overviewV1;
+    assert.equal(await cards.first().getByRole('link').textContent(),copy.actions.resume);
+    assert.equal(await cards.nth(1).getByRole('link').textContent(),copy.actions.review);
+    assert.equal(await cards.nth(1).locator('[data-course-completed]').textContent(),copy.completed);
+    assert.equal(await cards.nth(1).locator('[data-course-bookmark]').count(),0);
+    assert.equal(await cards.first().locator('[data-course-bookmark]').textContent(),getMessages(locale as "en-GB"|"zh-CN").lessonBookmark.video.replace('{lp}','1.2'));
+    assert.ok((await cards.first().textContent())?.includes(copy.continueLesson.replace('{number}','1').replace('{title}','Actual Lesson 1')));
+    for(const [cardIndex,selector,size] of [[0,'[data-course-bookmark] img',16],[1,'[data-course-completed] img',14]] as const){
+      const icon=cards.nth(cardIndex).locator(selector);await icon.evaluate(image=>(image as HTMLImageElement).decode());
+      assert.deepEqual(await icon.evaluate(image=>({width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),{width:size,height:size});
+    }
+    const states=displayFixture(name,locale);states.courses[2]={...states.courses[2],title:'Unstarted course',learningState:'not_started',bookmark:null,lessonTitle:null,action:'start',href:`/${locale}/account/learn/actual-2?lessonId=first`};
+    await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:states});
+    await cards.last().getByRole('link',{name:copy.actions.start+': Unstarted course',exact:true}).waitFor();
+    assert.equal(await cards.last().locator('[data-course-bookmark],[data-course-completed]').count(),0);
     await page.screenshot({path:`test-results/overview-v1/${locale}-desktop.png`,fullPage:true});
     for(const width of [2560,1920,1440,1200,768,390,320]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);if(width>1300){assert.equal((await page.locator(".account-nav").boundingBox())!.x,Math.max(40,(width-1440)/2),"sidebar and content share the centred Personal Settings frame");const cardBox=(await cards.first().boundingBox())!;assert.equal(cardBox.width,946);assert.ok(Math.abs((cardBox.x-280)-(width-cardBox.x-cardBox.width))<1,"wide-screen content is centred beside the sidebar");}if(width===390)await page.screenshot({path:`test-results/overview-v1/${locale}-mobile.png`,fullPage:true});}
     await page.setViewportSize({width:1440,height:800});
+    const textState={...states,courses:states.courses.map((course,index)=>index===0?{...course,mode:"text",bookmark:{mode:"text",lpNumber:"1.2"}}:course)};
+    await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:textState});
+    await page.waitForFunction(expected=>document.querySelector('[data-course-bookmark]')?.textContent===expected,getMessages(locale as "en-GB"|"zh-CN").lessonBookmark.text.replace('{lp}','1.2'));
+    const textIcon=cards.first().locator('[data-course-bookmark] img');await textIcon.evaluate(image=>(image as HTMLImageElement).decode());
+    assert.deepEqual(await textIcon.evaluate(image=>({width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),{width:16,height:16});
+    await page.screenshot({path:`test-results/overview-v1/${locale}-text-position.png`});
     const longDisplay=displayFixture(name,locale);
     longDisplay.courses=Array.from({length:12},(_,index)=>({...longDisplay.courses[index%3],id:`long-${index}`}));
     await page.evaluate(props=>(window as unknown as {mount:(p:unknown)=>void}).mount(props),{locale,data:longDisplay});

@@ -313,8 +313,11 @@
     "error": "升级价格计算失败。"
   },
   "overviewV1": {
+    "continueLabel": "继续：",
+    "continueLesson": "第 {number} 课时 · {title}",
+    "completed": "已完成",
     "learning": "你的学习",
-    "description": "显示你已开始学习的所有课程",
+    "description": "你在订阅方案中已开始的课程",
     "lessons": "{count} 个课时",
     "video": "视频模式",
     "text": "文本模式",
@@ -324,6 +327,7 @@
       "european": "欧洲人文"
     },
     "actions": {
+      "start": "开始",
       "resume": "继续学习",
       "review": "回顾课程",
       "plans": "查看订阅方案"
