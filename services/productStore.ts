@@ -625,8 +625,9 @@ export async function getCourseLearningMode(userId: string, courseId: string): P
   return isCourseLearningMode(mode) ? mode : null;
 }
 
-export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string, expectedContext?: CourseLearningModeContext): Promise<CourseLearningModeResult> {
+export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string, expectedContext?: CourseLearningModeContext, intent?: "entry"): Promise<CourseLearningModeResult> {
   if (!isCourseLearningMode(mode)) throw new CourseLearningModeError("invalid");
+  if (intent !== undefined && (intent !== "entry" || !lessonId)) throw new CourseLearningModeError("invalid");
   if (expectedContext !== undefined && !isCourseLearningModeContext(expectedContext)) throw new CourseLearningModeError("invalid");
   if (lessonId !== undefined && (typeof lessonId !== "string" || !lessonId.trim() || lessonId.length > 200)) throw new CourseLearningModeError("invalid");
   return editData(data => {
@@ -651,7 +652,9 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
         const content = preview.contents?.find(content => content.id === point.contentId);
         return Boolean(content && (content.startSeconds || 0) < (preview.preview?.videoLimitSeconds ?? 60));
       });
-      position = courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
+      position = intent === "entry" ? accessiblePoints.find(point => point.lessonId === lessonId) || accessiblePoints[0] || null
+        : courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
+      if (intent === "entry" && !position) throw new CourseLearningModeError("invalid");
     }
     const previous = user.courseLearningModePreferences;
     const scoped = previous && Object.hasOwn(previous, course.id) ? previous[course.id] : {};

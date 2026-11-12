@@ -37,8 +37,11 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const courseDetailHref = `/${locale}/portal/courses/${encodeURIComponent(slug)}`;
   const signInHref = `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(courseDetailHref)}`;
   const entryLessonId = (await searchParams)?.lessonEntry;
-  const entryLesson = page.pageState === "available" ? page.syllabus.find(lesson => lesson.lessonId === entryLessonId && lesson.openable) : null;
+  const hasCourseAccess = page.cta === "continue_learning";
   const needsMode = !savedMode && Boolean(course && availableCourseLearningModes(course).length > 1);
+  const entryLesson = page.pageState === "available" ? entryLessonId
+    ? page.syllabus.find(lesson => lesson.lessonId === entryLessonId && lesson.openable)
+    : user && hasCourseAccess && needsMode ? page.syllabus.find(lesson => lesson.access === "entitled" && lesson.openable) : null : null;
   const entryDestination = course && entryLesson ? entryLesson.access === "entitled"
     ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(entryLesson.lessonId)}`
     : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(entryLesson.lessonId)}` : null;
@@ -49,7 +52,6 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const detail = messages.courseDetailDesign;
   const identity = page.identity;
   const catalogHref = `/${locale}/portal/courses`;
-  const hasCourseAccess = page.cta === "continue_learning";
   const bookmarkSnapshot = user && course && hasCourseAccess ? await getLessonBookmarks(user.id, course.id) : undefined;
   const actionLesson = page.syllabus.find(lesson => lesson.lessonId === page.actionLessonId && lesson.openable && lesson.access === "entitled");
   const learningHref = course && actionLesson ? needsMode

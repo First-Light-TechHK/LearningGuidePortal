@@ -14,6 +14,7 @@ import { signCourseMediaReferences } from "@/services/courseMediaSigning";
 import { isCourseLearningMode } from "@/contracts/course-learning-mode";
 import { courseExploration, lessonAssessmentAvailability } from "@/lib/lessonResources";
 import { getTutorAvailability } from "@/services/ksTutorClient";
+import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +40,12 @@ export default async function LearningPage({ params, searchParams }: { params: P
   const lessons = course.sections.flatMap((section) => section.lessons.map((item) => ({ ...item, sectionTitle: section.title })));
   const lesson = lessonId ? lessons.find((item) => item.id === lessonId) : lessons[0];
   if (!lesson) notFound();
+  const courseMode = await getCourseLearningMode(user.id, course.id);
+  if (!courseMode && availableCourseLearningModes(course).length > 1) redirect(`/${locale}/portal/courses/${encodeURIComponent(course.id)}?lessonEntry=${encodeURIComponent(lesson.id)}`);
   lesson.contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id)) : undefined;
   const bookmarkSnapshot = await getLessonBookmarks(user.id, course.id);
   const overview = await getLearningOverview(user.id);
   const study = overview.courses.find((item) => item.courseId === course.id);
-  const courseMode = await getCourseLearningMode(user.id, course.id);
   const entry = bookmarkSnapshot ? resolveLessonEntry({ lessonId: lesson.id, snapshot: bookmarkSnapshot, completed: Boolean(study?.completedLessonIds.includes(lesson.id)), courseMode, languageContinuation: resume === "1", switchingMode: modeSwitch === "1", requestedMode: isCourseLearningMode(viewMode) ? viewMode : null }) : { preferredMode: isCourseLearningMode(viewMode) ? viewMode : courseMode, initialContentId: contentId || null, bookmarkRestore: "position" as const };
   const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
   const tutorAvailability = await getTutorAvailability(course.slug);

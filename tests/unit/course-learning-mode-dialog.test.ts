@@ -25,7 +25,7 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
       await page.route("http://mode.test/**", async route => {
         const url = new URL(route.request().url());
         if (url.pathname.startsWith("/portal/learning-mode/")) return route.fulfill({ contentType: "image/svg+xml", body: await readFile(path.join("public", url.pathname)) });
-        if (url.pathname.startsWith("/api/courses/")) { requests.push(route.request().postDataJSON()); return route.fulfill({ status: fail ? 500 : 200, contentType: "application/json", body: fail ? '{"ok":false}' : '{"ok":true}' }); }
+        if (url.pathname.startsWith("/api/courses/")) { const input=route.request().postDataJSON();requests.push(input); return route.fulfill({ status: fail ? 500 : 200, json: fail ? {ok:false} : {ok:true,data:{position:input.lessonId?{lessonId:input.lessonId,contentId:"point-"+input.mode}:undefined}} }); }
         return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
       });
       await page.goto(`http://mode.test/${locale}/portal/courses/a`);
@@ -52,8 +52,8 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
       await proceed().click(); await dialog.getByRole("alert").waitFor();
       assert.equal(await dialog.isVisible(), true);
       fail = false; await proceed().click(); await dialog.waitFor({ state: "detached" });
-      assert.deepEqual(requests, [{ mode: "video", accessContext: "entitled" }, { mode: "video", accessContext: "entitled" }]);
-      assert.equal(await page.evaluate(()=>(window as unknown as {destination:string}).destination),`/${locale}/account/learn/a?lessonId=selected&viewMode=video`);
+      assert.deepEqual(requests, [{ mode: "video", accessContext: "entitled", lessonId:"selected", intent:"entry" }, { mode: "video", accessContext: "entitled", lessonId:"selected", intent:"entry" }]);
+      assert.equal(await page.evaluate(()=>(window as unknown as {destination:string}).destination),`/${locale}/account/learn/a?lessonId=selected&contentId=point-video&viewMode=video&modeSwitch=1`);
       await mount("b"); await dialog.waitFor();
       assert.equal(await dialog.locator("input:checked").count(), 0);
       await dialog.getByRole("button", { name: locale === "zh-CN" ? "关闭" : "Close" }).click();

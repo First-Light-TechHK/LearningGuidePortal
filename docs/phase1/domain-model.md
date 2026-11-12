@@ -1,5 +1,7 @@
 # Phase 1：数据设计
 
+Post-purchase mode entry (2026-11-12): entry intent is nonpersisted. The existing formal Course mode preference is saved only after the server resolves an accessible point for that mode; no usable destination means no preference write. Confirmation and automatic chooser display do not create Study events, bookmarks, completion, purchases or Entitlements. No database schema or migration change.
+
 Course detail Lesson Continue label (2026-11-12): continuable is a nonpersisted CourseSyllabusItem projection of existing current-version bookmarks and accepted Lesson completion. No database field, event or historical record is added or rewritten.
 
 Overview Course-card revision (2026-11-12): OverviewDisplayCourse adds nonpersisted learningState:not_started|in_progress|completed, lessonTitle and bookmark:{mode,lpNumber}|null. Completion requires a nonempty current Lesson list whose IDs all occur in the User's accepted complete events; a latest valid Course-wide bookmark supplies the continuation Lesson/mode/LP. Legacy percentages, completion dates, open events and reaching the final point cannot fabricate a Completed badge or a bookmark. Review checkpoints never remove completion. Existing list membership and storage schema remain unchanged.

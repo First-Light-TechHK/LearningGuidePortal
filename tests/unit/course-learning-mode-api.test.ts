@@ -140,14 +140,17 @@ test("both locale Course entries prompt again after preview purchase and stop af
     for (const locale of ["en-GB", "zh-CN"]) await assert.rejects(() => page(locale), /redirect:.*public-lesson/);
     const { quote } = await store.createQuote(user.id, "science-pc-6"); await store.completeDemoCheckout(user.id, quote.id);
     for (const locale of ["en-GB", "zh-CN"]) {
-      assert.equal(chooser(await page(locale, false)), null, "opening details alone still does not prompt");
+      assert.equal(chooser(await page(locale, false))?.props.accessContext, "entitled", "the first subscribed Course visit prompts without another Start click");
       const dialog = chooser(await page(locale));
       assert.equal(dialog.props.accessContext, "entitled");
       assert.ok(dialog.props.destinationHref.includes("/account/learn/"));
       assert.equal(dialog.props.pendingMode, undefined, "preview choice is not preselected");
     }
     await store.saveCourseLearningMode(user.id, course.id, "text");
-    for (const locale of ["en-GB", "zh-CN"]) await assert.rejects(() => page(locale), /redirect:.*account\/learn/);
+    for (const locale of ["en-GB", "zh-CN"]) {
+      await assert.rejects(() => page(locale), /redirect:.*account\/learn/);
+      assert.equal(chooser(await page(locale,false)),null,"the saved formal preference suppresses subsequent automatic choosers");
+    }
   } finally { delete (globalThis as any).splitModeEntry; }
 });
 

@@ -19,9 +19,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ cour
   if ("accessContext" in body && !isCourseLearningModeContext(body.accessContext)) {
     return NextResponse.json({ ok: false, code: "invalid", message: "Choose a learning context." }, { status: 400 });
   }
+  if ("intent" in body && (body.intent !== "entry" || !("lessonId" in body))) return NextResponse.json({ ok: false, code: "invalid", message: "Choose a lesson." }, { status: 400 });
   try {
     const data = await saveCourseLearningMode(user.id, (await params).courseId, body.mode, "lessonId" in body ? body.lessonId as string : undefined,
-      "accessContext" in body && isCourseLearningModeContext(body.accessContext) ? body.accessContext : undefined);
+      "accessContext" in body && isCourseLearningModeContext(body.accessContext) ? body.accessContext : undefined,
+      "intent" in body && body.intent === "entry" ? "entry" : undefined);
     return NextResponse.json({ ok: true, code: "saved", message: "Learning mode saved.", data });
   } catch (error) {
     if (error instanceof CourseLearningModeError) return NextResponse.json({ ok: false, code: error.code, message: error.message }, { status: { invalid: 400, notFound: 404, unauthorised: 401, access_changed: 409 }[error.code] });

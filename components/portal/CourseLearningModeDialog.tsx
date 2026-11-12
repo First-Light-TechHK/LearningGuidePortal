@@ -7,7 +7,7 @@ import { PortalButton } from "./ui/PortalButton";
 import Image from "next/image";
 import { useId, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import type { CourseLearningMode, CourseLearningModeContext } from "@/contracts/course-learning-mode";
+import type { CourseLearningMode, CourseLearningModeContext, CourseLearningModeResult } from "@/contracts/course-learning-mode";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { PortalDialog } from "./PortalDialog";
@@ -44,15 +44,23 @@ function CourseLearningModeDialogContent({ courseId, locale, signedIn, pendingMo
     }
     setBusy(true);
     try {
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, accessContext }) });
-      const result = await response.json();
+      const destination = destinationHref ? new URL(destinationHref, window.location.origin) : null;
+      const lessonId = destination?.searchParams.get("lessonId");
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, accessContext, ...(lessonId ? { lessonId, intent: "entry" } : {}) }) });
+      const result = await response.json() as { ok?: boolean; code?: string; data?: CourseLearningModeResult };
       if (response.status === 409 && result.code === "access_changed") { router.refresh(); return; }
       if (!response.ok || !result.ok) throw new Error("save");
+      if (lessonId && !result.data?.position) throw new Error("entry-unavailable");
       removePendingMode();
       setOpen(false);
-      if (destinationHref) {
-        const destination = new URL(destinationHref, window.location.origin);
+      if (destination) {
+        if (result.data?.position) {
+          destination.searchParams.set("lessonId", result.data.position.lessonId);
+          destination.searchParams.delete("contentId");
+          if (result.data.position.contentId) destination.searchParams.set("contentId", result.data.position.contentId);
+        }
         destination.searchParams.set("viewMode", mode);
+        destination.searchParams.set("modeSwitch", "1");
         router.push(destination.pathname + destination.search);
       } else router.refresh();
     } catch { setError(copy.saveError); } finally { setBusy(false); }

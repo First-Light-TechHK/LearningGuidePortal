@@ -16,6 +16,7 @@ import { signCourseMediaUrl } from "@/services/persistence/s3";
 import { isCourseLearningMode } from "@/contracts/course-learning-mode";
 import { courseExploration, lessonAssessmentAvailability } from "@/lib/lessonResources";
 import { getTutorAvailability } from "@/services/ksTutorClient";
+import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +39,11 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${query.size ? `?${query}` : ""}`)}`);
   }
   const access = await checkEntitlement(user.id, course.id);
+  const courseMode = await getCourseLearningMode(user.id, course.id);
+  if (access.allowed && !courseMode && availableCourseLearningModes(course).length > 1) redirect(`/${locale}/portal/courses/${encodeURIComponent(course.id)}?lessonEntry=${encodeURIComponent(lesson.id)}`);
   const bookmarkSnapshot = access.allowed ? await getLessonBookmarks(user.id, course.id) : undefined;
   const overview = await getLearningOverview(user.id);
   const record = overview?.courses.find(item => item.courseId === course.id);
-  const courseMode = await getCourseLearningMode(user.id, course.id);
   const entry = bookmarkSnapshot ? resolveLessonEntry({ lessonId: lesson.id, snapshot: bookmarkSnapshot, completed: Boolean(record?.completedLessonIds.includes(lesson.id)), courseMode, languageContinuation: resume === "1", switchingMode: modeSwitch === "1", requestedMode: isCourseLearningMode(viewMode) ? viewMode : null }) : { preferredMode: isCourseLearningMode(viewMode) ? viewMode : courseMode, initialContentId: contentId || null, bookmarkRestore: "position" as const };
   const publishedCourses = await listPublishedCourses();
   const recommendationCourses = publishedCourses.slice(0, 2);

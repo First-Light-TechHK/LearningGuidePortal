@@ -14,13 +14,13 @@ test("subscribed learning renders the shared preview player after session and En
       {id:"text",title:"2.3",type:"text",html:"Protected content",nodes:[]},
     ]},
   ]}] };
-  const state = { user:{id:"user",nickname:"Learner",avatarPath:null} as unknown, allowed:true, course:course as unknown, calls:[] as string[] };
+  const state = { user:{id:"user",nickname:"Learner",avatarPath:null} as unknown, allowed:true, courseMode:"text" as string|null, course:course as unknown, calls:[] as string[] };
   (globalThis as unknown as {learningRouteState:unknown}).learningRouteState = state;
   const bundle = await build({entryPoints:["app/[locale]/account/learn/[courseId]/page.tsx"],bundle:true,write:false,platform:"node",format:"cjs",jsx:"automatic",external:["react/jsx-runtime"],plugins:[{name:"route-dependencies",setup(b){
     b.onResolve({filter:/next\/navigation|services\/(productStore|productAuth|lessonContent|courseMediaSigning|persistence\/s3)$|components\/portal\/(PreviewLessonView|PortalHeader|CourseThumbnail)$/},args=>({path:args.path,namespace:"mock"}));
     b.onLoad({filter:/.*/,namespace:"mock"},args=>({contents:
       args.path==="next/navigation" ? "export function redirect(url){throw new Error('redirect:'+url)};export function notFound(){throw new Error('not-found')}"
-      : args.path.endsWith("productStore") ? "export async function getProductCourse(){return globalThis.learningRouteState.course};export async function checkEntitlement(user,course){globalThis.learningRouteState.calls.push(user+':'+course);return {allowed:globalThis.learningRouteState.allowed}};export async function getLessonBookmarks(){return {bookmarks:{},versions:{}}};export async function getCourseLearningMode(){return 'text'};export async function getLearningOverview(){return {courses:[{courseId:'course',completedLessonIds:['private']}]}}"
+      : args.path.endsWith("productStore") ? "export async function getProductCourse(){return globalThis.learningRouteState.course};export async function checkEntitlement(user,course){globalThis.learningRouteState.calls.push(user+':'+course);return {allowed:globalThis.learningRouteState.allowed}};export async function getLessonBookmarks(){return {bookmarks:{},versions:{}}};export async function getCourseLearningMode(){return globalThis.learningRouteState.courseMode};export async function getLearningOverview(){return {courses:[{courseId:'course',completedLessonIds:['private']}]}}"
       : args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.learningRouteState.user}"
       : args.path.endsWith("lessonContent") ? "export function sanitiseLessonContents(contents){return contents}"
       : args.path.endsWith("courseMediaSigning") ? "export async function signCourseMediaReferences(contents){globalThis.learningRouteState.calls.push('sign');return contents}"
@@ -50,6 +50,9 @@ test("subscribed learning renders the shared preview player after session and En
     assert.equal(props.bookmarkRestore,"start");
     assert.equal((await invoke(locale,"private","invalid")).props.children[1].props.preferredMode,"text");
   }
+  state.courseMode=null;
+  for(const locale of ['en-GB','zh-CN']) await assert.rejects(()=>invoke(locale),new RegExp('redirect:/'+locale+'/portal/courses/course\\?lessonEntry=private'));
+  state.courseMode='text';
   state.user=null;state.calls=[];await assert.rejects(invoke(),/redirect:.*sign-in\?returnTo=/);assert.equal(state.calls.length,0);
   state.user={id:"user"};state.allowed=false;state.calls=[];await assert.rejects(invoke(),/redirect:\/en-GB\/portal\/courses\/course$/);assert.ok(!state.calls.includes("sign"));
   state.allowed=true;await assert.rejects(()=>invoke("en-GB","foreign-lesson"),/not-found/);
