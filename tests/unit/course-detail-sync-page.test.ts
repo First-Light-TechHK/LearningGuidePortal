@@ -15,7 +15,7 @@ test("course restoration refreshes changed Study/access once and keeps the curre
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    const initial = { pageState: "available", cta: "continue_learning", actionLessonId: "one", progress: 14, openedLearningPointCount: 1 };
+    const initial = { pageState: "available", cta: "continue_learning", actionLessonId: "one", progress: 14, openedLearningPointCount: 1, syllabus: [] as Array<{lessonId:string;continuable?:boolean}> };
     let current = { ...initial }, failure: "http" | "network" | "malformed" | null = null;
     let release: (() => Promise<void>) | undefined, delay = false;
     await page.route("http://detail-sync.test/**", async route => {
@@ -32,7 +32,7 @@ test("course restoration refreshes changed Study/access once and keeps the curre
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
     const mount = async (snapshot = initial) => {
       const finished = page.waitForResponse(response => response.url().includes("/api/portal/courses/"));
-      await page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), { slug: "modeling-life", snapshot });
+      await page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), { slug: "modeling-life", snapshot: {...snapshot,continuableLessonIds:snapshot.syllabus.filter(lesson=>lesson.continuable).map(lesson=>lesson.lessonId)} });
       await finished;await page.waitForLoadState("networkidle");
     };
     const check = async () => {
@@ -57,17 +57,20 @@ test("course restoration refreshes changed Study/access once and keeps the curre
     await check();await waitRefreshes(1);
     await check();await waitRefreshes(1, "a stale snapshot requests only one server refresh");
     await mount(current);await page.waitForLoadState("networkidle");await check();await waitRefreshes(1, "the updated snapshot does not loop");
+    current={...current,syllabus:[{lessonId:'two',continuable:true}]};
+    await check();await waitRefreshes(2,'a new checkpoint refreshes Continue even when the Lesson and open count stay the same');
+    await mount(current);await check();await waitRefreshes(2,'the updated Continue snapshot does not loop');
     for (const error of ["http", "network", "malformed"] as const) {
-      failure = error;await check();await waitRefreshes(1, "transient/invalid responses retain the current render");
+      failure = error;await check();await waitRefreshes(2, "transient/invalid responses retain the current render");
     }
     failure = null;delay = true;
     const pending = page.waitForRequest(request => request.url().includes("/api/portal/courses/"));
     await page.evaluate(() => dispatchEvent(new Event("focus")));await pending;
     await page.evaluate(() => (window as unknown as { mount: (p: null) => void }).mount(null));
     assert.ok(release);current = { ...initial, cta: "continue_preview" };await release!();await page.waitForLoadState("networkidle");
-    await waitRefreshes(1, "a response after unmount cannot refresh another page");
+    await waitRefreshes(2, "a response after unmount cannot refresh another page");
     delay = false;await mount(initial);await page.waitForLoadState("networkidle");
-    await waitRefreshes(2, "changed access is refreshed through the same server-owned snapshot");
+    await waitRefreshes(3, "changed access is refreshed through the same server-owned snapshot");
     assert.equal(await page.locator("#root").innerHTML(), "", "reconciliation adds no UI or progress notices");
   } finally { await browser.close(); }
 });

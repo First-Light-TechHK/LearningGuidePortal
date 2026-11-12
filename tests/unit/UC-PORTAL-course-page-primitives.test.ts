@@ -44,7 +44,7 @@ function assertCurriculumActions(page: CoursePage) {
         assert.equal(html, "");
         continue;
       }
-      assert.ok(html.includes(`>${lesson.access === "entitled" ? copy.start : copy.preview}</`), html);
+      assert.ok(html.includes(`>${lesson.access === "entitled" ? lesson.continuable ? copy.continue : copy.start : copy.preview}</`), html);
       if (href) {
         assert.ok(html.includes(`href="${href}"`), html);
         assert.ok(!html.includes("disabled"), html);

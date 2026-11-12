@@ -72,7 +72,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
       <StreamedContent>
-      {user && course && <CourseDetailSync slug={slug} snapshot={{ pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount }}/>}
+      {user && course && <CourseDetailSync slug={slug} snapshot={{ pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount, continuableLessonIds: page.syllabus.filter(lesson => lesson.continuable).map(lesson => lesson.lessonId) }}/>}
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} serverUserId={user?.id ?? null} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">

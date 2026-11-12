@@ -1288,8 +1288,13 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       completedLessonIds,
     });
     const record = history.record;
+    const continuable = new Set(Object.entries(record?.lessonBookmarks || {}).filter(([lessonId, modes]) =>
+      !completedLessonIds.includes(lessonId) && Object.values(modes).some(bookmark => {
+        try { return bookmark.contentVersion === lessonBookmarkContext(course, lessonId, bookmark.mode).contentVersion; }
+        catch (error) { if (error instanceof LessonBookmarkError) return false; throw error; }
+      })).map(([lessonId]) => lessonId));
     const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? record?.currentLessonId || course.sections.flatMap(section => section.lessons)[0]?.id || null : null;
-    return { ...page, progress: 0, actionLessonId };
+    return { ...page, syllabus: page.syllabus.map(lesson => lesson.access === "entitled" && continuable.has(lesson.lessonId) ? { ...lesson, continuable: true } : lesson), progress: 0, actionLessonId };
   });
 }
 

@@ -25,7 +25,9 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     await writeProductData(data);
     const base = { courseId: COURSE_ID, lessonId: PREVIEW_LP, mode: "video" as const, contentId: "v1", contentVersion: lessonBookmarkContext(course, PREVIEW_LP, "video").contentVersion, expectedRevision: 0, expectedLessonRevision: 0, clientEventId: "video-1", positionMs: 20_125 };
     assert.deepEqual((await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks, {});
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.some(lesson => lesson.continuable), false);
     const first = await store.saveLessonBookmark(user.id, base);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.find(lesson => lesson.lessonId === PREVIEW_LP)?.continuable, true);
     assert.equal(first.positionMs, 20_125); assert.equal(first.lpNumber, "1.2");
     assert.equal(await store.getCourseLearningMode(user.id, COURSE_ID), "video");
     assert.deepEqual(await store.saveLessonBookmark(user.id, base), first);
@@ -45,10 +47,12 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, lessonId: PRIVATE_LP }), /mode_unavailable|content_changed|invalid_content/);
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, expectedRevision: 2, contentVersion: "old", clientEventId: "old-content" }), /content_changed/);
     await store.recordStudyEvent({ userId: user.id, courseId: COURSE_ID, lessonId: PREVIEW_LP, event: "complete", seconds: 0, clientEventId: "complete" });
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.find(lesson => lesson.lessonId === PREVIEW_LP)?.continuable, undefined, "completed Lessons are not labelled Continue");
     assert.deepEqual((await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks[PREVIEW_LP], saved);
     const expired = await readProductData();
     expired.entitlements.filter((item: { userId: string }) => item.userId === user.id).forEach((item: { validTo: string }) => { item.validTo = "2000-01-01"; });
     await writeProductData(expired);
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, expectedRevision: 2 }), /forbidden/);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.some(lesson => lesson.continuable), false, "expired access never exposes Continue");
   } finally { await restore(); }
 });

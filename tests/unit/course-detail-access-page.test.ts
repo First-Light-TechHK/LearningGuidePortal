@@ -108,6 +108,9 @@ test("course detail replaces purchase with the Figma included-plan card only for
       await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
       const bookmark = page.locator(`[data-lesson-bookmark="${PRIVATE_LP}"]`);
       assert.equal(await bookmark.textContent(), getMessages(locale).lessonBookmark.text.replace('{lp}', saved.lpNumber));
+      const lessonRow=page.locator(`[data-lesson-id="${PRIVATE_LP}"]`);
+      assert.equal(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).count(),1);
+      assert.equal(await lessonRow.getByRole('link',{name:copy.start,exact:true}).count(),0);
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
         await bookmark.scrollIntoViewIfNeeded();
@@ -117,6 +120,10 @@ test("course detail replaces purchase with the Figma included-plan card only for
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
         await page.screenshot({ path: path.join(output, `${locale}-bookmark-${width}.png`) });
       }
+      await store.recordStudyEvent({userId:owner.id,courseId:COURSE_ID,lessonId:PRIVATE_LP,event:'complete',seconds:0,clientEventId:`completed-label-${locale}`});
+      await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
+      assert.equal(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).count(),0,'completed reentry keeps its existing label');
+      assert.equal(await lessonRow.getByRole('link',{name:copy.start,exact:true}).count(),1);
       // Restore the fixture's no-record state for the next locale.
       const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);await writeProductData(data);
       const modeling = await store.getProductCourse("modeling-life");assert.ok(modeling);context.user = null;
