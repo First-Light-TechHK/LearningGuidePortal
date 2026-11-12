@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { LessonBookmarkSnapshot } from "@/contracts/lesson-bookmark";
+import type { LessonBookmarkRestore, LessonBookmarkSnapshot } from "@/contracts/lesson-bookmark";
 import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
 import { useLessonBookmarks } from "./useLessonBookmarks";
 import { Select } from "antd";
@@ -31,8 +31,8 @@ import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { AssessmentAvailability, LessonPreviewConfiguration } from "@/contracts/lesson-resources";
 import type { ExplorationDisplay } from "@/contracts/exploration";
 
-export function PreviewLessonView({ bookmarkSnapshot, bookmarkOwnerId, locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
-  bookmarkSnapshot?: LessonBookmarkSnapshot; bookmarkOwnerId?: string;
+export function PreviewLessonView({ bookmarkRestore, completedLessonIds = [], bookmarkSnapshot, bookmarkOwnerId, locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
+  bookmarkRestore?: LessonBookmarkRestore; completedLessonIds?: string[]; bookmarkSnapshot?: LessonBookmarkSnapshot; bookmarkOwnerId?: string;
   locale: Locale; courseId: string; courseTitle: string; category: string; description: string;
   lesson: { id: string; title: string; body: string; durationMinutes: number; contents?: LessonContent[]; preview?: LessonPreviewConfiguration };
   explorationData?: ExplorationDisplay; assessmentAvailability?: AssessmentAvailability;
@@ -72,7 +72,7 @@ export function PreviewLessonView({ bookmarkSnapshot, bookmarkOwnerId, locale, c
   const selectedVideoProgress = videoProgress?.contentId === selected?.id ? videoProgress : null;
   useEffect(() => { setPlayingId(null); }, [lesson.id]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
-  const resume = useLessonBookmarks({ root: pageRef, courseId, lessonId: lesson.id, mode, enabled: entitled, ownerId: bookmarkOwnerId, initial: bookmarkSnapshot, contents, onRestoreContent: setContentId });
+  const resume = useLessonBookmarks({ root: pageRef, courseId, lessonId: lesson.id, mode, enabled: entitled, ownerId: bookmarkOwnerId, initial: bookmarkSnapshot, contents, restorePolicy: bookmarkRestore, onRestoreContent: setContentId });
   useLayoutEffect(() => {
     const page = pageRef.current;
     if (!page) return;
@@ -128,7 +128,10 @@ export function PreviewLessonView({ bookmarkSnapshot, bookmarkOwnerId, locale, c
       const result = await response.json() as { ok?: boolean };
       if (!response.ok || !result.ok) throw new Error("mode-save");
       // This is an explicit lesson choice, so do not replace it with the mode's saved cursor.
-      if (modeMounted.current) router.push(destination.href);
+      if (modeMounted.current) {
+        if (lessonCompleted && new URL(destination.href, window.location.origin).searchParams.get("lessonId") === lesson.id) window.location.assign(destination.href);
+        else router.push(destination.href);
+      }
     } catch { if (modeMounted.current) setModeError(messages.courseLearningMode.saveError); }
     finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
   }
@@ -159,7 +162,9 @@ export function PreviewLessonView({ bookmarkSnapshot, bookmarkOwnerId, locale, c
       }
       setVideoNavigation(undefined);
       setPlayingId(null);
-      router.push(destination.href);
+      const switchHref = new URL(destination.href, window.location.origin);
+      switchHref.searchParams.set("modeSwitch", "1");
+      router.push(switchHref.pathname + switchHref.search + switchHref.hash);
     } catch { if (modeMounted.current) setModeError(messages.courseLearningMode.saveError); }
     finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
   }
@@ -210,7 +215,7 @@ export function PreviewLessonView({ bookmarkSnapshot, bookmarkOwnerId, locale, c
         {resume.error && <p className={styles.modeError} role="alert">{messages.lessonBookmark.saveError}<button type="button" onClick={() => resume.reloadRequired ? window.location.reload() : void resume.flush()}>{resume.reloadRequired ? messages.lessonBookmark.reload : messages.assessmentRecords.retry}</button></p>}
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
-          {outline.map(item => { const bookmark = entitled ? latestLessonBookmark(resume.bookmarks, item.id, bookmarkSnapshot?.versions[item.id]) : undefined; const destination = lessonOutlineDestination(item, bookmark?.mode || mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
+          {outline.map(item => { const bookmark = entitled ? latestLessonBookmark(resume.bookmarks, item.id, bookmarkSnapshot?.versions[item.id]) : undefined; const destination = lessonOutlineDestination(item, (item.id === lesson.id ? lessonCompleted : completedLessonIds.includes(item.id)) ? mode : bookmark?.mode || mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
             {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} onClick={event => {
               if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
               if (modeSaving) { event.preventDefault();return; }

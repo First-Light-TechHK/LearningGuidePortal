@@ -27,6 +27,7 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     assert.deepEqual((await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks, {});
     const first = await store.saveLessonBookmark(user.id, base);
     assert.equal(first.positionMs, 20_125); assert.equal(first.lpNumber, "1.2");
+    assert.equal(await store.getCourseLearningMode(user.id, COURSE_ID), "video");
     assert.deepEqual(await store.saveLessonBookmark(user.id, base), first);
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, clientEventId: "stale" }), /stale_bookmark/);
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, positionMs: 100 }), /event_conflict/);
@@ -34,6 +35,7 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     assert.equal(backwards.lpNumber, "1.1");
     const text = await store.saveLessonBookmark(user.id, { ...base, mode: "text", expectedLessonRevision: 2, positionMs: undefined, paragraphId: "t1:paragraph:1", contentId: "t1", contentVersion: lessonBookmarkContext(course, PREVIEW_LP, "text").contentVersion, clientEventId: "text-1" });
     assert.equal(text.lpNumber, "1.1");
+    assert.equal(await store.getCourseLearningMode(user.id, COURSE_ID), "text", "a new Lesson inherits the Course's most recently used mode");
     const saved = (await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks[PREVIEW_LP];
     assert.equal(saved.video?.positionMs, 100); assert.equal(saved.text?.paragraphId, "t1:paragraph:1");
     assert.ok(saved.text!.updatedAt > saved.video!.updatedAt);

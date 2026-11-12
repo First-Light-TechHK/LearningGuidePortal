@@ -45,8 +45,9 @@ test("subscribed learning renders the shared preview player after session and En
     const first=(await invoke(locale,"public")).props.children[1].props;
     assert.equal(first.description,"");
     assert.equal(first.nextHref,`/${locale}/account/learn/course?lessonId=private`);
-    assert.equal((await invoke(locale,"private","video")).props.children[1].props.preferredMode,"video");
-    assert.equal((await invoke(locale,"private","video","point-two")).props.children[1].props.initialContentId,"point-two");
+    assert.equal((await invoke(locale,"private","video")).props.children[1].props.preferredMode,"text", "completed entry uses the last Course mode");
+    assert.equal((await invoke(locale,"private","video","point-two")).props.children[1].props.initialContentId,null, "completed entry ignores the old cursor");
+    assert.equal(props.bookmarkRestore,"start");
     assert.equal((await invoke(locale,"private","invalid")).props.children[1].props.preferredMode,"text");
   }
   state.user=null;state.calls=[];await assert.rejects(invoke(),/redirect:.*sign-in\?returnTo=/);assert.equal(state.calls.length,0);

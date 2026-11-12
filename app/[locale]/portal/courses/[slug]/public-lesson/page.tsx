@@ -1,5 +1,5 @@
 import { getLessonBookmarks } from "@/services/productStore";
-import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
+import { resolveLessonEntry } from "@/services/lessonEntryPolicy";
 import { nextLessonHref } from "@/lib/lessonContinuation";
 import { notFound, redirect } from "next/navigation";
 import { localeFrom } from "@/lib/i18n/config";
@@ -19,11 +19,11 @@ import { getTutorAvailability } from "@/services/ksTutorClient";
 
 export const dynamic = "force-dynamic";
 
-export default async function PublicLessonPage({ params, searchParams }: { params: Promise<{ locale: string; slug: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string }> }) {
+export default async function PublicLessonPage({ params, searchParams }: { params: Promise<{ locale: string; slug: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string; resume?: string; modeSwitch?: string }> }) {
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
   const course = await getProductCourse(slug);
-  const { lessonId: requestedLesson, viewMode, contentId } = await searchParams;
+  const { lessonId: requestedLesson, viewMode, contentId, resume, modeSwitch } = await searchParams;
   const previewLesson = course ? publicFirstLesson(course) : null;
   const lesson = requestedLesson ? (requestedLesson === previewLesson?.id ? previewLesson : null) : previewLesson;
   if (!course || course.status !== "published" || !lesson) notFound();
@@ -33,16 +33,16 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     if (requestedLesson) query.set("lessonId", requestedLesson);
     if (contentId) query.set("contentId", contentId);
     if (isCourseLearningMode(viewMode)) query.set("viewMode", viewMode);
+    if (resume === "1") query.set("resume", "1");
+    if (modeSwitch === "1") query.set("modeSwitch", "1");
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${query.size ? `?${query}` : ""}`)}`);
   }
   const access = await checkEntitlement(user.id, course.id);
   const bookmarkSnapshot = access.allowed ? await getLessonBookmarks(user.id, course.id) : undefined;
-  const latestBookmark = bookmarkSnapshot ? latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.id, bookmarkSnapshot.versions[lesson.id]) : undefined;
-  const preferredMode = isCourseLearningMode(viewMode) ? viewMode : latestBookmark?.mode || await getCourseLearningMode(user.id, course.id);
-  const bookmark = preferredMode ? bookmarkSnapshot?.bookmarks[lesson.id]?.[preferredMode] : undefined;
-  const resumeContentId = bookmark && bookmark.contentVersion === bookmarkSnapshot?.versions[lesson.id]?.[bookmark.mode] ? bookmark.contentId : null;
   const overview = await getLearningOverview(user.id);
   const record = overview?.courses.find(item => item.courseId === course.id);
+  const courseMode = await getCourseLearningMode(user.id, course.id);
+  const entry = bookmarkSnapshot ? resolveLessonEntry({ lessonId: lesson.id, snapshot: bookmarkSnapshot, completed: Boolean(record?.completedLessonIds.includes(lesson.id)), courseMode, languageContinuation: resume === "1", switchingMode: modeSwitch === "1", requestedMode: isCourseLearningMode(viewMode) ? viewMode : null }) : { preferredMode: isCourseLearningMode(viewMode) ? viewMode : courseMode, initialContentId: contentId || null, bookmarkRestore: "position" as const };
   const publishedCourses = await listPublishedCourses();
   const recommendationCourses = publishedCourses.slice(0, 2);
   const recommendations = recommendationCourses
@@ -64,6 +64,6 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={access.allowed ? user.id : undefined} initialContentId={resumeContentId || contentId} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} preferredMode={preferredMode} key={lesson.id} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
+    <PreviewLessonView {...entry} completedLessonIds={record?.completedLessonIds || []} bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={access.allowed ? user.id : undefined} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} key={`${locale}:${lesson.id}`} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
   </main>;
 }

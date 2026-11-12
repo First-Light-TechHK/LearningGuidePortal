@@ -49,7 +49,7 @@ test("entitled Lesson restores exact video and paragraph positions and displays 
       video:{mode:"video",contentId:"v2",positionMs:45555,contentVersion:"v",revision:1,clientEventId:"previous-video",updatedAt:"2026-01-02T00:00:00Z",lpNumber:"1.2"},
       text:{mode:"text",contentId:"t1",paragraphId:"t1:paragraph:15",contentVersion:"t",revision:1,clientEventId:"previous-text",updatedAt:"2026-01-01T00:00:00Z",lpNumber:"1.1"},
     }}};
-    const props={key:"lesson",locale,courseId:"course",courseTitle:"Course",category:"Science",description:"",lesson:{id:"lesson",title:"Lesson",durationMinutes:10,body:"",contents},outline:[{id:"lesson",number:"01",title:"Lesson",href:"/lesson",modes:["video","text"]}],poster:"",entitled:true,initialCompleted:false,nextHref:null,preferredMode:"video",initialContentId:"v2",bookmarkSnapshot,bookmarkOwnerId:"owner"};
+    const props={key:"lesson",locale,courseId:"course",courseTitle:"Course",category:"Science",description:"",lesson:{id:"lesson",title:"Lesson",durationMinutes:10,body:"",contents},outline:[{id:"lesson",number:"01",title:"Lesson",href:"/lesson",modes:["video","text"]}],poster:"",entitled:true,bookmarkRestore:"lp",initialCompleted:false,nextHref:null,preferredMode:"video",initialContentId:"v2",bookmarkSnapshot,bookmarkOwnerId:"owner"};
     await page.evaluate(props=>(window as any).mount(props),props);
     await page.locator("video").evaluate(element=>{Object.defineProperty(element,"duration",{configurable:true,value:100});Object.defineProperty(element,"readyState",{configurable:true,value:4});element.dispatchEvent(new Event("loadedmetadata"));});
     await page.waitForFunction(()=>Math.abs(document.querySelector('video')!.currentTime-45.555)<.001);
@@ -57,18 +57,22 @@ test("entitled Lesson restores exact video and paragraph positions and displays 
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),1);
     const select=page.getByRole('combobox',{name:getMessages(locale).previewVideoDesign.learningMode});
     await select.click();await page.getByTitle(getMessages(locale).previewVideoDesign.textMode,{exact:true}).last().click();
-    const paragraph=page.locator('[data-text-point-id="t1"] .la-prose p').nth(15);
+    const paragraph=page.locator('[data-text-point-id="t1"]');
     await paragraph.waitFor();
-    await page.waitForFunction(()=>{const p=document.querySelectorAll('[data-text-point-id="t1"] .la-prose p')[15];return p&&Math.abs(p.getBoundingClientRect().top-12)<3;});
+    await page.waitForFunction(()=>{const p=document.querySelector('[data-text-point-id="t1"]');return p&&Math.abs(p.getBoundingClientRect().top-12)<3;});
     await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
     await page.waitForFunction(expected=>document.querySelector('[data-lesson-bookmark]')?.textContent===expected,getMessages(locale).lessonBookmark.text.replace("{lp}","1.1"));
-    assert.equal(writes.at(-1).paragraphId,"t1:paragraph:15");
+    assert.equal(writes.at(-1).paragraphId,"t1:paragraph:0");
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),1);
     await mkdir('test-results/lesson-bookmarks',{recursive:true});
     await page.screenshot({path:`test-results/lesson-bookmarks/${locale}-text-desktop.png`});
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/lesson-bookmarks/${locale}-text-mobile.png`});
+    await page.evaluate(props=>(window as any).mount(props),{...props,key:'completed-reentry',initialCompleted:true,bookmarkRestore:'start',initialContentId:null});
+    await page.locator('video').evaluate(element=>{Object.defineProperty(element,'duration',{configurable:true,value:100});Object.defineProperty(element,'readyState',{configurable:true,value:4});element.dispatchEvent(new Event('loadedmetadata'));});
+    assert.equal(await page.locator('video').evaluate(element=>(element as HTMLVideoElement).currentTime),0);
+    assert.equal(await page.locator('video').getAttribute('data-bookmark-content-id'),'v1');
     await page.close();
   }} finally { await browser.close(); }
 });

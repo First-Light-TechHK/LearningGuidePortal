@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import type { LessonBookmark, LessonBookmarkInput, LessonBookmarkSnapshot } from "@/contracts/lesson-bookmark";
+import type { LessonBookmark, LessonBookmarkInput, LessonBookmarkSnapshot, LessonBookmarkRestore } from "@/contracts/lesson-bookmark";
+import { lessonLanguageSaveEvent, type LessonLanguageSave } from "@/lib/lessonLanguageNavigation";
 import type { LessonContent } from "@/contracts/lesson-content";
 import { bookmarkLessonRevision } from "@/lib/lessonBookmarkDisplay";
 import { createClientEventId } from "@/lib/clientEventId";
@@ -10,10 +11,11 @@ type Position = Pick<LessonBookmarkInput, "contentId" | "positionMs" | "paragrap
 const blocks = "p,h1,h2,h3,h4,h5,h6,li,blockquote";
 
 /** Reading position is independent of completion. Preview never activates this hook. */
-export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ownerId, initial, contents, onRestoreContent }: {
+export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ownerId, initial, contents, onRestoreContent, restorePolicy = "position" }: {
   root: RefObject<HTMLDivElement | null>; courseId: string; lessonId: string; mode: "video" | "text";
   enabled: boolean; ownerId?: string; initial?: LessonBookmarkSnapshot; contents: LessonContent[];
   onRestoreContent: (id: string) => void;
+  restorePolicy?: LessonBookmarkRestore;
 }) {
   const [bookmarks, setBookmarks] = useState(initial?.bookmarks || {});
   const [error, setError] = useState(false), [reloadRequired, setReloadRequired] = useState(false);
@@ -32,11 +34,11 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     let latest: Position | undefined, inFlight: Promise<void> | undefined, pending: LessonBookmarkInput | undefined;
     let restore: Position | undefined;
     const server = snapshot.current?.bookmarks[lessonId]?.[mode];
-    if (server?.contentVersion === version) restore = server;
+    if (restorePolicy !== "start" && server?.contentVersion === version) restore = server;
     try {
       const stored = JSON.parse(sessionStorage.getItem(key) || "null") as { request: LessonBookmarkInput; latest?: Position } | null;
       const value = stored?.request;
-      if (stored && value?.courseId === courseId && value.lessonId === lessonId && value.mode === mode && value.contentVersion === version) {
+      if (restorePolicy !== "start" && stored && value?.courseId === courseId && value.lessonId === lessonId && value.mode === mode && value.contentVersion === version) {
         const revision = bookmarkLessonRevision(snapshot.current!.bookmarks, lessonId);
         const newer = stored.latest && (stored.latest.contentId !== value.contentId || stored.latest.positionMs !== value.positionMs || stored.latest.paragraphId !== value.paragraphId);
         if (value.expectedRevision === (server?.revision || 0) && value.expectedLessonRevision === revision) {
@@ -82,7 +84,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     };
 
     let media: HTMLVideoElement | null = null, detachMedia: (() => void) | undefined;
-    let sampleVideo: (() => void) | undefined;
+    let sampleVideo: ((force?: boolean) => void) | undefined;
     let restored = false, restoring = false, textTimer: ReturnType<typeof setTimeout> | undefined;
     let restoreFrame = 0;
     const textPositions = () => {
@@ -121,7 +123,8 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
         cancelAnimationFrame(restoreFrame);
         restoreFrame = requestAnimationFrame(() => { restoreFrame = requestAnimationFrame(() => {
           if (!active) return;
-          const target = entries.find(entry => entry.position.paragraphId === restore?.paragraphId)?.element;
+          const target = restorePolicy === "lp" ? surface.querySelector<HTMLElement>("[data-text-reader]")?.querySelector<HTMLElement>(`[data-text-point-id="${CSS.escape(restore?.contentId || "body")}"]`)
+            : entries.find(entry => entry.position.paragraphId === restore?.paragraphId)?.element;
           const reader = surface.querySelector<HTMLElement>("[data-text-reader]");
           if (target && reader) {
             const header = document.querySelector<HTMLElement>(".portal-header");
@@ -130,6 +133,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
             else reader.scrollTop += target.getBoundingClientRect().top - reader.getBoundingClientRect().top - 12;
           }
           restored = true; restoring = false;
+          sampleText(); void flush();
         }); });
         return;
       }
@@ -140,8 +144,8 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
       if (!media) return;
       const element = media;
       let used = false, timer: ReturnType<typeof setInterval> | undefined;
-      const sample = () => {
-        if (!used || restoring || element.seeking || !Number.isFinite(element.currentTime) || element.currentTime < 0) return;
+      const sample = (force?: boolean | Event) => {
+        if ((!used && force !== true) || restoring || element.seeking || !Number.isFinite(element.currentTime) || element.currentTime < 0) return;
         const contentId = element.dataset.bookmarkContentId;
         if (contentId) capture({ contentId, positionMs: Math.round(element.currentTime * 1000) });
       };
@@ -156,6 +160,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
       const ready = () => {
         if (restored || !Number.isFinite(element.duration) || element.duration <= 0) return;
         restored = true;
+        if (restorePolicy === "start") element.currentTime = 0;
         if (restore?.positionMs !== undefined) {
           restoring = true;
           element.currentTime = Math.min(restore.positionMs / 1000, element.duration);
@@ -175,23 +180,26 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
         element.removeEventListener("seeked", seeked); element.removeEventListener("timeupdate", sample); element.removeEventListener("ended", pause);
       };
     };
-    const sampleAndFlush = () => { if (mode === "text") sampleText(); else sampleVideo?.(); return flush(); };
+    const sampleAndFlush = (force = false) => { if (mode === "text") sampleText(); else sampleVideo?.(force); return flush(); };
     flushRef.current = sampleAndFlush;
     const scroll = () => { if (mode !== "text") return; sampleText(); clearTimeout(textTimer); textTimer = setTimeout(() => void flush(), 800); };
     const visibility = () => { if (document.visibilityState === "hidden") void sampleAndFlush(); };
     const leave = () => { void sampleAndFlush(); };
     const online = () => { void flush(); };
+    const language = (event: Event) => { (event as CustomEvent<LessonLanguageSave>).detail.waitUntil(sampleAndFlush(true)); };
     const observer = new MutationObserver(scan);
     observer.observe(surface, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-bookmark-ready"] });
     scan(); if (pending || dirty) void flush();
     window.addEventListener("scroll", scroll, true); window.addEventListener("pagehide", leave);
     window.addEventListener("online", online); document.addEventListener("visibilitychange", visibility);
+    window.addEventListener(lessonLanguageSaveEvent, language);
     return () => {
       void sampleAndFlush(); active = false; observer.disconnect(); detachMedia?.(); clearTimeout(textTimer); cancelAnimationFrame(restoreFrame);
       window.removeEventListener("scroll", scroll, true); window.removeEventListener("pagehide", leave);
       window.removeEventListener("online", online); document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener(lessonLanguageSaveEvent, language);
     };
-  }, [courseId, lessonId, mode, enabled, ownerId, root]);
+  }, [courseId, lessonId, mode, enabled, ownerId, root, restorePolicy]);
 
   const flush = useCallback(() => flushRef.current(), []);
   return { bookmarks, error, reloadRequired, flush };

@@ -38,3 +38,10 @@ export type LessonBookmarkSnapshot = {
   bookmarks: LessonBookmarks;
   versions: Record<string, Partial<Record<"video" | "text", string>>>;
 };
+
+export type LessonBookmarkRestore = "position" | "lp" | "start";
+export type LessonEntry = {
+  preferredMode: "video" | "text" | null;
+  initialContentId: string | null;
+  bookmarkRestore: LessonBookmarkRestore;
+};

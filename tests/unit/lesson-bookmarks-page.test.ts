@@ -7,9 +7,9 @@ test("video checkpoints every 30 seconds and on pause; text restores the visible
   const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `
     import React,{useRef} from 'react'; import {createRoot} from 'react-dom/client'; import {flushSync} from 'react-dom';
     import {useLessonBookmarks} from './components/portal/useLessonBookmarks';
-    function Harness(p){const root=useRef(null);const resume=useLessonBookmarks({root,courseId:'course',lessonId:p.lessonId||'lesson',mode:p.mode,enabled:p.enabled!==false,ownerId:'owner',initial:p.initial,contents:[],onRestoreContent:()=>{}});
+    function Harness(p){const root=useRef(null);const resume=useLessonBookmarks({root,courseId:'course',lessonId:p.lessonId||'lesson',mode:p.mode,enabled:p.enabled!==false,ownerId:'owner',initial:p.initial,contents:[],restorePolicy:p.restorePolicy,onRestoreContent:()=>{}});
       window.flushBookmark=resume.flush;
-      return <div ref={root}>{p.mode==='video'?<video className="la-lesson-video" data-bookmark-content-id="v1"/>:
+      return <div ref={root} style={{paddingTop:80}}>{p.mode==='video'?<video className="la-lesson-video" data-bookmark-content-id="v1"/>:
       <div data-text-reader data-bookmark-ready="true" style={{overflowY:'visible'}}><section data-text-point-id="t1"><div className="la-prose">{Array.from({length:12},(_,i)=><p key={i} data-paragraph={i} style={{height:160,margin:0}}>Paragraph {i}</p>)}</div></section></div>}
       <output>{JSON.stringify(resume.bookmarks)}</output>{resume.error&&<div role="alert">Save failed</div>}</div>}
     const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(<Harness key={p.key} {...p}/>));`,
@@ -29,7 +29,7 @@ test("video checkpoints every 30 seconds and on pause; text restores the visible
     const initial = { bookmarks: {}, versions: { lesson: { video: "video-version", text: "text-version" } } };
     const mount = (props: any) => page.evaluate(props => (window as any).mount(props), { initial, ...props });
     const video = async (time: number, event: string, paused = false) => page.locator("video").evaluate((element, args) => {
-      for (const [key, value] of Object.entries({ currentTime: args.time, duration: 300, readyState: 4, paused: args.paused, seeking: false })) Object.defineProperty(element, key, { configurable: true, value });
+      for (const [key, value] of Object.entries({ currentTime: args.time, duration: 300, readyState: 4, paused: args.paused, seeking: false })) Object.defineProperty(element, key, { configurable: true, writable: true, value });
       element.dispatchEvent(new Event(args.event));
     }, { time, event, paused });
     await mount({ key: "video", mode: "video" });
@@ -58,6 +58,12 @@ test("video checkpoints every 30 seconds and on pause; text restores the visible
     await page.clock.runFor(100);
     assert.ok(Math.abs(await page.locator('[data-paragraph="5"]').evaluate(element => element.getBoundingClientRect().top) - 12) < 2);
     await page.evaluate(() => (window as any).flushBookmark());
+    await mount({ key: "text-lp", mode: "text", restorePolicy: "lp", initial: { ...initial, bookmarks: { lesson: { text } } } });
+    await page.clock.runFor(100);
+    assert.ok(Math.abs(await page.locator('[data-text-point-id="t1"]').evaluate(element => element.getBoundingClientRect().top) - 12) < 2, "text resumes at the LP heading");
+    await mount({ key: "completed-start", mode: "video", restorePolicy: "start", initial: { ...initial, bookmarks: { lesson: { video: { mode: "video", contentId: "v1", positionMs: 88000, contentVersion: "video-version", revision: 1 } } } } });
+    await video(10, "loadedmetadata", true);
+    assert.equal(await page.locator('video').evaluate(element => (element as HTMLVideoElement).currentTime), 0, "completed/new entries start at zero");
     await mount({ key: "preview", mode: "video", enabled: false });
     const previewCount = requests.length;
     await video(88, "playing"); await page.clock.runFor(30_000); await video(90, "pause", true);

@@ -2942,6 +2942,10 @@ export async function saveLessonBookmark(userId: string, body: unknown) {
     record.lessonBookmarks = { ...record.lessonBookmarks, [input.lessonId]: { ...record.lessonBookmarks?.[input.lessonId], [input.mode]: bookmark } };
     record.currentLessonId = input.lessonId;
     record.currentMode = input.mode;
+    const user = data.users.find(item => item.id === userId);
+    if (user) user.courseLearningModePreferences = { ...user.courseLearningModePreferences, [input.courseId]: {
+      ...user.courseLearningModePreferences?.[input.courseId], entitled: input.mode,
+    } };
     record.knowledgePositions = { ...record.knowledgePositions, [input.mode]: { lessonId: input.lessonId, contentId: input.contentId } };
     record.updatedAt = timestamp;
     return bookmark;
