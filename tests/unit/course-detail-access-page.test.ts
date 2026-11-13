@@ -5,6 +5,7 @@ import { chromium } from "playwright";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
 import path from "node:path";
 import { isolate } from "../io/harness";
 import { COURSE_ID, PRIVATE_LP, activateThreeDayTrial, openLearningPoint, purchaseCourse, readProductData, verifiedUser, writeProductData } from "./helpers/my-learning";
@@ -13,7 +14,7 @@ import { getMessages } from "../../lib/i18n/messages";
 test("course detail replaces purchase with the Figma included-plan card only for current course access", async () => {
   const root = process.cwd(), output = path.join(root, "test-results/course-detail-access");
   await mkdir(output, { recursive: true });
-  const bundle = await build({ entryPoints: ["app/[locale]/portal/courses/[slug]/page.tsx"], bundle: true, write: false, outfile: path.join(output, "page.cjs"), platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime"], loader: { ".css": "local-css" }, plugins: [{ name: "page-context", setup(b) {
+  const bundle = await build({ stdin: { contents: 'export { default } from "./app/[locale]/portal/courses/[slug]/page"; export { CatalogueCourseCard } from "./components/portal/CatalogueCourseCard";', resolveDir: root, loader: "tsx" }, bundle: true, write: false, outfile: path.join(output, "page.cjs"), platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime"], loader: { ".css": "local-css" }, plugins: [{ name: "page-context", setup(b) {
     b.onResolve({ filter: /^(next\/|@\/services\/|@\/components\/portal\/(PortalHeader|PortalFooter|StreamedContent|CourseThumbnail|CourseLearningModeDialog|CourseDetailSync)$)/ }, args => ({ path: args.path, namespace: "context" }));
     b.onLoad({ filter: /.*/, namespace: "context" }, args => ({ loader: "tsx", resolveDir: root, contents:
       args.path.endsWith("productStore") ? "export const getLessonBookmarks=(...a)=>globalThis.courseCardTest.store.getLessonBookmarks(...a);export const getCoursePage=(...a)=>globalThis.courseCardTest.store.getCoursePage(...a);export const getProductCourse=(...a)=>globalThis.courseCardTest.store.getProductCourse(...a);export const getCourseLearningMode=(...a)=>globalThis.courseCardTest.store.getCourseLearningMode(...a);export const listPlans=(...a)=>globalThis.courseCardTest.store.listPlans(...a);"
@@ -29,6 +30,7 @@ test("course detail replaces purchase with the Figma included-plan card only for
   const compiled = bundle.outputFiles.find(file => file.path.endsWith(".cjs"))!;
   await writeFile(compiled.path, compiled.text);
   const render = createRequire(import.meta.url)(compiled.path).default;
+  const Card = createRequire(import.meta.url)(compiled.path).CatalogueCourseCard;
   const css = bundle.outputFiles.find(file => file.path.endsWith(".css"))!.text;
   const { restore } = await isolate("lg-course-detail-access-");
   const browser = await chromium.launch();
@@ -145,6 +147,16 @@ test("course detail replaces purchase with the Figma included-plan card only for
       await page.route("http://course-card.test/courses/**", async route => route.fulfill({body:await readFile(path.join(root,"public",new URL(route.request().url()).pathname)),contentType:"image/png"}));
       await page.locator("#root").evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({params:Promise.resolve({locale,slug:modeling.id})})));
       await page.getByRole("heading",{name:"Modeling life",exact:true}).waitFor();
+      const homeCopy = getMessages(locale).homeDesign;
+      const durationLabel = `0${homeCopy.hourShort}51${homeCopy.minuteShort}`;
+      assert.equal(await page.locator('[data-total-minutes="51"]').textContent(), durationLabel);
+      for (const variant of ["catalogue", "home"]) {
+        const card = renderToStaticMarkup(createElement(Card, { course: modeling, category: modeling.category || "", locale, variant }));
+        await page.evaluate(html => document.body.insertAdjacentHTML("beforeend", `<div id="duration-card">${html}</div>`), card);
+        const meta = await page.locator('#duration-card .portal-course-meta, #duration-card .home-course-meta').textContent();
+        assert.ok(meta?.replaceAll(" ", "").endsWith(durationLabel), `${locale}/${variant}: ${meta}`);
+        await page.locator('#duration-card').evaluate(element => element.remove());
+      }
       assert.equal(await page.getByText(modeling.description,{exact:true}).count(),1);
       for(const outcome of modeling.outcomes!)assert.equal(await page.getByText(outcome,{exact:true}).count(),1);
       for(const feature of modeling.features!)assert.equal(await page.getByText(feature,{exact:true}).count(),1);

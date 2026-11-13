@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CourseThumbnail } from "@/components/portal/CourseThumbnail";
-import { totalVideoMinutes } from "@/lib/courseDuration";
+import { totalCourseMinutes } from "@/lib/courseDuration";
 import { getMessages } from "@/lib/i18n/messages";
 import type { Locale } from "@/lib/i18n/config";
 import type { ProductCourse } from "@/services/productStore";
@@ -8,8 +8,7 @@ import type { ProductCourse } from "@/services/productStore";
 export function CatalogueCourseCard({ course, category, locale, variant = "catalogue" }: { course: ProductCourse; category: string; locale: Locale; variant?: "catalogue" | "home" }) {
   const copy = getMessages(locale).portal;
   const lessons = course.sections.flatMap(section => section.lessons);
-  const videoMinutes = totalVideoMinutes(lessons);
-  const minutes = videoMinutes ?? lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0);
+  const minutes = totalCourseMinutes(lessons);
   const homeCopy = getMessages(locale).homeDesign;
   if (variant === "home") {
     return <article className="home-course-card" data-course-id={course.id}>
