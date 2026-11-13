@@ -27,13 +27,16 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     assert.deepEqual((await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks, {});
     assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.some(lesson => lesson.continuable), false);
     const first = await store.saveLessonBookmark(user.id, base);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).bookmarkRevision, 1);
     assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.find(lesson => lesson.lessonId === PREVIEW_LP)?.continuable, true);
     assert.equal(first.positionMs, 20_125); assert.equal(first.lpNumber, "1.2");
     assert.equal(await store.getCourseLearningMode(user.id, COURSE_ID), "video");
     assert.deepEqual(await store.saveLessonBookmark(user.id, base), first);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).bookmarkRevision, 1, "idempotent replay does not invent a newer display revision");
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, clientEventId: "stale" }), /stale_bookmark/);
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, positionMs: 100 }), /event_conflict/);
     const backwards = await store.saveLessonBookmark(user.id, { ...base, expectedRevision: 1, expectedLessonRevision: 1, clientEventId: "video-2", positionMs: 100 });
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).bookmarkRevision, 2, "position-only changes advance the Course display revision");
     assert.equal(backwards.lpNumber, "1.1");
     const text = await store.saveLessonBookmark(user.id, { ...base, mode: "text", expectedLessonRevision: 2, positionMs: undefined, paragraphId: "t1:paragraph:1", contentId: "t1", contentVersion: lessonBookmarkContext(course, PREVIEW_LP, "text").contentVersion, clientEventId: "text-1" });
     assert.equal(text.lpNumber, "1.1");

@@ -138,6 +138,18 @@ test("video point selection plays real media across same/different sources while
       assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),0.5);
       assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
       if (!player) {
+        await page.evaluate(() => {
+          const nativePlay = HTMLMediaElement.prototype.play;
+          (window as any).restorePlay = () => { HTMLMediaElement.prototype.play = nativePlay; };
+          HTMLMediaElement.prototype.play = function () {
+            if (!this.muted) return Promise.reject(new DOMException('Audible autoplay blocked', 'NotAllowedError'));
+            return nativePlay.call(this);
+          };
+        });
+        await mount({key:"confirmed-video-mode",autoPlayVideo:true});await ready();await playing();
+        assert.ok(await video.evaluate(el => (el as HTMLVideoElement).currentTime > 0 || !(el as HTMLVideoElement).paused), "confirmed Video mode starts playback without another click");
+        assert.equal(await video.evaluate(el => (el as HTMLVideoElement).muted), true, "browser policy rejection retries muted playback");
+        await page.evaluate(() => (window as any).restorePlay());
         await mount({key:"trial",entitled:false,trialGate:{pricingHref:"/subscription",recommendations:[],videoLimitSeconds:0.1}});await ready();
         await point(1).click();await page.getByRole("dialog").waitFor();
         assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);

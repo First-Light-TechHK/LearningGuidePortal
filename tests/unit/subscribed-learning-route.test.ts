@@ -48,6 +48,10 @@ test("subscribed learning renders the shared preview player after session and En
     assert.equal((await invoke(locale,"private","video")).props.children[1].props.preferredMode,"text", "completed entry uses the last Course mode");
     assert.equal((await invoke(locale,"private","video","point-two")).props.children[1].props.initialContentId,null, "completed entry ignores the old cursor");
     assert.equal(props.bookmarkRestore,"start");
+    const confirmed = (await route({params:Promise.resolve({locale,courseId:"course"}),searchParams:Promise.resolve({lessonId:"private",viewMode:"video",modeSwitch:"1",autoplay:"1"})})).props.children[1].props;
+    assert.equal(confirmed.preferredMode,"video");
+    assert.equal(confirmed.autoPlayVideo,true,"confirmed Video mode reaches the player with autoplay enabled");
+    assert.equal(props.autoPlayVideo,false,"ordinary visits keep their existing playback policy");
     assert.equal((await invoke(locale,"private","invalid")).props.children[1].props.preferredMode,"text");
   }
   state.courseMode=null;

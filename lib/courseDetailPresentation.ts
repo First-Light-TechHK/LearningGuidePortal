@@ -1,4 +1,15 @@
 import type { ProductLesson, ProductPlan } from "@/services/productStore";
+import type { CoursePage } from "@/lib/coursePage";
+
+/** Keep one curriculum action prominent without changing the stored resume destination. */
+export function coursePrimaryLessonId(page: Pick<CoursePage, "syllabus" | "actionLessonId">): string | null {
+  const accessible = page.syllabus.filter(lesson => lesson.access === "entitled" && lesson.openable);
+  const unfinished = accessible.filter(lesson => !lesson.completed);
+  return (unfinished.find(lesson => lesson.lessonId === page.actionLessonId)
+    ?? unfinished.find(lesson => lesson.continuable)
+    ?? unfinished[0]
+    ?? accessible[0])?.lessonId ?? null;
+}
 
 /** Display actual media duration; never infer it from the lesson's position. */
 export function courseLessonDuration(lesson?: Pick<ProductLesson, "durationMinutes" | "videoDurationSeconds">) {

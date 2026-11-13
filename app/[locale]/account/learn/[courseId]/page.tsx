@@ -18,10 +18,10 @@ import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 
 export const dynamic = "force-dynamic";
 
-export default async function LearningPage({ params, searchParams }: { params: Promise<{ locale: string; courseId: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string; resume?: string; modeSwitch?: string }> }) {
+export default async function LearningPage({ params, searchParams }: { params: Promise<{ locale: string; courseId: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string; resume?: string; modeSwitch?: string; autoplay?: string }> }) {
   const { locale: rawLocale, courseId } = await params;
   const locale = localeFrom(rawLocale);
-  const { lessonId, viewMode, contentId, resume, modeSwitch } = await searchParams;
+  const { lessonId, viewMode, contentId, resume, modeSwitch, autoplay } = await searchParams;
   const user = await currentProductUser();
   if (!user) {
     const query = new URLSearchParams();
@@ -30,6 +30,7 @@ export default async function LearningPage({ params, searchParams }: { params: P
     if (isCourseLearningMode(viewMode)) query.set("viewMode", viewMode);
     if (resume === "1") query.set("resume", "1");
     if (modeSwitch === "1") query.set("modeSwitch", "1");
+    if (autoplay === "1") query.set("autoplay", "1");
     const destination = `/${locale}/account/learn/${encodeURIComponent(courseId)}${query.size ? `?${query}` : ''}`;
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(destination)}`);
   }
@@ -51,7 +52,7 @@ export default async function LearningPage({ params, searchParams }: { params: P
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView {...entry} completedLessonIds={study?.completedLessonIds || []} bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={user.id} explorationData={courseExploration(course)} assessmentAvailability={lessonAssessmentAvailability(lesson)} completedContentIds={study?.completedContentIds || []} key={`${locale}:${lesson.id}`} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""}
+    <PreviewLessonView {...entry} autoPlayVideo={autoplay === "1" && entry.preferredMode === "video"} completedLessonIds={study?.completedLessonIds || []} bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={user.id} explorationData={courseExploration(course)} assessmentAvailability={lessonAssessmentAvailability(lesson)} completedContentIds={study?.completedContentIds || []} key={`${locale}:${lesson.id}`} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""}
       lesson={{ id: lesson.id, title: lesson.title, body: lesson.body, durationMinutes: lesson.durationMinutes, contents: lesson.contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, true)} poster={poster} entitled tutorOnline={tutorAvailability.online}
       studyEndpoint="/api/study/events" initialCompleted={study?.completedLessonIds.includes(lesson.id) || false} nextHref={nextLessonHref(locale, course.id, lessons, lesson.id)} />
   </main>;

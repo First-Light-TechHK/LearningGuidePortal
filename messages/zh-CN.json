@@ -871,12 +871,7 @@
     "newPassword": "修改密码",
     "confirmPassword": "确认新密码",
     "save": "保存修改",
-    "saved": "设置已保存。",
-    "signInMethodsTitle": "登录方式",
-    "googleConnected": "已绑定",
-    "googleConnectedHint": "您可以随时使用 Google 登录。",
-    "googleConnect": "绑定 Google",
-    "googleConnectHint": "绑定 Google 账号后,无需密码即可登录。"
+    "saved": "设置已保存。"
   },
   "contactPage": {
     "title": "联系我们",

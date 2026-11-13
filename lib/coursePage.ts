@@ -33,6 +33,8 @@ export type CourseSyllabusItem = {
 };
 
 export type CoursePage = {
+  /** Nonpersisted aggregate of accepted per-mode bookmark revisions. */
+  bookmarkRevision?: number;
   pageState: CoursePageState;
   identity: CourseIdentity | null;
   syllabus: CourseSyllabusItem[];

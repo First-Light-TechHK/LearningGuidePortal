@@ -140,7 +140,35 @@ test("course detail replaces purchase with the Figma included-plan card only for
       const completedIcon=lessonRow.locator('[data-lesson-completed] img');await completedIcon.evaluate(image=>(image as HTMLImageElement).decode());
       assert.deepEqual(await completedIcon.evaluate(image=>({width:image.getBoundingClientRect().width,height:image.getBoundingClientRect().height})),{width:16,height:16});
       assert.equal(await lessonRow.getByRole('link',{name:copy.review,exact:true}).getAttribute('data-course-primary'),'false');
+      const nextStart = page.locator('[data-lesson-id="unstarted-fixture"]').getByRole('link', { name: copy.start, exact: true });
+      assert.equal(await nextStart.getAttribute('data-course-primary'), 'true', 'completion promotes the next unfinished Lesson');
+      assert.equal(await page.locator('[data-course-primary="true"]').count(), 1);
+      assert.equal(await nextStart.evaluate(link => getComputedStyle(link).backgroundColor), 'rgb(29, 107, 255)');
       await page.screenshot({path:path.join(output,`${locale}-completed-review.png`)});
+
+      // Real service completion data with gaps across five Lessons: 1/3/5 complete, 2/4 unstarted.
+      const gapData = await readProductData();
+      const gapCourse = gapData.courses.find((item: { id: string }) => item.id === COURSE_ID);
+      const originalSections = structuredClone(gapCourse.sections);
+      const template = gapCourse.sections[0].lessons[0];
+      for (const number of [4, 5]) gapCourse.sections[0].lessons.push({ ...structuredClone(template), id: `gap-${number}`, title: `Gap Lesson ${number}`, isPublic: false });
+      gapData.studyEvents = gapData.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);
+      gapData.studyRecords = gapData.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);
+      await writeProductData(gapData);
+      for (const lessonId of [template.id, 'unstarted-fixture', 'gap-5']) await store.recordStudyEvent({ userId: owner.id, courseId: COURSE_ID, lessonId, event: 'complete', seconds: 0, clientEventId: `gap-complete-${locale}-${lessonId}` });
+      await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
+      assert.equal(await lessonRow.getByRole('link', { name: copy.start, exact: true }).getAttribute('data-course-primary'), 'true');
+      assert.equal(await page.locator('[data-course-primary="true"]').count(), 1);
+      assert.equal(await lessonRow.getByRole('link', { name: copy.start, exact: true }).evaluate(link => getComputedStyle(link).backgroundColor), 'rgb(29, 107, 255)');
+      assert.equal(await page.locator('[data-course-plan-status="included"] a').getAttribute('href'), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`, 'the main entry follows the blue Lesson button');
+      await page.screenshot({ path: path.join(output, `${locale}-gapped-completion.png`), fullPage: true });
+      for (const lessonId of [PRIVATE_LP, 'gap-4']) await store.recordStudyEvent({ userId: owner.id, courseId: COURSE_ID, lessonId, event: 'complete', seconds: 0, clientEventId: `gap-all-complete-${locale}-${lessonId}` });
+      await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
+      assert.equal(await page.locator('[data-course-primary="true"]').count(), 1);
+      assert.equal(await page.locator('[data-course-primary="true"]').textContent(), copy.review);
+      const restored = await readProductData();
+      restored.courses.find((item: { id: string }) => item.id === COURSE_ID).sections = originalSections;
+      await writeProductData(restored);
       // Restore the fixture's no-record state for the next locale.
       const data = await readProductData();data.studyEvents = data.studyEvents.filter((row: { userId: string }) => row.userId !== owner.id);data.studyRecords = data.studyRecords.filter((row: { userId: string }) => row.userId !== owner.id);await writeProductData(data);
       const modeling = await store.getProductCourse("modeling-life");assert.ok(modeling);context.user = null;

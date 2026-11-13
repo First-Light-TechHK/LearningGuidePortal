@@ -870,12 +870,7 @@
     "newPassword": "Change password",
     "confirmPassword": "Confirm new password",
     "save": "Save changes",
-    "saved": "Settings saved.",
-    "signInMethodsTitle": "Sign-in methods",
-    "googleConnected": "Connected",
-    "googleConnectedHint": "You can sign in with Google at any time.",
-    "googleConnect": "Connect Google",
-    "googleConnectHint": "Link your Google account so you can sign in without a password."
+    "saved": "Settings saved."
   },
   "contactPage": {
     "title": "Get in Touch",
