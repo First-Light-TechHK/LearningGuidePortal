@@ -63,7 +63,7 @@ test("video checkpoints every 30 seconds and on pause; text restores the visible
     assert.ok(Math.abs(await page.locator('[data-text-point-id="t1"]').evaluate(element => element.getBoundingClientRect().top) - 12) < 2, "text resumes at the LP heading");
     await mount({ key: "completed-start", mode: "video", restorePolicy: "start", initial: { ...initial, bookmarks: { lesson: { video: { mode: "video", contentId: "v1", positionMs: 88000, contentVersion: "video-version", revision: 1 } } } } });
     await video(10, "loadedmetadata", true);
-    assert.equal(await page.locator('video').evaluate(element => (element as HTMLVideoElement).currentTime), 0, "completed/new entries start at zero");
+    assert.equal(await page.locator('video').evaluate(element => (element as HTMLVideoElement).currentTime), 0, "an explicit start policy ignores saved positions");
     await mount({ key: "preview", mode: "video", enabled: false });
     const previewCount = requests.length;
     await video(88, "playing"); await page.clock.runFor(30_000); await video(90, "pause", true);

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { build } from "esbuild";
+import type { LessonBookmarkSnapshot } from "../../contracts/lesson-bookmark";
 
 test("subscribed learning renders the shared preview player after session and Entitlement checks", async () => {
   const course = { id:"course", slug:"course", title:"Actual Course", description:"Course description", category:"Science", status:"published", cover:"/cover.jpg", sections:[{lessons:[
@@ -14,13 +15,13 @@ test("subscribed learning renders the shared preview player after session and En
       {id:"text",title:"2.3",type:"text",html:"Protected content",nodes:[]},
     ]},
   ]}] };
-  const state = { user:{id:"user",nickname:"Learner",avatarPath:null} as unknown, allowed:true, courseMode:"text" as string|null, course:course as unknown, calls:[] as string[] };
+  const state = { user:{id:"user",nickname:"Learner",avatarPath:null} as unknown, allowed:true, courseMode:"text" as string|null, course:course as unknown, calls:[] as string[], bookmarks:{bookmarks:{},versions:{}} as LessonBookmarkSnapshot };
   (globalThis as unknown as {learningRouteState:unknown}).learningRouteState = state;
   const bundle = await build({entryPoints:["app/[locale]/account/learn/[courseId]/page.tsx"],bundle:true,write:false,platform:"node",format:"cjs",jsx:"automatic",external:["react/jsx-runtime"],plugins:[{name:"route-dependencies",setup(b){
     b.onResolve({filter:/next\/navigation|services\/(productStore|productAuth|lessonContent|courseMediaSigning|persistence\/s3)$|components\/portal\/(PreviewLessonView|PortalHeader|CourseThumbnail)$/},args=>({path:args.path,namespace:"mock"}));
     b.onLoad({filter:/.*/,namespace:"mock"},args=>({contents:
       args.path==="next/navigation" ? "export function redirect(url){throw new Error('redirect:'+url)};export function notFound(){throw new Error('not-found')}"
-      : args.path.endsWith("productStore") ? "export async function getProductCourse(){return globalThis.learningRouteState.course};export async function checkEntitlement(user,course){globalThis.learningRouteState.calls.push(user+':'+course);return {allowed:globalThis.learningRouteState.allowed}};export async function getLessonBookmarks(){return {bookmarks:{},versions:{}}};export async function getCourseLearningMode(){return globalThis.learningRouteState.courseMode};export async function getLearningOverview(){return {courses:[{courseId:'course',completedLessonIds:['private']}]}}"
+      : args.path.endsWith("productStore") ? "export async function getProductCourse(){return globalThis.learningRouteState.course};export async function checkEntitlement(user,course){globalThis.learningRouteState.calls.push(user+':'+course);return {allowed:globalThis.learningRouteState.allowed}};export async function getLessonBookmarks(){return globalThis.learningRouteState.bookmarks};export async function getCourseLearningMode(){return globalThis.learningRouteState.courseMode};export async function getLearningOverview(){return {courses:[{courseId:'course',completedLessonIds:['private']}]}}"
       : args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.learningRouteState.user}"
       : args.path.endsWith("lessonContent") ? "export function sanitiseLessonContents(contents){return contents}"
       : args.path.endsWith("courseMediaSigning") ? "export async function signCourseMediaReferences(contents){globalThis.learningRouteState.calls.push('sign');return contents}"
@@ -53,6 +54,14 @@ test("subscribed learning renders the shared preview player after session and En
     assert.equal(confirmed.autoPlayVideo,true,"confirmed Video mode reaches the player with autoplay enabled");
     assert.equal(props.autoPlayVideo,false,"ordinary visits keep their existing playback policy");
     assert.equal((await invoke(locale,"private","invalid")).props.children[1].props.preferredMode,"text");
+    state.bookmarks={versions:{private:{video:'current'}},bookmarks:{private:{video:{mode:'video',contentId:'point-two',positionMs:50_555,contentVersion:'current',revision:1,clientEventId:'review-checkpoint',updatedAt:'2026-11-14T00:00:00Z',lpNumber:'2.2'}}}};
+    const review=(await invoke(locale)).props.children[1].props;
+    assert.equal(review.initialCompleted,true);
+    assert.equal(review.preferredMode,'video','completed re-entry uses the saved Lesson mode');
+    assert.equal(review.initialContentId,'point-two');
+    assert.equal(review.bookmarkRestore,'lp');
+    assert.equal(review.bookmarkSnapshot.bookmarks.private.video.positionMs,50_555);
+    state.bookmarks={bookmarks:{},versions:{}};
   }
   state.courseMode=null;
   for(const locale of ['en-GB','zh-CN']) await assert.rejects(()=>invoke(locale),new RegExp('redirect:/'+locale+'/portal/courses/course\\?lessonEntry=private'));

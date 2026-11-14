@@ -1,5 +1,7 @@
 # Phase 1：数据设计
 
+Completed Lesson bookmark resume (2026-11-14): accepted completion remains irreversible and independent of the existing per-mode bookmarks. Reviewing a completed Lesson may update its latest position; subsequent entry restores the valid bookmark without clearing completion. No schema, migration or historical-data rewrite. Supersedes the earlier completed-Lesson entry-from-start rule.
+
 Browser Back Course-state reconciliation (2026-11-14): CoursePage.bookmarkRevision is a nonpersisted aggregate of existing LessonBookmark.revision values. Accepted new saves advance it; replaying the same clientEventId does not. It is only a display invalidation hint, never a completion, ownership or Entitlement fact. No new stored field, migration or learner-history rewrite.
 
 Study audit (2026-11-12): CourseSyllabusItem.completed is a nonpersisted projection of accepted server Lesson completion, exclusive with continuable. It does not restore Course percentage/completion columns. Locale navigation reports the current mode in a transient browser event; existing per-mode checkpoints and optimistic revisions remain the only persisted position facts. No DDL, new entity, migration or history reset. Retired Fluency placeholder translations/styles are UI-only removal.

@@ -5,6 +5,8 @@ import { chromium } from "playwright";
 import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { getMessages } from "../../lib/i18n/messages";
+import { resolveLessonEntry } from "../../services/lessonEntryPolicy";
+import type { LessonBookmarkSnapshot } from "../../contracts/lesson-bookmark";
 
 test("entitled Lesson restores video and paragraph positions while hiding video position labels and retaining text labels", async () => {
   const bundle = await build({
@@ -45,7 +47,7 @@ test("entitled Lesson restores video and paragraph positions while hiding video 
       {id:"v2",type:"video",title:"Second video LP",mode:"lecture",url:"/video.mp4",startSeconds:30,nodes:[]},
       {id:"t1",type:"text",title:"Reading",mode:"lecture",html:Array.from({length:60},(_,i)=>`<p>Paragraph ${i}. Reading resumes at the same paragraph across devices and display widths.</p>`).join(""),exhibitMode:"authored",nodes:[]},
     ];
-    const bookmarkSnapshot = {versions:{lesson:{video:"v",text:"t"}},bookmarks:{lesson:{
+    const bookmarkSnapshot: LessonBookmarkSnapshot = {versions:{lesson:{video:"v",text:"t"}},bookmarks:{lesson:{
       video:{mode:"video",contentId:"v2",positionMs:45555,contentVersion:"v",revision:1,clientEventId:"previous-video",updatedAt:"2026-01-02T00:00:00Z",lpNumber:"1.2"},
       text:{mode:"text",contentId:"t1",paragraphId:"t1:paragraph:15",contentVersion:"t",revision:1,clientEventId:"previous-text",updatedAt:"2026-01-01T00:00:00Z",lpNumber:"1.1"},
     }}};
@@ -69,11 +71,21 @@ test("entitled Lesson restores video and paragraph positions while hiding video 
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/lesson-bookmarks/${locale}-text-mobile.png`});
-    await page.evaluate(props=>(window as any).mount(props),{...props,key:'completed-reentry',initialCompleted:true,bookmarkRestore:'start',initialContentId:null});
+    const reviewEntry = resolveLessonEntry({lessonId:'lesson',snapshot:bookmarkSnapshot,completed:true,courseMode:'text'});
+    await page.evaluate(props=>(window as any).mount(props),{...props,...reviewEntry,key:'completed-reentry',initialCompleted:true});
     await page.locator('video').evaluate(element=>{Object.defineProperty(element,'duration',{configurable:true,value:100});Object.defineProperty(element,'readyState',{configurable:true,value:4});element.dispatchEvent(new Event('loadedmetadata'));});
-    assert.equal(await page.locator('video').evaluate(element=>(element as HTMLVideoElement).currentTime),0);
-    assert.equal(await page.locator('video').getAttribute('data-bookmark-content-id'),'v1');
+    await page.waitForFunction(()=>Math.abs(document.querySelector('video')!.currentTime-45.555)<.001);
+    assert.equal(await page.locator('video').getAttribute('data-bookmark-content-id'),'v2');
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),0,"completed re-entry also omits the video position label");
+    const checkpoint = page.waitForResponse(response=>response.url().endsWith('/api/study/bookmarks')&&response.request().postDataJSON()?.positionMs===50_555);
+    await page.locator('video').evaluate(element=>{(element as HTMLVideoElement).currentTime=50.555;element.dispatchEvent(new Event('timeupdate'));element.dispatchEvent(new Event('pause'));});
+    const savedReview = (await (await checkpoint).json()).data;
+    const reviewSnapshot = {...bookmarkSnapshot,bookmarks:{lesson:{...bookmarkSnapshot.bookmarks.lesson,video:savedReview}}};
+    const reentry = resolveLessonEntry({lessonId:'lesson',snapshot:reviewSnapshot,completed:true,courseMode:'text'});
+    await page.evaluate(props=>(window as any).mount(props),{...props,...reentry,key:'completed-saved-reentry',initialCompleted:true,bookmarkSnapshot:reviewSnapshot});
+    await page.locator('video').evaluate(element=>{Object.defineProperty(element,'duration',{configurable:true,value:100});Object.defineProperty(element,'readyState',{configurable:true,value:4});element.dispatchEvent(new Event('loadedmetadata'));});
+    await page.waitForFunction(()=>Math.abs(document.querySelector('video')!.currentTime-50.555)<.001);
+    assert.equal(await page.locator('video').getAttribute('data-bookmark-content-id'),'v2');
     await page.close();
   }} finally { await browser.close(); }
 });

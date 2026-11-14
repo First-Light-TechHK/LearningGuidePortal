@@ -1,5 +1,7 @@
 # Phase 1：七份 PRD 实施地图
 
+Completed Lesson bookmark resume (2026-11-14, owner correction): `services/lessonEntryPolicy.ts` restores the latest valid Lesson mode/content bookmark for completed Lessons as well as unfinished Lessons. Video restores exact milliseconds; text retains its existing LP restoration. No valid bookmark still starts at the beginning. Completion/Review status and access checks remain independent. Both protected/public-with-access routes use the shared policy. Supersedes the earlier completed-reentry-from-start rule. Coverage: lesson-entry-policy, lesson-bookmarks, lesson-bookmark-integration-page and subscribed-learning-route; target smoke pending.
+
 Course detail last-viewed copy (2026-11-14, owner request): `messages/en-GB.json` changes `courseDetailDesign.lastStudied` from Last studied to Last viewed for the existing latest-Lesson badge. Existing native Chinese copy and bookmark selection remain unchanged. No API/schema change; target smoke pending.
 
 Lesson sidebar video-position label hidden (2026-11-14, owner screenshot): `PreviewLessonView.tsx` omits the entire Video / Watched to LP line for saved video bookmarks, including completed re-entry. The latest text bookmark still uses the existing Text / Read to LP line. Checkpoint writes, exact video restoration, per-mode positions and outline navigation still use the existing bookmarks. No API/schema/persistence change. Updated bilingual bookmark integration regression checks hidden video labels, exact restoration and retained text labels; local only, target smoke pending.
