@@ -75,9 +75,9 @@ async function main() {
       assert.equal((await current.json()).page.actionLessonId, second.id, "Start follows the highest progress despite reviewing Lesson 1");
       assert.equal(current.headers()["cache-control"], "private, no-store");assert.ok(current.headers().vary.split(/,\s*/).includes("Cookie"));
       await page.goBack();await start.waitFor();await page.waitForLoadState("networkidle");
-      await page.waitForFunction(expected => document.querySelector('[data-course-plan-status="included"] a')?.getAttribute("href") === expected, expected, { timeout: 10000 });
+      await page.waitForFunction(expected => document.querySelector('[data-syllabus] [data-course-primary="true"]')?.getAttribute("href") === expected, expected, { timeout: 10000 });
       assert.equal(await start.textContent(), copy.start);
-      assert.equal(await page.locator('[data-course-plan-status="included"] a').getAttribute("href"), expected);
+      assert.equal(await page.locator('[data-syllabus] [data-course-primary="true"]').getAttribute("href"), expected);
       assert.equal(await starts.count(), lessons.length);
       for (const lesson of lessons) {
         const entry = page.locator(`[data-syllabus] [data-lesson-id="${lesson.id}"] [data-course-cta-link]`);

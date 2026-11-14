@@ -6,7 +6,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("entitled Lesson restores exact video and paragraph positions and displays only the latest mode LP", async () => {
+test("entitled Lesson restores video and paragraph positions while hiding video position labels and retaining text labels", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LearningRoom} from './components/portal/LearningRoom';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(props.room?<LearningRoom key={props.key} {...props} copy={getMessages(props.locale).learning}/>:<PreviewLessonView key={props.key} {...props}/>));` },
     bundle: true, write: false, outfile: "progress.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
@@ -53,8 +53,8 @@ test("entitled Lesson restores exact video and paragraph positions and displays 
     await page.evaluate(props=>(window as any).mount(props),props);
     await page.locator("video").evaluate(element=>{Object.defineProperty(element,"duration",{configurable:true,value:100});Object.defineProperty(element,"readyState",{configurable:true,value:4});element.dispatchEvent(new Event("loadedmetadata"));});
     await page.waitForFunction(()=>Math.abs(document.querySelector('video')!.currentTime-45.555)<.001);
-    assert.equal(await page.locator('[data-lesson-bookmark="lesson"]').textContent(),getMessages(locale).lessonBookmark.video.replace("{lp}","1.2"));
-    assert.equal(await page.locator('[data-lesson-bookmark]').count(),1);
+    assert.equal(await page.locator('[data-lesson-bookmark]').count(),0,"saved video positions do not add a sidebar label");
+    assert.equal(await page.getByText(getMessages(locale).lessonBookmark.video.replace("{lp}","1.2"),{exact:true}).count(),0);
     const select=page.getByRole('combobox',{name:getMessages(locale).previewVideoDesign.learningMode});
     await select.click();await page.getByTitle(getMessages(locale).previewVideoDesign.textMode,{exact:true}).last().click();
     const paragraph=page.locator('[data-text-point-id="t1"]');
@@ -73,6 +73,7 @@ test("entitled Lesson restores exact video and paragraph positions and displays 
     await page.locator('video').evaluate(element=>{Object.defineProperty(element,'duration',{configurable:true,value:100});Object.defineProperty(element,'readyState',{configurable:true,value:4});element.dispatchEvent(new Event('loadedmetadata'));});
     assert.equal(await page.locator('video').evaluate(element=>(element as HTMLVideoElement).currentTime),0);
     assert.equal(await page.locator('video').getAttribute('data-bookmark-content-id'),'v1');
+    assert.equal(await page.locator('[data-lesson-bookmark]').count(),0,"completed re-entry also omits the video position label");
     await page.close();
   }} finally { await browser.close(); }
 });

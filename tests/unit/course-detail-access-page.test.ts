@@ -11,7 +11,7 @@ import { isolate } from "../io/harness";
 import { COURSE_ID, PRIVATE_LP, activateThreeDayTrial, openLearningPoint, purchaseCourse, readProductData, verifiedUser, writeProductData } from "./helpers/my-learning";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("course detail replaces purchase with the Figma included-plan card only for current course access", async () => {
+test("course detail hides the plan card for entitled learners and retains purchase for visitors or expired access", async () => {
   const root = process.cwd(), output = path.join(root, "test-results/course-detail-access");
   await mkdir(output, { recursive: true });
   const bundle = await build({ stdin: { contents: 'export { default } from "./app/[locale]/portal/courses/[slug]/page"; export { CatalogueCourseCard } from "./components/portal/CatalogueCourseCard";', resolveDir: root, loader: "tsx" }, bundle: true, write: false, outfile: path.join(output, "page.cjs"), platform: "node", format: "cjs", jsx: "automatic", external: ["react", "react/jsx-runtime"], loader: { ".css": "local-css" }, plugins: [{ name: "page-context", setup(b) {
@@ -65,7 +65,7 @@ test("course detail replaces purchase with the Figma included-plan card only for
         context.user = fixture.user;
         const html = renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) }));
         await page.locator("#root").evaluate((element, html) => { element.innerHTML = html; }, html);
-        assert.equal(await page.locator('[data-course-plan-status="included"]').count(), fixture.included ? 1 : 0, `${locale}/${fixture.name}`);
+        assert.equal(await page.locator('[data-course-plan-status="included"]').count(), 0, `${locale}/${fixture.name}: included-plan card is hidden`);
         assert.equal(await page.locator('[data-course-plan-status="purchase"]').count(), fixture.included ? 0 : 1);
         const syllabus = page.locator('[data-syllabus]');
         const entries = syllabus.locator('[data-course-cta-link]');
@@ -80,17 +80,8 @@ test("course detail replaces purchase with the Figma included-plan card only for
           } else if (!lesson.openable) assert.equal(await row.getByRole('link').count(), 0);
         }
         if (!fixture.included) { assert.equal(await page.getByRole("link", { name: copy.benefits, exact: true }).count(), 1);continue; }
-        const card = page.locator('[data-course-plan-status="included"]');
-        assert.equal(await card.getByRole("heading").textContent(), copy.includedInPlan);
-        assert.equal(await card.getByRole("link").textContent(), copy.startLearning);
-        assert.ok((await card.getByRole("link").getAttribute("href"))?.includes(`/account/learn/${COURSE_ID}?lessonId=`));
         assert.equal(await page.getByRole("link", { name: copy.benefits, exact: true }).count(), 0);
-        const icon = card.locator("img");await icon.evaluate(image => (image as HTMLImageElement).decode());
-        assert.deepEqual(await icon.evaluate(image => ({ width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height })), { width: 24, height: 24 });
-        assert.ok((await readFile(path.join(root,"public/portal/course-detail/plan-check.svg"))).length > 0);
-        assert.equal(await card.evaluate(e => getComputedStyle(e).padding), "24px");
-        assert.equal(await card.evaluate(e => getComputedStyle(e).gap), "16px");
-        assert.equal(await card.getByRole("link").evaluate(e => getComputedStyle(e).backgroundColor), "rgb(29, 107, 255)");
+        assert.equal(await page.locator('aside > section').count(), 1, 'only Course provides remains in the sidebar');
         for (const width of [1440, 390, 320]) {
           await page.setViewportSize({ width, height: 1000 });
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -99,8 +90,8 @@ test("course detail replaces purchase with the Figma included-plan card only for
       }
       context.user = owner;await openLearningPoint(store, owner.id, PRIVATE_LP, `card-resume-${locale}`);
       await page.locator("#root").evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));
-      const action = page.locator('[data-course-plan-status="included"] a');
-      assert.equal(await action.textContent(), copy.continueLearning);
+      assert.equal(await page.locator('[data-course-plan-status]').count(), 0, 'learning history does not restore the hidden card');
+      const action = page.locator('[data-syllabus] [data-course-primary="true"]');
       assert.equal(await action.getAttribute("href"), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`);
       assert.equal(await page.locator('[data-syllabus]').getByRole('link', { name: copy.start, exact: true }).count(), (await store.getCoursePage(COURSE_ID, owner.id)).syllabus.length, 'review progress does not hide earlier Lesson buttons');
       const course = (await store.getProductCourse(COURSE_ID))!;
@@ -160,7 +151,7 @@ test("course detail replaces purchase with the Figma included-plan card only for
       assert.equal(await lessonRow.getByRole('link', { name: copy.start, exact: true }).getAttribute('data-course-primary'), 'true');
       assert.equal(await page.locator('[data-course-primary="true"]').count(), 1);
       assert.equal(await lessonRow.getByRole('link', { name: copy.start, exact: true }).evaluate(link => getComputedStyle(link).backgroundColor), 'rgb(29, 107, 255)');
-      assert.equal(await page.locator('[data-course-plan-status="included"] a').getAttribute('href'), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`, 'the main entry follows the blue Lesson button');
+      assert.equal(await page.locator('[data-syllabus] [data-course-primary="true"]').getAttribute('href'), `/${locale}/account/learn/${COURSE_ID}?lessonId=${PRIVATE_LP}`, 'the main entry follows the blue Lesson button');
       await page.screenshot({ path: path.join(output, `${locale}-gapped-completion.png`), fullPage: true });
       for (const lessonId of [PRIVATE_LP, 'gap-4']) await store.recordStudyEvent({ userId: owner.id, courseId: COURSE_ID, lessonId, event: 'complete', seconds: 0, clientEventId: `gap-all-complete-${locale}-${lessonId}` });
       await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) })));

@@ -80,7 +80,6 @@ button.auth-provider-icon { padding:0; border:0; background:transparent; color:i
 .auth-signup-design .auth-fields > label:nth-child(3) { order:3; }
 .auth-signup-design .auth-field-label::after { margin-left:4px; color:#ef4444; content:"*"; font-size:14px; line-height:20px; }
 .portal-auth-stage .auth-signup-design .auth-input input { min-height:42px; height:42px; padding:9px 16px; border-color:#d1d5db; border-radius:8px; color:#374151; font-size:15px; line-height:20px; }
-.portal-auth-stage .auth-signup-design .auth-fields > label:nth-child(2) .auth-input input { background:#f3f4f6; color:#6b7280; }
 .auth-signup-design .auth-input > svg { display:none; }
 .auth-signup-design .auth-password-toggle { width:42px; height:42px; color:#98a2b3; }
 .auth-signup-design .auth-password-toggle svg { width:22px; height:22px; }

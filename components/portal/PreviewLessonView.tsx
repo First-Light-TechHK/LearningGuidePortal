@@ -221,7 +221,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
               if (modeSaving) { event.preventDefault();return; }
               if (bookmarkSnapshot || destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
             }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
-            {bookmark && <p className={styles.bookmark} data-lesson-bookmark={item.id}>{(bookmark.mode === "video" ? messages.lessonBookmark.video : messages.lessonBookmark.text).replace("{lp}", bookmark.lpNumber)}</p>}
+            {bookmark?.mode === "text" && <p className={styles.bookmark} data-lesson-bookmark={item.id}>{messages.lessonBookmark.text.replace("{lp}", bookmark.lpNumber)}</p>}
             {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
           </div>; })}
           {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}
