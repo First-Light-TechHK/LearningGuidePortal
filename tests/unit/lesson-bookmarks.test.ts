@@ -4,6 +4,7 @@ import { isolate } from "../io/harness";
 import { COURSE_ID, PREVIEW_LP, PRIVATE_LP, verifiedUser, purchaseCourse, readProductData, writeProductData } from "./helpers/my-learning";
 import { lessonBookmarkContext } from "../../services/lessonBookmarkPolicy";
 import { latestLessonBookmark } from "../../lib/lessonBookmarkDisplay";
+import { resolveLessonEntry } from "../../services/lessonEntryPolicy";
 import type { ProductCourse } from "../../services/productStore";
 
 test("independent Lesson bookmarks keep exact positions, derive LPs, reject stale and unentitled writes", async () => {
@@ -27,13 +28,16 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     assert.deepEqual((await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks, {});
     assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.some(lesson => lesson.continuable), false);
     const first = await store.saveLessonBookmark(user.id, base);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).bookmarkRevision, 1);
     assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.find(lesson => lesson.lessonId === PREVIEW_LP)?.continuable, true);
     assert.equal(first.positionMs, 20_125); assert.equal(first.lpNumber, "1.2");
     assert.equal(await store.getCourseLearningMode(user.id, COURSE_ID), "video");
     assert.deepEqual(await store.saveLessonBookmark(user.id, base), first);
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).bookmarkRevision, 1, "idempotent replay does not invent a newer display revision");
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, clientEventId: "stale" }), /stale_bookmark/);
     await assert.rejects(store.saveLessonBookmark(user.id, { ...base, positionMs: 100 }), /event_conflict/);
     const backwards = await store.saveLessonBookmark(user.id, { ...base, expectedRevision: 1, expectedLessonRevision: 1, clientEventId: "video-2", positionMs: 100 });
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).bookmarkRevision, 2, "position-only changes advance the Course display revision");
     assert.equal(backwards.lpNumber, "1.1");
     const text = await store.saveLessonBookmark(user.id, { ...base, mode: "text", expectedLessonRevision: 2, positionMs: undefined, paragraphId: "t1:paragraph:1", contentId: "t1", contentVersion: lessonBookmarkContext(course, PREVIEW_LP, "text").contentVersion, clientEventId: "text-1" });
     assert.equal(text.lpNumber, "1.1");
@@ -50,6 +54,11 @@ test("independent Lesson bookmarks keep exact positions, derive LPs, reject stal
     assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.find(lesson => lesson.lessonId === PREVIEW_LP)?.continuable, undefined, "completed Lessons are not labelled Continue");
     assert.equal((await store.getCoursePage(COURSE_ID,user.id)).syllabus.find(lesson=>lesson.lessonId===PREVIEW_LP)?.completed,true);
     assert.deepEqual((await store.getLessonBookmarks(user.id, COURSE_ID)).bookmarks[PREVIEW_LP], saved);
+    const reviewed = await store.saveLessonBookmark(user.id, { ...base, expectedRevision: 2, expectedLessonRevision: 3, clientEventId: "completed-review-halfway", positionMs: 50_555 });
+    const reviewSnapshot = await store.getLessonBookmarks(user.id, COURSE_ID);
+    assert.equal(reviewSnapshot.bookmarks[PREVIEW_LP].video?.positionMs, 50_555);
+    assert.deepEqual(resolveLessonEntry({ lessonId: PREVIEW_LP, snapshot: reviewSnapshot, completed: true, courseMode: "text" }), { preferredMode: "video", initialContentId: reviewed.contentId, bookmarkRestore: "lp" });
+    assert.equal((await store.getCoursePage(COURSE_ID, user.id)).syllabus.find(lesson => lesson.lessonId === PREVIEW_LP)?.completed, true, "saving a review checkpoint retains completion");
     const expired = await readProductData();
     expired.entitlements.filter((item: { userId: string }) => item.userId === user.id).forEach((item: { validTo: string }) => { item.validTo = "2000-01-01"; });
     await writeProductData(expired);

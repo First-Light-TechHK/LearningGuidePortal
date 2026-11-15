@@ -62,11 +62,12 @@ test("after purchase both locales enter the chosen text/video Lesson through the
       const proceed = page.getByRole("button", { name: mode === "video" ? copy.continueVideo : copy.continueText, exact: true });
       await proceed.click(); await page.getByRole("alert").waitFor();
       assert.equal(await page.evaluate(() => (window as any).destination), undefined);
-      fail = false; await proceed.click(); await page.waitForFunction(() => Boolean((window as any).destination));
-      const destination = new URL(await page.evaluate(() => (window as any).destination), "http://localhost:3014");
+      fail = false; await proceed.click(); await page.waitForURL(`**/${locale}/account/learn/**`);
+      const destination = new URL(page.url());
       assert.equal(destination.pathname, `/${locale}/account/learn/${COURSE_ID}`);
       assert.equal(destination.searchParams.get("viewMode"), mode);
       assert.equal(destination.searchParams.get("modeSwitch"), "1");
+      assert.equal(destination.searchParams.get("autoplay"), mode === "video" ? "1" : null);
       const lesson = lessons.find((lesson: { id: string }) => lesson.id === destination.searchParams.get("lessonId"));
       assert.equal(lesson.id, lessons[mode === "text" ? 0 : 1].id);
       assert.equal(resolveLessonPresentation(lesson.contents, mode, destination.searchParams.get("contentId")).mode, mode);

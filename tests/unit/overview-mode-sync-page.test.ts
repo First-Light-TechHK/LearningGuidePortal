@@ -28,9 +28,12 @@ test("cached My Learning refreshes changed course modes once and retains cards o
       await page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), { userId: id, courses: [{ courseId: "course", mode, ...study }, ...additional] });
       await response;await page.waitForLoadState("networkidle");
     };
-    const check = async () => {
+    const check = async (back = false) => {
       const response = failure === "network" ? page.waitForEvent("requestfailed") : page.waitForResponse(response => response.url().includes("/api/"));
-      await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+      if (back) {
+        await page.evaluate(() => history.pushState({}, '', '/lesson'));
+        await page.goBack();
+      } else await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
       await response;await page.waitForLoadState("networkidle");
     };
     const count = () => page.evaluate(() => (window as unknown as { refreshCount: number }).refreshCount);
@@ -43,7 +46,7 @@ test("cached My Learning refreshes changed course modes once and retains cards o
       assert.equal(await count(), expected);
     };
     await mount("text");assert.equal(await count(), 0);
-    current = "video";await check();await waitForCount(1);
+    current = "video";await check(true);await waitForCount(1);
     await check();await waitForCount(1);
     await mount("video");await check();await waitForCount(1);
     for (const error of ["http", "network", "invalid"] as const) { failure = error;await check();await waitForCount(1); }
@@ -60,6 +63,9 @@ test("cached My Learning refreshes changed course modes once and retains cards o
     additional = [{ courseId: "second", mode: "text" }, { courseId: "third", mode: "video" }];
     await check();await waitForCount(++expected);await mount("video", "other");
     additional.reverse();await check();await waitForCount(expected);
+    await check(true);
+    study = {...study, updatedAt: "2026-11-14T08:00:00.000Z"};
+    await waitForCount(++expected);
     assert.equal(await page.locator("#root").innerHTML(), "");
   } finally { await browser.close(); }
 });

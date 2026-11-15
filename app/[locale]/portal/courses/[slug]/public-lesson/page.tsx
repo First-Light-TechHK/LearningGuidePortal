@@ -20,11 +20,11 @@ import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 
 export const dynamic = "force-dynamic";
 
-export default async function PublicLessonPage({ params, searchParams }: { params: Promise<{ locale: string; slug: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string; resume?: string; modeSwitch?: string }> }) {
+export default async function PublicLessonPage({ params, searchParams }: { params: Promise<{ locale: string; slug: string }>; searchParams: Promise<{ lessonId?: string; viewMode?: string; contentId?: string; resume?: string; modeSwitch?: string; autoplay?: string }> }) {
   const { locale: rawLocale, slug } = await params;
   const locale = localeFrom(rawLocale);
   const course = await getProductCourse(slug);
-  const { lessonId: requestedLesson, viewMode, contentId, resume, modeSwitch } = await searchParams;
+  const { lessonId: requestedLesson, viewMode, contentId, resume, modeSwitch, autoplay } = await searchParams;
   const previewLesson = course ? publicFirstLesson(course) : null;
   const lesson = requestedLesson ? (requestedLesson === previewLesson?.id ? previewLesson : null) : previewLesson;
   if (!course || course.status !== "published" || !lesson) notFound();
@@ -36,6 +36,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     if (isCourseLearningMode(viewMode)) query.set("viewMode", viewMode);
     if (resume === "1") query.set("resume", "1");
     if (modeSwitch === "1") query.set("modeSwitch", "1");
+    if (autoplay === "1") query.set("autoplay", "1");
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${query.size ? `?${query}` : ""}`)}`);
   }
   const access = await checkEntitlement(user.id, course.id);
@@ -66,6 +67,6 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView {...entry} completedLessonIds={record?.completedLessonIds || []} bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={access.allowed ? user.id : undefined} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} key={`${locale}:${lesson.id}`} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
+    <PreviewLessonView {...entry} autoPlayVideo={autoplay === "1" && entry.preferredMode === "video"} completedLessonIds={record?.completedLessonIds || []} bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={access.allowed ? user.id : undefined} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} key={`${locale}:${lesson.id}`} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
   </main>;
 }

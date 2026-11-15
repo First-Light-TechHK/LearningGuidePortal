@@ -41,6 +41,10 @@ test("bookmark Route Handlers derive ownership from session and enforce origin, 
     assert.equal((await route.POST(jsonRequest("POST", url, input, { origin: "https://untrusted.test" }))).status, 403);
     assert.equal((await route.POST(jsonRequest("POST", url, { ...input, userId: "someone-else" }))).status, 400);
     assert.equal((await route.POST(jsonRequest("POST", url, input))).status, 200);
+    const courseRoute = await import("../../app/api/portal/courses/[slug]/route");
+    const courseResponse = await courseRoute.GET(new Request(`http://localhost/api/portal/courses/${COURSE_ID}`), { params: Promise.resolve({ slug: COURSE_ID }) });
+    assert.match(courseResponse.headers.get("Cache-Control")!, /no-store/);
+    assert.equal((await courseResponse.json()).page.bookmarkRevision, 1, "restoration reads the real accepted bookmark revision through the private Course API");
     assert.equal((await route.POST(jsonRequest("POST", url, { ...input, clientEventId: "late" }))).status, 409);
     const other = await verifiedUser(store, "bookmark-api-other@example.test"); await purchaseCourse(store, other.id);
     setCookie(SESSION_COOKIE, (await store.createSession(other.id)).token);

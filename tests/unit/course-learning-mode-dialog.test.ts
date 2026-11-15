@@ -26,7 +26,7 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
         const url = new URL(route.request().url());
         if (url.pathname.startsWith("/portal/learning-mode/")) return route.fulfill({ contentType: "image/svg+xml", body: await readFile(path.join("public", url.pathname)) });
         if (url.pathname.startsWith("/api/courses/")) { const input=route.request().postDataJSON();requests.push(input); return route.fulfill({ status: fail ? 500 : 200, json: fail ? {ok:false} : {ok:true,data:{position:input.lessonId?{lessonId:input.lessonId,contentId:"point-"+input.mode}:undefined}} }); }
-        return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
+        return route.fulfill({ contentType: "text/html", body: `<style>${css}</style><div id="root"></div><script>${script}</script>` });
       });
       await page.goto(`http://mode.test/${locale}/portal/courses/a`);
       await page.addStyleTag({ content: await readFile("app/styles.css", "utf8") });
@@ -35,7 +35,6 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
       const font = (await readFile("node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2")).toString("base64");
       const bold = (await readFile("node_modules/@fontsource/inter/files/inter-latin-700-normal.woff2")).toString("base64");
       await page.addStyleTag({ content: `@font-face{font-family:Inter;src:url(data:font/woff2;base64,${font}) format('woff2');font-weight:400}@font-face{font-family:Inter;src:url(data:font/woff2;base64,${bold}) format('woff2');font-weight:700}` });
-      await page.addScriptTag({ content: script });
       const mount = (courseId: string, signedIn = true, destinationHref?: string) => page.evaluate(props => (window as unknown as {mount: (props: unknown) => void}).mount(props), { locale, courseId, signedIn, destinationHref, accessContext: destinationHref ? "entitled" : "preview" });
       await mount("a",true,`/${locale}/account/learn/a?lessonId=selected`);
       const dialog = page.getByRole("dialog"); await dialog.waitFor();
@@ -53,7 +52,9 @@ test("course mode dialog starts unselected, saves only on Continue, retries and 
       assert.equal(await dialog.isVisible(), true);
       fail = false; await proceed().click(); await dialog.waitFor({ state: "detached" });
       assert.deepEqual(requests, [{ mode: "video", accessContext: "entitled", lessonId:"selected", intent:"entry" }, { mode: "video", accessContext: "entitled", lessonId:"selected", intent:"entry" }]);
-      assert.equal(await page.evaluate(()=>(window as unknown as {destination:string}).destination),`/${locale}/account/learn/a?lessonId=selected&contentId=point-video&viewMode=video&modeSwitch=1`);
+      await page.waitForURL(`**/${locale}/account/learn/a?**`);
+      assert.equal(new URL(page.url()).pathname + new URL(page.url()).search,`/${locale}/account/learn/a?lessonId=selected&contentId=point-video&viewMode=video&modeSwitch=1&autoplay=1`);
+      await page.goto(`http://mode.test/${locale}/portal/courses/a`);
       await mount("b"); await dialog.waitFor();
       assert.equal(await dialog.locator("input:checked").count(), 0);
       await dialog.getByRole("button", { name: locale === "zh-CN" ? "关闭" : "Close" }).click();

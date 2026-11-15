@@ -1,3 +1,4 @@
+import { totalCourseMinutes } from "@/lib/courseDuration";
 import {
   courseProgressFromUniqueLearningPoints,
   type AccessState,
@@ -32,6 +33,8 @@ export type CourseSyllabusItem = {
 };
 
 export type CoursePage = {
+  /** Nonpersisted aggregate of accepted per-mode bookmark revisions. */
+  bookmarkRevision?: number;
   pageState: CoursePageState;
   identity: CourseIdentity | null;
   syllabus: CourseSyllabusItem[];
@@ -50,7 +53,7 @@ type CourseLike = {
   title: string;
   category?: string | null;
   status: string;
-  sections: Array<{ lessons: Array<{ id: string; title: string; isPublic: boolean; durationMinutes?: number }> }>;
+  sections: Array<{ lessons: Array<{ id: string; title: string; isPublic: boolean; durationMinutes?: number; videoDurationSeconds?: number | null }> }>;
 };
 
 /** D1.1 Identity is title / track / lesson count / preview-available from the store. */
@@ -61,7 +64,7 @@ export function courseIdentityFrom(course: CourseLike): CourseIdentity {
     track: course.category || "European Humanities",
     lessonCount: lessons.length,
     previewAvailable: Boolean(lessons[0]?.isPublic),
-    totalMinutes: lessons.reduce((total, lesson) => total + (lesson.durationMinutes || 0), 0),
+    totalMinutes: totalCourseMinutes(lessons),
   };
 }
 

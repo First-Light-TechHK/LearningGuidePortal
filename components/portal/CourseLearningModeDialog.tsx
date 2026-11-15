@@ -61,7 +61,9 @@ function CourseLearningModeDialogContent({ courseId, locale, signedIn, pendingMo
         }
         destination.searchParams.set("viewMode", mode);
         destination.searchParams.set("modeSwitch", "1");
-        router.push(destination.pathname + destination.search);
+        if (mode === "video") destination.searchParams.set("autoplay", "1");
+        // Read the newly saved preference on a fresh request, bypassing prefetched chooser redirects.
+        window.location.assign(destination.pathname + destination.search);
       } else router.refresh();
     } catch { setError(copy.saveError); } finally { setBusy(false); }
   }

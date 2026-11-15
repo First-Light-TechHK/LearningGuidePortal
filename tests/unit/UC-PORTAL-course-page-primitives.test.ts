@@ -91,6 +91,25 @@ test("UC-PORTAL-1: course identity comes from the product store, not KS leftover
   assert.notEqual(identity.track, "Course");
 });
 
+test("UC-PORTAL-1: course service exposes the shared video duration with configured-minute fallback", async () => {
+  const data = await readProductData();
+  const course = data.courses.find((item: { id: string }) => item.id === COURSE_ID);
+  const originalSections = structuredClone(course.sections);
+  try {
+    const lessons = course.sections.flatMap((section: { lessons: any[] }) => section.lessons);
+    lessons[0].durationMinutes = 25; lessons[0].videoDurationSeconds = 1469;
+    lessons[1].durationMinutes = 27; lessons[1].videoDurationSeconds = 1584;
+    await writeProductData(data);
+    assert.equal((await store.getCoursePage(COURSE_ID)).identity?.totalMinutes, 51);
+    lessons[1].videoDurationSeconds = null;
+    await writeProductData(data);
+    assert.equal((await store.getCoursePage(COURSE_ID)).identity?.totalMinutes, 52);
+  } finally {
+    course.sections = originalSections;
+    await writeProductData(data);
+  }
+});
+
 test("UC-PORTAL-1: visitor syllabus is previewable vs locked", async () => {
   const page = await store.getCoursePage(COURSE_ID, null);
   const preview = page.syllabus.find((item) => item.lessonId === PREVIEW_LP);
