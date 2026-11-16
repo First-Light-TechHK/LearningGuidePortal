@@ -32,6 +32,10 @@ test("course detail hides the plan card for entitled learners and retains purcha
   const render = createRequire(import.meta.url)(compiled.path).default;
   const Card = createRequire(import.meta.url)(compiled.path).CatalogueCourseCard;
   const css = bundle.outputFiles.find(file => file.path.endsWith(".css"))!.text;
+  const fontCss = (await Promise.all([400, 500, 600, 700].map(async weight => {
+    const font = await readFile(path.join(root, `node_modules/@fontsource/inter/files/inter-latin-${weight}-normal.woff2`));
+    return `@font-face{font-family:Inter;font-style:normal;font-weight:${weight};src:url(data:font/woff2;base64,${font.toString('base64')}) format('woff2')}`;
+  }))).join('');
   const { restore } = await isolate("lg-course-detail-access-");
   const browser = await chromium.launch();
   try {
@@ -59,8 +63,10 @@ test("course detail hides the plan card for entitled learners and retains purcha
         return route.fulfill({ contentType: "text/html", body: "<!doctype html><div id='root'></div>" });
       });
       await page.goto("http://course-card.test");
+      await page.addScriptTag({ content: "window.__name = value => value" });
       for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(path.join(root, file), "utf8") });
       await page.addStyleTag({ content: css });
+      await page.addStyleTag({ content: fontCss });
       for (const fixture of fixtures) {
         context.user = fixture.user;
         const html = renderToStaticMarkup(await render({ params: Promise.resolve({ locale, slug: COURSE_ID }) }));
@@ -196,15 +202,52 @@ test("course detail hides the plan card for entitled learners and retains purcha
         expectedRevision: previousText?.revision || 0, expectedLessonRevision: Object.values(modelBookmarks.bookmarks[firstLesson.id] || {}).reduce((sum, value) => sum + value.revision, 0), clientEventId: `model-title-${locale}` });
       await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({params:Promise.resolve({locale,slug:modeling.id})})));
       const title = page.locator(`[data-lesson-id="${firstLesson.id}"] h3 > span[title]`);
+      const modelRow = page.locator(`[data-lesson-id="${firstLesson.id}"]`);
+      const description = modelRow.locator('p[title]');
       assert.equal(await title.getAttribute('title'), 'State Spaces, Vector Spaces and Trajectories');
-      for (const width of [1440, 390, 320]) {
+      assert.equal(await description.getAttribute('title'), firstLesson.summary);
+      await page.evaluate(() => document.fonts.ready);
+      for (const width of [1440, 1100, 1024, 801, 800, 700, 390, 320]) {
         await page.setViewportSize({width, height:1000});
         const geometry = await title.evaluate(element => ({ height: element.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(element).lineHeight), width: element.clientWidth, fullWidth: element.scrollWidth }));
         assert.ok(geometry.height <= geometry.lineHeight + 1, `${locale}/${width}: Lesson title stays on one line`);
-        if (width === 1440) assert.ok(geometry.fullWidth <= geometry.width + 1, `${locale}: full desktop title remains visible beside reading status and the action`);
+        const layout = await modelRow.evaluate(row => {
+          const heading = row.querySelector('h3')!, description = row.querySelector('p[title]')!, info = heading.parentElement!, status = row.querySelector('[data-lesson-bookmark]')!, action = row.querySelector('[data-course-cta-link]')!;
+          const rect = (element: Element) => { const box = element.getBoundingClientRect();return { x:box.x, y:box.y, width:box.width, height:box.height }; };
+          return { row:rect(row), info:rect(info), heading:rect(heading), description:rect(description), status:rect(status), action:rect(action), descriptionLine:parseFloat(getComputedStyle(description).lineHeight), ellipsis:getComputedStyle(description).textOverflow };
+        });
+        assert.equal(layout.heading.width, layout.description.width, `${locale}/${width}: title and description share one Info column`);
+        assert.equal(layout.heading.x, layout.description.x);
+        assert.ok(layout.description.height <= layout.descriptionLine + 1);
+        assert.equal(layout.ellipsis, 'ellipsis');
+        if (width === 1440) {
+          assert.equal(layout.row.width, 779);
+          assert.equal(layout.row.height, 80);
+          assert.equal(layout.info.width, 395);
+          assert.equal(layout.status.width, 200);
+          assert.equal(layout.action.width, 110);
+          assert.equal(layout.heading.width, 395);
+          assert.equal(layout.description.y - layout.heading.y, 25);
+          assert.ok(geometry.fullWidth > geometry.width, `${locale}: the long title is ellipsised at the Figma width`);
+        }
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
         await page.screenshot({path:path.join(output,`modeling-life-title-${locale}-${width}.png`),fullPage:true});
+        if (width === 1440) await modelRow.screenshot({path:path.join(output,`figma-780-1799-${locale}.png`)});
       }
+      // Match the reference node's completed/Review row using real service facts.
+      const designUser = await verifiedUser(store, `figma-row-${locale}@example.test`);
+      await buy(designUser.id, 'everything-pc-6');
+      await store.recordStudyEvent({userId:designUser.id,courseId:modeling.id,lessonId:firstLesson.id,event:'complete',seconds:0,clientEventId:`figma-complete-${locale}`});
+      const secondLesson = modeling.sections[0].lessons[1], secondText = secondLesson.contents!.find(content => content.type === 'text')!;
+      const designBookmarks = await store.getLessonBookmarks(designUser.id, modeling.id);
+      await store.saveLessonBookmark(designUser.id,{courseId:modeling.id,lessonId:secondLesson.id,mode:'text',contentId:secondText.id,paragraphId:`${secondText.id}:paragraph:0`,contentVersion:designBookmarks.versions[secondLesson.id].text,expectedRevision:0,expectedLessonRevision:0,clientEventId:`figma-current-${locale}`});
+      context.user = designUser;
+      await page.setViewportSize({width:1440,height:1000});
+      await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({params:Promise.resolve({locale,slug:modeling.id})})));
+      const referenceRow = page.locator(`[data-lesson-id="${firstLesson.id}"]`);
+      await referenceRow.locator('img').evaluate(image => (image as HTMLImageElement).decode());
+      await page.evaluate(() => document.fonts.ready);
+      await referenceRow.screenshot({path:path.join(output,`figma-780-1799-completed-${locale}.png`)});
       await page.close();
     }
   } finally { delete (globalThis as any).courseCardTest;await browser.close();await restore(); }
