@@ -11,7 +11,7 @@ test("Course breadcrumb waits for the latest text/video checkpoint before a fres
   const root = process.cwd();
   const bundle = await build({
     stdin: { resolveDir: root, loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PreviewLessonView} from './components/portal/PreviewLessonView';window.mount=props=>createRoot(document.getElementById('root')).render(<PreviewLessonView {...props}/>);` },
-    bundle: true, write: false, outfile: "return.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
+    bundle: true, write: false, outfile: "return.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css", ".woff2": "dataurl" }, external: ["/portal/*"],
     plugins: [{ name: "next", setup(builder) {
       builder.onResolve({ filter: /Course(Model|Pdf)Preview$/ }, args => ({ path: args.path, namespace: "mock" }));
       builder.onResolve({ filter: /^next\// }, args => ({ path: args.path, namespace: "mock" }));

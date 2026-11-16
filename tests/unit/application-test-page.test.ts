@@ -8,13 +8,13 @@ import { getMessages } from "../../lib/i18n/messages";
 import { getApplicationTestSample } from "../../services/applicationTestSample";
 
 test("Application Test matches the four page states and retains attempts across both Knowledge completion flows", async () => {
-  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';import previewStyles from './components/portal/preview-lesson.module.css';function Demo({locale}){const [open,setOpen]=React.useState(true);return open ? <div className="la"><header className={previewStyles.heading}><p>01</p><LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>{window.continued=true;setOpen(false)}} onClose={()=>setOpen(false)}/></header></div> : <button onClick={()=>setOpen(true)}>Reopen</button>};window.mount=locale=>createRoot(document.getElementById('root')).render(<Demo locale={locale}/>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}]});
+  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {LessonCompletedDialog} from './components/portal/LessonCompletedDialog';import previewStyles from './components/portal/preview-lesson.module.css';function Demo({locale}){const [open,setOpen]=React.useState(true);return open ? <div className="la"><header className={previewStyles.heading}><p>01</p><LessonCompletedDialog locale={locale} lessonNumber="01" lessonTitle="Looking closely" onContinue={()=>{window.continued=true;setOpen(false)}} onClose={()=>setOpen(false)}/></header></div> : <button onClick={()=>setOpen(true)}>Reopen</button>};window.mount=locale=>createRoot(document.getElementById('root')).render(<Demo locale={locale}/>);`,resolveDir:process.cwd(),loader:"tsx"},bundle:true,write:false,outfile:"test.js",platform:"browser",external:["/portal/*"],jsx:"automatic",loader:{".css":"local-css",".woff2":"dataurl"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){b.onResolve({filter:/^next\/image$/},()=>({path:"image",namespace:"mock"}));b.onLoad({filter:/.*/,namespace:"mock"},()=>({contents:"import React from 'react';export default function Image(props){return <img {...props}/>}",loader:"tsx",resolveDir:process.cwd()}));}}]});
   const browser=await chromium.launch();
   await mkdir("test-results/application-test",{recursive:true});
   try { for(const locale of ["en-GB","zh-CN"] as const) {
     const copy=getMessages(locale), app=copy.applicationTest, common=copy.knowledgeTest;
     const page=await browser.newPage({viewport:{width:1440,height:1024}});
-    await page.route("http://application.test/**",async route=>{const url=new URL(route.request().url());return url.pathname.startsWith("/portal/") ? route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:"image/svg+xml"}) : route.fulfill({contentType:"text/html",body:'<div id="root"></div>'});});
+    await page.route("http://application.test/**",async route=>{const url=new URL(route.request().url());return url.pathname.startsWith("/portal/") ? route.fulfill({body:await readFile(path.join("public",url.pathname)),contentType:"image/svg+xml"}) : route.fulfill({contentType:"text/html",body:'<!doctype html><div id="root"></div>'});});
     await page.goto("http://application.test/");
     for (const file of ["app/styles.css","components/portal/lesson-authoring.css"]) await page.addStyleTag({content:await readFile(file,"utf8")});
     await page.addStyleTag({content:bundle.outputFiles.find(f=>f.path.endsWith("css"))!.text});
@@ -32,6 +32,8 @@ test("Application Test matches the four page states and retains attempts across 
       assert.equal(await page.locator("#root > .la > header > p").evaluate(e=>getComputedStyle(e).backgroundColor),"rgb(232, 241, 255)","the playback lesson number retains its badge");
     };
     await assertPlainText();
+    await page.screenshot({path:`test-results/application-test/${locale}-answer-toolbar.png`});
+    await dialog.getByRole("switch",{name:copy.assessmentEditor.sourceMode,exact:true}).click();
     const input=dialog.getByRole("textbox");
     const submit=dialog.getByRole("button",{name:app.submit,exact:true});
     assert.equal(await submit.isDisabled(),true);
@@ -40,12 +42,12 @@ test("Application Test matches the four page states and retains attempts across 
     await input.fill(answer);assert.equal(await submit.isEnabled(),true);
     assert.equal(await input.getAttribute("maxlength"),"2000");
     const geometry=await dialog.evaluate(d=>{const q=d.querySelector('section[aria-labelledby="application-question-title"]')!;const a=d.querySelector('textarea')!.parentElement!;return {dialog:[d.getBoundingClientRect().x,d.getBoundingClientRect().y,d.clientWidth,d.clientHeight],question:[q.getBoundingClientRect().x,q.getBoundingClientRect().y,q.getBoundingClientRect().width,q.getBoundingClientRect().height],answer:[a.getBoundingClientRect().x,a.getBoundingClientRect().y,a.getBoundingClientRect().width,a.getBoundingClientRect().height]};});
-    assert.deepEqual(geometry,{dialog:[0,0,1440,1024],question:[120,104,480,888],answer:[632,141,688,755]});
+    assert.deepEqual(geometry,{dialog:[0,0,1440,1024],question:[80,104,480,888],answer:[592,141,768,753]});
     await input.fill("");await input.blur();await page.screenshot({path:`test-results/application-test/${locale}-answer.png`});
     await input.fill(answer);
-    await page.keyboard.press("Escape");await openApplication();assert.equal(await input.inputValue(),answer,"Exit retains draft within this lesson");
+    await page.keyboard.press("Escape");await openApplication();await dialog.getByRole("switch",{name:copy.assessmentEditor.sourceMode,exact:true}).click();assert.equal(await input.inputValue(),answer,"Exit retains draft within this lesson");
     await page.clock.install();await page.clock.pauseAt(new Date(Date.now()+1000));
-    await submit.click();assert.equal(await submit.count(),0);assert.equal(await input.inputValue(),answer);assert.equal(await input.getAttribute("readonly"),"");
+    await submit.click();await page.getByRole("button",{name:copy.assessmentFlow.confirm,exact:true}).click();assert.equal(await submit.count(),0);assert.equal(await input.inputValue(),answer);assert.equal(await input.getAttribute("readonly"),"");
     const progress=dialog.getByRole("progressbar");await progress.waitFor();await page.clock.runFor(1500);
     assert.ok(Number(await progress.getAttribute("aria-valuenow"))>=49);
     await page.screenshot({path:`test-results/application-test/${locale}-evaluating.png`});
@@ -98,7 +100,7 @@ test("Application Test matches the four page states and retains attempts across 
     await submit.scrollIntoViewIfNeeded();await page.screenshot({path:`test-results/application-test/${locale}-answer-mobile.png`});
     const assets=await dialog.locator('img').evaluateAll(elements=>elements.map(e=>({source:e.getAttribute('src'),loaded:(e as HTMLImageElement).complete&&(e as HTMLImageElement).naturalWidth>0,width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height})));
     assert.deepEqual(assets,[{source:"/portal/application-test/back-v2.svg",loaded:true,width:18,height:18},{source:"/portal/application-test/saved-v2.svg",loaded:true,width:7,height:7}]);
-    await page.keyboard.press("Escape");await dialog.getByRole("heading",{name:copy.lessonCompleted.nextActionTitle,exact:true}).waitFor();
+    await dialog.getByRole("button",{name:common.exit,exact:true}).click();await dialog.getByRole("heading",{name:copy.lessonCompleted.nextActionTitle,exact:true}).waitFor();
     await page.close();
   }}finally{await browser.close();}
 });

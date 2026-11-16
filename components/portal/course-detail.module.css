@@ -53,7 +53,7 @@
 .disclosure[data-expanded="true"] .toggle img { transform: none; }
 .lessonList { display: grid; gap: 12px; width: 100%; max-width: 779px; margin-top: 16px; }
 .lesson { display: grid; grid-template-columns: minmax(0, 1fr) 200px 110px; align-items: center; gap: 16px; min-height: 80px; padding: 18px 20px; border: 1px solid #dee4ec; border-radius: 10px; font-family: Inter, Arial, sans-serif; }
-.lessonMain { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow: hidden; }
+.lessonMain { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 395px; min-width: 0; overflow: hidden; }
 .page .lesson h3 { display: flex; gap: 10px; align-items: center; width: 100%; min-width: 0; margin: 0; font-size: 16px; font-weight: 500; line-height: 19px; color: #15233a; }
 .lesson h3 > span:first-child { flex-shrink: 0; color: #637594; font-size: 15px; line-height: 18px; }
 .lessonTitle { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

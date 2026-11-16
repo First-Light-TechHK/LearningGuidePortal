@@ -26,6 +26,8 @@
 // source list under the answer. A * between two digits is arithmetic (2*3*4),
 // never emphasis.
 
+import katex from "katex";
+
 export type TutorAnswerParts = { markdown: string; sources: string[] };
 
 export type TutorAnswerSegment =
@@ -44,6 +46,8 @@ const DISPLAY_LINE = /[ \t]*\$\$[ \t]*(?=\n|$)/y; // $$ alone on its line opens 
 const DISPLAY_CLOSE = /\n[ \t]*\$\$[ \t]*(?=\n|$)/g;
 const TEX_DISPLAY = /\\\[([\s\S]*?)\\\]/y;
 const TEX_INLINE = /\\\(([\s\S]*?)\\\)/y;
+const ESCAPED_TEX_INLINE = /\\{2}\(([\s\S]*?)\\{2}\)/y;
+const ESCAPED_TEX_DISPLAY = /\\{2}\[([\s\S]*?)\\{2}\]/y;
 const DOUBLE_DOLLAR = /\$\$([^$]+?)\$\$/y;
 // Pandoc's tex_math_dollars: $ then a non-space; the closing $ follows a
 // non-space and is not followed by a digit; one line.
@@ -109,6 +113,26 @@ function splitMath(text: string, startsLine: boolean): TutorAnswerSegment[] {
   let i = 0;
   while (i < text.length) {
     const ch = text[i];
+    if (ch === "\\" && text[i + 1] === "\\") {
+      const rule = text[i + 2] === "(" ? ESCAPED_TEX_INLINE : text[i + 2] === "[" ? ESCAPED_TEX_DISPLAY : null;
+      if (rule) {
+        rule.lastIndex = i;
+        const found = rule.exec(text);
+        if (found && found[1].trim()) {
+          let body = found[1];
+          // Decode one JSON-escape layer only inside explicitly doubled math boundaries.
+          // Normal TeX and its matrix row separators must remain untouched.
+          if ((body.match(/\\+/g) || []).every(run => run.length % 2 === 0)) {
+            const decoded = body.replace(/\\\\/g, "\\");
+            try { katex.renderToString(decoded, { throwOnError: true, trust: false, maxExpand: 100 }); body = decoded; } catch { /* Keep unsupported TeX intact. */ }
+          }
+          if (rule === ESCAPED_TEX_DISPLAY && escapedBrackets(text, i, rule.lastIndex, body, startsLine)) prose += found[0];
+          else math(body, rule === ESCAPED_TEX_DISPLAY);
+          i = rule.lastIndex;
+          continue;
+        }
+      }
+    }
     if (ch === "\\" && text[i + 1] === "$") { prose += "\\$"; i += 2; continue; }
     if (ch === "\\" && (text[i + 1] === "[" || text[i + 1] === "(")) {
       const rule = text[i + 1] === "[" ? TEX_DISPLAY : TEX_INLINE;

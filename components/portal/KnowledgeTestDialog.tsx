@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { AssessmentAnswerInput, AssessmentText } from "./AssessmentAnswerInput";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import type { KnowledgeQuestion, KnowledgeRating, KnowledgeResponse, KnowledgeTestPhase } from "@/contracts/knowledge-test";
@@ -65,11 +66,11 @@ export function KnowledgeTestDialog({ locale, lessonNumber, lessonTitle, onExit,
       <div className={styles.question}>{badge(index)}<p>{copy.question}</p><h3>{question.prompt}</h3></div>
       <label className={styles.label} htmlFor={phase === "question" ? "knowledge-answer" : undefined}>{phase === "question" ? copy.optionalNote : copy.yourNote}</label>
       {phase === "question" ? <>
-        <div className={styles.inputBox}><textarea id="knowledge-answer" maxLength={2000} placeholder={copy.placeholder} value={response.answer} onChange={event => update({ answer: event.target.value })}/></div>
+        <AssessmentAnswerInput className={styles.inputBox} id="knowledge-answer" locale={locale} maxLength={2000} placeholder={copy.placeholder} value={response.answer} onChange={answer => update({answer})}/>
         <p className={styles.saved}><Image src="/portal/knowledge-test/saved-v2.svg" width={6} height={6} alt=""/>{saveMessage || copy.saved}</p>
       </> : <>
-        <div className={styles.answer}>{response.answer || copy.emptyAnswer}</div>
-        <p className={`${styles.label} ${styles.referenceLabel}`}>{copy.reference}</p><div className={styles.reference}>{question.referenceAnswer}</div>
+        <div className={styles.answer}><AssessmentText text={response.answer || copy.emptyAnswer} locale={locale}/></div>
+        <p className={`${styles.label} ${styles.referenceLabel}`}>{copy.reference}</p><div className={styles.reference}><AssessmentText text={question.referenceAnswer} locale={locale}/></div>
         <fieldset className={`${styles.assessment} ${phase === "detail" ? styles.readOnly : ""}`} disabled={phase === "detail"}><legend>{phase === "detail" ? copy.youMarked : copy.selfAssessment}</legend><div>{(["wrong", "right"] as KnowledgeRating[]).map(rating => <label key={rating} className={response.rating === rating ? `${styles.selected} ${rating === "wrong" ? styles.wrong : styles.right}` : ""}><input type="radio" name="knowledge-rating" checked={response.rating === rating} onChange={() => update({ rating })}/><span aria-hidden="true">{rating === "wrong" ? "× " : "✓ "}</span>{copy[rating]}</label>)}</div></fieldset>
       </>}
       <footer className={styles.footer}><button className={styles.primary} disabled={phase === "answer" && !response.rating} onClick={() => { if (phase === "question") setPhase("answer"); else if (phase === "detail") setPhase("result"); else next(); }}>{phase === "question" ? copy.check : phase === "detail" ? copy.backToResults : index === questions.length - 1 ? copy.seeResults : copy.next}</button></footer>

@@ -9,7 +9,7 @@ import { getMessages } from "../../lib/i18n/messages";
 test("lesson tools show access hints only for unentitled previews and retain enabled actions and text completion behavior", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(<PreviewLessonView key={props.key} {...props}/>));` },
-    bundle: true, write: false, outfile: "tools.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
+    bundle: true, write: false, outfile: "tools.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css", ".woff2": "dataurl" }, external: ["/portal/*"],
     define: { "process.env.NODE_ENV": '"production"' },
     plugins: [{ name: "next", setup(builder) {
       builder.onResolve({ filter: /Course(Model|Pdf)Preview$/ }, args => ({ path: args.path, namespace: "mock" }));

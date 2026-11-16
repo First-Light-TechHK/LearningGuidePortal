@@ -48,7 +48,11 @@ test("first course entry skips the chooser for single-mode courses in both local
     if (!node || typeof node !== "object") return;
     if (Array.isArray(node)) { node.forEach(assertPlainLessonTitles); return; }
     if (node.type === "h3" && Array.isArray(node.props.children) && node.props.children[0]?.type === "span") {
-      assert.equal(typeof node.props.children[1],"string","syllabus lesson title must not be a navigation link");
+      const title = node.props.children[1];
+      assert.equal(title.type, "span", "syllabus lesson title must remain plain text");
+      assert.equal(title.props.children, "Lesson");
+      assert.equal(title.props.title, "Lesson");
+      assert.equal(title.props.href, undefined, "syllabus lesson title must not be a navigation link");
     }
     assertPlainLessonTitles(node.props?.children);
   }

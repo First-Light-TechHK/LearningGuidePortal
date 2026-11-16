@@ -1,4 +1,24 @@
 import type { Locale } from "@/lib/i18n/config";
+import { parseApplicationFeedback, type ApplicationAssessmentRequest, type ApplicationAssessmentResult } from "@/contracts/application-assessment";
+
+export async function evaluateApplication(input: ApplicationAssessmentRequest): Promise<ApplicationAssessmentResult> {
+  const { baseUrl, apiKey } = config();
+  if (!baseUrl) throw new KsTutorError("AI Tutor is not configured.", 503, "KS_TUTOR_NOT_CONFIGURED");
+  const response = await fetch(`${baseUrl}/api/user/ai/application-assessment`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...(apiKey ? { "X-API-Key": apiKey } : {}) },
+    body: JSON.stringify(input), cache: "no-store", signal: AbortSignal.timeout(70000),
+  });
+  if (!response.ok) { const error = await readError(response); throw new KsTutorError(error.message, response.status, error.code); }
+  const body = await response.json();
+  const result = body.data as ApplicationAssessmentResult;
+  if (!result || result.evaluationId !== input.evaluationId || result.yourAnswer !== input.answer || typeof result.releaseId !== "string" || !result.releaseId
+    || !result.referenceAnswer || !["available", "unavailable"].includes(result.referenceAnswer.status)
+    || result.referenceAnswer.status === "available" && (typeof result.referenceAnswer.contentMarkdown !== "string" || !result.referenceAnswer.contentMarkdown.trim() || typeof result.referenceAnswer.sourceTitle !== "string")
+    || result.referenceAnswer.status === "unavailable" && (result.referenceAnswer.contentMarkdown !== null || result.referenceAnswer.sourceTitle !== null)) throw new Error("INVALID_APPLICATION_RESULT");
+  const feedback = parseApplicationFeedback(result.feedback);
+  if (result.status !== (feedback.needsReview ? "needs_review" : "evaluated")) throw new Error("INVALID_APPLICATION_STATUS");
+  return { ...result, feedback };
+}
 
 /** KS 学员侧可见的 AI Tutor 状态（无缓存，保证 Online 开关立即生效） */
 export type TutorAvailability = {

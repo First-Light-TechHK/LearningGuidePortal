@@ -50,7 +50,7 @@ export function UnderstandingOverview({ locale, courseId, courseTitle, category,
                 const status=locked||unavailable?"—":summary.status==="not_started"?records.notStarted:summary.status==="in_progress"?copy.inProgress:summary.status==="submitted"?records.submitted:copy.completed;
                 return <div className={`${styles.columns} ${styles.row}`} key={kind} data-assessment-kind={kind}>
                   <strong>{tests[kind]}</strong><span className={`${styles.status} ${finished?styles.green:summary.status==="not_started"||locked?styles.available:""} ${!locked&&summary.status!=="not_started"?styles.statusDot:""}`}>{status}</span>
-                  <b data-latest-result>{locked||summary.latestResult==null?"—":typeof summary.latestResult==="number"?`${summary.latestResult}%`:copy.strong}</b>
+                  <b data-latest-result>{locked||summary.latestResult==null?"—":typeof summary.latestResult==="number"?`${summary.latestResult}%`:getMessages(locale).applicationAssessment[summary.latestResult]}</b>
                   {locked||unavailable?<span className={styles.dash}>—</span>:<button type="button" onClick={()=>setModal({kind,lessonId:lesson.id})}>{finished?copy.viewResult:summary.status==="in_progress"?copy.continue:copy.start}</button>}
                 </div>;
               })}</div>}

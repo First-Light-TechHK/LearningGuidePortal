@@ -20,7 +20,7 @@ before(async () => {
   client = await import("../../services/stripeClient");
   handler = await import("../../app/api/payment/webhook/route");
 });
-after(async () => { process.chdir(originalCwd); await rm(directory, { recursive: true, force: true }); });
+after(async () => { process.chdir(originalCwd); await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
 const price = { id: "price_fixture", active: true, livemode: false, type: "recurring", billing_scheme: "per_unit", unit_amount: 7800, currency: "usd", recurring: { interval: "year", interval_count: 1, usage_type: "licensed" } } as Stripe.Price;
 test("annual price validates; accidental monthly, live, amount and currency mismatches fail", () => {

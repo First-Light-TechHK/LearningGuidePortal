@@ -217,6 +217,7 @@ test("course detail hides the plan card for entitled learners and retains purcha
           return { row:rect(row), info:rect(info), heading:rect(heading), description:rect(description), status:rect(status), action:rect(action), descriptionLine:parseFloat(getComputedStyle(description).lineHeight), ellipsis:getComputedStyle(description).textOverflow };
         });
         assert.equal(layout.heading.width, layout.description.width, `${locale}/${width}: title and description share one Info column`);
+        assert.ok(layout.info.width <= 395, `${locale}/${width}: Info never grows past its design width`);
         assert.equal(layout.heading.x, layout.description.x);
         assert.ok(layout.description.height <= layout.descriptionLine + 1);
         assert.equal(layout.ellipsis, 'ellipsis');
