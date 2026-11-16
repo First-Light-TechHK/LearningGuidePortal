@@ -19,6 +19,7 @@ import * as orderPayments from "../../services/orderPaymentService";
 import * as orderHttp from "../../services/orderManagementHttp";
 import * as orderContract from "../../contracts/order-management";
 import { actOnOperatorOrder } from "../../services/operatorOrderService";
+import { retryUpgradeCancellations } from "../../services/stripeCreditUpgradePayment";
 
 test.describe.configure({ mode: "serial" });
 let store: typeof import("../../services/productStore");
@@ -50,7 +51,8 @@ test.beforeAll(async () => {
     catalog.set(mapping.id, { id: "price_" + mapping.id, active: true, lookup_key: mapping.id, type: "recurring", currency: "usd", unit_amount: mapping.scope === "everything" ? mapping.termMonths === 6 ? 9900 : 19800 : mapping.termMonths === 6 ? 3900 : 7800,
       billing_scheme: "per_unit", transform_quantity: null, recurring: { interval: mapping.termMonths === 6 ? "month" : "year", interval_count: mapping.termMonths === 6 ? 6 : 1, usage_type: "licensed" } } as Stripe.Price);
   }
-  store = productStore;
+  // These fixtures continue exercising already-issued proration upgrades. New credit upgrades are tested separately below.
+  store = { ...productStore, createUpgradeQuote: productStore.createProrationUpgradeQuote };
   for (const [months,key,env] of [[6,"lg_upgrade_60","STRIPE_PRICE_UPGRADE_SIX_MONTHS"],[12,"lg_upgrade_120","STRIPE_PRICE_UPGRADE_ONE_YEAR"]] as const) {
     process.env[env]=key;
     catalog.set(key,{id:"price_"+key,active:true,lookup_key:key,type:"one_time",currency:"usd",unit_amount:months===6?6000:12000,billing_scheme:"per_unit",transform_quantity:null,recurring:null,livemode:false} as Stripe.Price);
@@ -1100,4 +1102,227 @@ test("DEV accepts Next's internal localhost URL only when the actual loopback Ho
   expect(() => payment.checkoutRequestOrigin(local())).toThrow();
   headers.host = "127.0.0.1:3012"; headers.origin = "http://127.0.0.1:3012";
   expect(() => payment.checkoutRequestOrigin(local())).toThrow();
+});
+
+
+let failCreditCancellation = false;
+const creditCancellations: string[] = [];
+async function creditSource(months: 6 | 12 = 6) {
+  process.env.STRIPE_COUPON_UPGRADE_SIX_MONTHS = "coupon39";
+  process.env.STRIPE_COUPON_UPGRADE_ONE_YEAR = "coupon78";
+  for (const key of ["everything-pc-6", "everything-pc-12"]) catalog.get(key)!.product = "prod_everything";
+  stripe.coupons.retrieve = (async (id: string) => ({ id, valid: true, duration: "once", currency: "usd", percent_off: null,
+    amount_off: id === "coupon39" ? 3900 : 7800, applies_to: { products: ["prod_everything"] }, livemode: false })) as typeof stripe.coupons.retrieve;
+  stripe.subscriptions.cancel = (async (id: string, input: Stripe.SubscriptionCancelParams) => {
+    expect(input).toEqual({ invoice_now: false, prorate: false });
+    if (failCreditCancellation) throw new Error("Cancellation temporarily unavailable");
+    creditCancellations.push(id); subscriptions.get(id)!.status = "canceled";
+    return subscriptions.get(id);
+  }) as typeof stripe.subscriptions.cancel;
+  const result = await upgradeSource(months);
+  const item = result.subscription.items.data[0];
+  item.current_period_start -= 30 * 86400; item.current_period_end -= 30 * 86400;
+  await store.editProductData(data => {
+    const source = data.subscriptions.find(s => s.id === result.source.id)!;
+    source.validFrom = new Date(item.current_period_start * 1000).toISOString();
+    source.validTo = new Date(item.current_period_end * 1000).toISOString();
+    data.entitlements.filter(e => e.userId === result.buyer.id).forEach(e => { e.validTo = source.validTo; });
+  });
+  return result;
+}
+function creditSession(order: Awaited<ReturnType<typeof checkout>>["order"]) {
+  const credit = order.upgradeCredit!, session = sessions.get(order.stripeCheckoutSessionId!)!;
+  Object.assign(session, { customer: credit.customerId, amount_subtotal: credit.listAmountMinor, amount_total: credit.amountDueMinor,
+    total_details: { amount_discount: credit.creditMinor, amount_tax: 0, amount_shipping: 0 }, discounts: [{ coupon: credit.couponId, promotion_code: null }],
+    line_items: { has_more: false, data: [{ quantity: 1, price: { id: order.price!.stripePriceId } }] } });
+  return session;
+}
+function paidCredit(order: Awaited<ReturnType<typeof checkout>>["order"]) {
+  const remote = paidSession(order), credit = order.upgradeCredit!;
+  creditSession(order);
+  const session = remote.session;
+  remote.subscription.metadata = { ...session.metadata! };
+  const invoice = { id: "in_credit_" + order.id, status: "paid", billing_reason: "subscription_create", currency: "usd", customer: credit.customerId,
+    parent: { subscription_details: { subscription: remote.subscription.id } }, subtotal: credit.listAmountMinor, total: credit.amountDueMinor,
+    amount_paid: credit.amountDueMinor, amount_due: credit.amountDueMinor, total_discount_amounts: [{ amount: credit.creditMinor }],
+    discounts: [{ source: { coupon: credit.couponId } }], lines: { has_more: false, data: [{ period: { start: remote.start, end: remote.end }, pricing: { price_details: { price: order.price!.stripePriceId } } }] } } as unknown as Stripe.Invoice;
+  invoices.set(invoice.id, invoice); session.invoice = invoice.id; remote.subscription.latest_invoice = invoice;
+  return { ...remote, invoice };
+}
+
+for (const months of [6, 12] as const) test(`credit upgrade ${months}m creates a new subscription with full once-only credit and cancels only after paid`, async () => {
+  const result = await creditSource(months);
+  const { quote } = await productStore.createUpgradeQuote(result.buyer.id, result.source.id);
+  expect(quote.amountMinor).toBe(months === 6 ? 6000 : 12000);
+  expect(quote.upgradeProration).toBeUndefined();
+  const before = creditCancellations.length;
+  const pending = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
+  expect(requests.at(-1)!.input).toMatchObject({ mode: "subscription", customer: result.subscription.customer,
+    discounts: [{ coupon: months === 6 ? "coupon39" : "coupon78" }] });
+  expect(requests.at(-1)!.input.allow_promotion_codes).toBeUndefined();
+  expect(requests.at(-1)!.input.subscription_data?.trial_period_days).toBeUndefined();
+  expect(creditCancellations.length).toBe(before);
+  const repeat = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
+  expect(repeat.order.id).toBe(pending.order.id);
+  const paid = paidCredit(pending.order);
+  expect((await send("invoice.paid", "evt_credit_first_" + months, paid.invoice.id)).status).toBe(200);
+  const overview = await store.getLearningOverview(result.buyer.id);
+  const target = overview.subscriptions.find(s => s.stripeSubscriptionId === paid.subscription.id)!;
+  expect(target.state).toBe("active");
+  expect(target.validTo).toBe(new Date(paid.end * 1000).toISOString());
+  expect(paid.end).toBeGreaterThan(result.subscription.items.data[0].current_period_end);
+  expect(overview.subscriptions.find(s => s.id === result.source.id)?.supersededBy).toBe(target.id);
+  expect(result.subscription.status).toBe("canceled");
+  expect((await store.getOrderForUser(result.buyer.id, result.order.id))?.status).toBe("paid");
+  expect((await store.getOrderForUser(result.buyer.id, pending.order.id))?.upgradeCancellation?.state).toBe("completed");
+  expect((await send("checkout.session.completed", "evt_credit_duplicate_" + months, paid.session.id)).status).toBe(200);
+  expect((await store.getLearningOverview(result.buyer.id)).entitlements.filter(e => e.state === "active")).toHaveLength(1);
+  const renewal = { ...paid.invoice, id: "in_credit_renew_" + months, billing_reason: "subscription_cycle", subtotal: quote.price!.amountMinor,
+    total: quote.price!.amountMinor, amount_paid: quote.price!.amountMinor, discounts: [], total_discount_amounts: [],
+    lines: { has_more: false, data: [{ period: { start: paid.end, end: paid.end + 180 * 86400 }, pricing: { price_details: { price: quote.price!.stripePriceId } } }] } } as unknown as Stripe.Invoice;
+  invoices.set(renewal.id, renewal);
+  expect((await send("invoice.paid", "evt_credit_renew_" + months, renewal.id)).status).toBe(200);
+  expect((await store.listOrdersForUser(result.buyer.id)).filter(o => o.stripeInvoiceId === renewal.id)).toHaveLength(1);
+  expect((await store.listOrdersForUser(result.buyer.id)).find(o => o.stripeInvoiceId === renewal.id)?.amountMinor).toBe(months === 6 ? 9900 : 19800);
+  // Late events for the replaced contract cannot revive its access or revoke Everything.
+  result.subscription.status = "active";
+  expect((await send("customer.subscription.updated", "evt_credit_old_" + months, result.subscription.id)).status).toBe(200);
+  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(s => s.id === result.source.id)?.state).toBe("expired");
+  expect((await store.getLearningOverview(result.buyer.id)).entitlements.filter(e => e.state === "active")).toHaveLength(1);
+  await store.applyStripePaidInvoice({ subscriptionId: result.subscription.id, invoiceId: "in_credit_late_legacy_" + months, amountMinor: months === 6 ? 3900 : 7800 });
+  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(s => s.id === result.source.id)?.state).toBe("expired");
+  await store.refundOrder(result.order.id, "operator-test");
+  expect((await store.getLearningOverview(result.buyer.id)).entitlements.filter(e => e.state === "active" && e.scope === "everything")).toHaveLength(1);
+});
+
+test("credit upgrade expiry leaves Category unchanged and releases its reservation", async () => {
+  const result = await creditSource();
+  const { quote } = await productStore.createUpgradeQuote(result.buyer.id, result.source.id);
+  const pending = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
+  const session = creditSession(pending.order); session.status = "expired";
+  expect((await send("checkout.session.expired", "evt_credit_expired", session.id)).status).toBe(200);
+  expect((await store.getOrderForUser(result.buyer.id, pending.order.id))?.status).toBe("canceled");
+  expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(s => s.id === result.source.id)?.state).toBe("active");
+  expect(result.subscription.status).toBe("active");
+  expect((await productStore.createUpgradeQuote(result.buyer.id, result.source.id)).quote.upgradeCredit).toBeDefined();
+});
+
+test("credit upgrade persists cancellation retry without losing paid access or creating a second subscription", async () => {
+  const result = await creditSource();
+  const { quote } = await productStore.createUpgradeQuote(result.buyer.id, result.source.id);
+  const pending = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
+  const paid = paidCredit(pending.order);
+  failCreditCancellation = true;
+  try {
+    expect((await send("checkout.session.completed", "evt_credit_cancel_fail", paid.session.id)).status).toBe(200);
+    const stored = await store.getOrderForUser(result.buyer.id, pending.order.id);
+    expect(stored).toMatchObject({ status: "paid", upgradeCancellation: { state: "pending", attempts: 1 } });
+    const same = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
+    expect(same.order.id).toBe(pending.order.id);
+    expect((await store.getLearningOverview(result.buyer.id)).entitlements.filter(e => e.state === "active")).toHaveLength(1);
+  } finally { failCreditCancellation = false; }
+  // A subsequent refund does not remove the obligation to stop the superseded contract.
+  await store.refundOrder(pending.order.id, "operator-test");
+  await store.editProductData(data => { data.orders.find(o => o.id === pending.order.id)!.upgradeCancellation!.nextAttemptAt = new Date(0).toISOString(); });
+  await retryUpgradeCancellations();
+  expect((await store.getOrderForUser(result.buyer.id, pending.order.id))?.upgradeCancellation?.state).toBe("completed");
+  expect(result.subscription.status).toBe("canceled");
+});
+
+test("credit upgrade rejects forged ownership, coupon, unpaid completion and invoice amount without consuming the event", async () => {
+  const result = await creditSource();
+  const { quote } = await productStore.createUpgradeQuote(result.buyer.id, result.source.id);
+  const stranger = await user();
+  await expect(payment.startPayment(stranger, { quoteId: quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
+  const pending = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request());
+  const paid = paidCredit(pending.order);
+  paid.session.payment_status = "unpaid";
+  expect((await send("checkout.session.completed", "evt_credit_guard", paid.session.id)).status).toBe(200);
+  expect((await store.getLearningOverview(result.buyer.id)).entitlements.filter(e => e.scope === "everything")).toHaveLength(0);
+  paid.session.payment_status = "paid";
+  paid.session.discounts![0].coupon = "coupon78";
+  expect((await send("checkout.session.completed", "evt_credit_guard", paid.session.id)).status).toBe(400);
+  paid.session.discounts![0].coupon = "coupon39";
+  paid.invoice.amount_paid = 1;
+  expect((await send("checkout.session.completed", "evt_credit_guard", paid.session.id)).status).toBe(400);
+  paid.invoice.amount_paid = 6000;
+  expect((await send("checkout.session.completed", "evt_credit_guard", paid.session.id)).status).toBe(200);
+});
+
+test("credit upgrade reserves one source across different simultaneous quotes", async () => {
+  const result = await creditSource();
+  const [one, two] = await Promise.all([productStore.createUpgradeQuote(result.buyer.id, result.source.id), productStore.createUpgradeQuote(result.buyer.id, result.source.id)]);
+  const first = await payment.startPayment(result.buyer, { quoteId: one.quote.id, consents: consent }, request());
+  await expect(payment.startPayment(result.buyer, { quoteId: two.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "upgrade_in_progress" });
+  const session = creditSession(first.order); session.status = "expired";
+  expect((await send("checkout.session.expired", "evt_credit_release", session.id)).status).toBe(200);
+});
+
+
+test("credit upgrade order recovery resumes and cancels its original subscription Checkout", async () => {
+  const source = await creditSource();
+  const { quote } = await productStore.createUpgradeQuote(source.buyer.id, source.source.id);
+  const result = await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request());
+  const session = creditSession(result.order); session.url = "https://checkout.stripe.com/credit-recovery";
+  expect((await orderPayments.manageOrderPayment(source.buyer.id, result.order.id, "resume")).checkoutUrl).toBe(session.url);
+  expect((await orderPayments.manageOrderPayment(source.buyer.id, result.order.id, "cancel")).order.status).toBe("canceled");
+  expect(source.subscription.status).toBe("active");
+  expect((await store.getLearningOverview(source.buyer.id)).entitlements.filter(e => e.state === "active")).toHaveLength(1);
+});
+
+test("credit upgrade recovers a lost Checkout response using the same order and idempotency key", async () => {
+  const source = await creditSource();
+  const { quote } = await productStore.createUpgradeQuote(source.buyer.id, source.source.id);
+  const create = stripe.checkout.sessions.create;
+  stripe.checkout.sessions.create = (async (...args: Parameters<typeof create>) => { await create(...args); throw new Error("Lost Checkout response"); }) as typeof create;
+  try {
+    await expect(payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request())).rejects.toThrow("Lost Checkout response");
+  } finally { stripe.checkout.sessions.create = create; }
+  const last = requests.at(-1)!;
+  const recovered = await payment.startPayment(source.buyer, { quoteId: quote.id, locale: "zh-CN", consents: consent }, request());
+  expect(requests.at(-1)!.options?.idempotencyKey).toBe(last.options?.idempotencyKey);
+  expect(requests.at(-1)!.input).toEqual(last.input);
+  expect(recovered.order.stripeCheckoutSessionId).toBe("cs_" + last.options?.idempotencyKey);
+  expect((await store.listOrdersForUser(source.buyer.id)).filter(o => o.kind === "upgrade")).toHaveLength(1);
+});
+
+test("credit upgrade keeps tax separate from the fixed base credit", async () => {
+  const source = await creditSource();
+  const { quote } = await productStore.createUpgradeQuote(source.buyer.id, source.source.id);
+  const pending = await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request());
+  const paid = paidCredit(pending.order);
+  paid.session.total_details!.amount_tax = 600; paid.session.amount_total = 6600;
+  Object.assign(paid.invoice, { total: 6600, amount_paid: 6600, amount_due: 6600, total_taxes: [{ amount: 600, tax_behavior: "exclusive" }] });
+  expect((await send("checkout.session.completed", "evt_credit_tax", paid.session.id)).status).toBe(200);
+  expect(await store.getOrderForUser(source.buyer.id, pending.order.id)).toMatchObject({ amountMinor: 6600, creditMinor: 3900, listAmountMinor: 9900, taxAmountMinor: 600 });
+});
+
+test("credit upgrade quote API ignores client credit, target and Coupon and enforces the authenticated owner", async () => {
+  const result = await creditSource(12);
+  const state = { user: result.buyer as typeof result.buyer | null, store: productStore, paymentFailure };
+  (globalThis as any).stripeUpgradeApi = state;
+  try {
+    const bundle = await build({ entryPoints: [path.join(cwd, "app/api/subscription/quote/route.ts")], bundle: true, write: false, platform: "node", format: "cjs", external: ["next/server"], plugins: [{ name: "credit-session", setup(b) {
+      b.onResolve({ filter: /services\/(productStore|productAuth|paymentHttp)$/ }, args => ({ path: args.path, namespace: "mock" }));
+      b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents: args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.stripeUpgradeApi.user}" : args.path.endsWith("paymentHttp") ? "export const paymentFailure=(...args)=>globalThis.stripeUpgradeApi.paymentFailure(...args)" : "export const createQuote=(...args)=>globalThis.stripeUpgradeApi.store.createQuote(...args),createUpgradeQuote=(...args)=>globalThis.stripeUpgradeApi.store.createUpgradeQuote(...args),getQuoteForUser=(...args)=>globalThis.stripeUpgradeApi.store.getQuoteForUser(...args)" }));
+    } }] });
+    const routeModule = { exports: {} as { POST: (request: Request) => Promise<Response> } };
+    new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(path.join(cwd, "package.json")), routeModule, routeModule.exports);
+    const invoke = () => routeModule.exports.POST(new Request("https://payment.example.test/api/subscription/quote", { method: "POST", body: JSON.stringify({ kind: "upgrade", subscriptionId: result.source.id, amountMinor: 1, termMonths: 6, couponId: "coupon39", userId: "forged" }) }));
+    const response = await invoke(); expect(response.status).toBe(200);
+    expect((await response.json()).quote).toMatchObject({ userId: result.buyer.id, amountMinor: 12000, upgradeCredit: { couponId: "coupon78", creditMinor: 7800 }, price: { termMonths: 12 } });
+    state.user = await user(); expect((await invoke()).status).not.toBe(200);
+    state.user = null; expect((await invoke()).status).toBe(401);
+  } finally { delete (globalThis as any).stripeUpgradeApi; }
+});
+
+
+test("reset Sandbox objects ignore late signed events without retrieving deleted local orders", async () => {
+  await store.editProductData(data => { data.stripeResetReferences = { sessions: ["cs_reset_test"], subscriptions: ["sub_reset_test"], invoices: ["in_reset_test"] }; });
+  for (const [type, id] of [["checkout.session.completed", "cs_reset_test"], ["invoice.paid", "in_reset_test"], ["customer.subscription.deleted", "sub_reset_test"]]) {
+    const response = await send(type, "evt_reset_" + id, id);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ignored: true, reset: true });
+  }
+  expect((await send("checkout.session.completed", "evt_reset_invalid", "cs_reset_test", "invalid")).status).toBe(400);
 });

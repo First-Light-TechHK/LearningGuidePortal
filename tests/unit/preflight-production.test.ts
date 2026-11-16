@@ -23,6 +23,8 @@ const baseEnv: Record<string, string> = {
   DATA_S3_BUCKET: "lg-prod-data",
   STRIPE_SECRET_KEY: "sk_live_preflight_dummy",
   STRIPE_WEBHOOK_SECRET: "whsec_preflight_dummy",
+  STRIPE_COUPON_UPGRADE_SIX_MONTHS: "coupon_six_dummy",
+  STRIPE_COUPON_UPGRADE_ONE_YEAR: "coupon_year_dummy",
   GOOGLE_CLIENT_ID: "google-client-dummy",
   GOOGLE_CLIENT_SECRET: "google-secret-dummy",
   SESSION_SECRET: "0123456789abcdef0123456789abcdef",
@@ -58,6 +60,15 @@ test("preflight passes with the full dummy production environment", async () => 
   const run = await runPreflight();
   assert.equal(run.code, 0, run.stderr);
   assert.deepEqual(JSON.parse(run.stdout), { ok: true, environment: "PROD", paymentMode: "stripe", storage: "postgresql+s3" });
+});
+
+test("preflight blocks either missing upgrade Coupon without exposing configuration values", async () => {
+  for (const key of ["STRIPE_COUPON_UPGRADE_SIX_MONTHS", "STRIPE_COUPON_UPGRADE_ONE_YEAR"]) {
+    const run = await runPreflight({ [key]: undefined });
+    assert.notEqual(run.code, 0);
+    assert.ok((run.stdout + run.stderr).includes(key));
+    assert.ok(!(run.stdout + run.stderr).includes("coupon_six_dummy"));
+  }
 });
 
 test("preflight blocks the file Study Group store case-insensitively", async () => {

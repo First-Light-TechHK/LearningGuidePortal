@@ -6,5 +6,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { startHelpdeskBackgroundJobs } = await import("./modules/helpdesk/runtime");
     startHelpdeskBackgroundJobs();
+    const { startUpgradeCancellationJobs } = await import("./services/stripeCreditUpgradePayment");
+    startUpgradeCancellationJobs();
   }
 }

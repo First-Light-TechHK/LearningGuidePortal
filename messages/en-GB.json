@@ -1518,9 +1518,9 @@
     "details": "View subscription details",
     "owned": "Owned",
     "upgrade": "Upgrade to Everything",
-    "upgradeDescription": "Unlock {count} more categories. Your end date stays {date}.",
+    "upgradeDescription": "Unlock {count} more categories. Everything starts a new billing period after successful payment.",
     "extraCategories": "+{count} categories",
-    "estimate": "Stripe calculates this charge for the {days} days remaining. Your billing period stays the same.",
+    "estimate": "A one-time full Category credit is applied. Taxes, if applicable, are shown at Checkout.",
     "upgradeAction": "Upgrade · {price}",
     "upgradeUnavailable": "Upgrade is unavailable for this subscription. View subscription details to manage your plan.",
     "allIncluded": "You’ll get all categories",
@@ -1739,6 +1739,11 @@
     ]
   },
   "upgradeConfirmation": {
+    "newCycle": "A new billing period begins after successful payment.",
+    "newTerm": "New Everything term: {months} months. Final dates are confirmed by Stripe.",
+    "fullCredit": "One-time full Category upgrade credit",
+    "newConsentSchedule": "I understand this starts a new Everything subscription and the old Category subscription stops renewing after successful payment.",
+    "newRenewalNote": "First base charge excludes any applicable tax. After successful payment, {category} is replaced by Everything. Future renewal: {price} / {months} months, without the upgrade credit.",
     "title": "Confirm your upgrade",
     "intro": "You are upgrading your active Category subscription to Everything.",
     "source": "Source Plan",
