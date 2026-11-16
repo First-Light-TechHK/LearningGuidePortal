@@ -17,7 +17,7 @@ const smoke = process.argv.includes("--smoke"), port = Number(process.env.STRIPE
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid local port.");
 const origin = `http://127.0.0.1:${port}`;
 Object.assign(process.env, { APP_ENV: "DEV", STORAGE_BACKEND: "local", PAYMENT_MODE: "stripe", NEXT_PUBLIC_APP_URL: origin, STRIPE_NO_AUTO_UPDATE: "1" });
-const events = "checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,invoice.paid,invoice.payment_failed,invoice.voided,customer.subscription.updated,customer.subscription.deleted";
+const events = "checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,invoice.paid,invoice.payment_failed,invoice.voided,customer.subscription.updated,customer.subscription.deleted,charge.refunded,charge.refund.updated,refund.created,refund.updated,refund.failed";
 const delivered = new Set();
 const listener = spawn(process.env.STRIPE_CLI_PATH || "stripe", ["listen", "--forward-to", `${origin}/api/payment/webhook`, "--events", events], {
   windowsHide: true, env: { ...process.env, STRIPE_API_KEY: process.env.STRIPE_SECRET_KEY }, stdio: ["ignore", "pipe", "pipe"],

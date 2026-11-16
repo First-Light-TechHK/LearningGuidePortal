@@ -154,6 +154,75 @@ async function send(type: string, id: string, objectId: string, signature?: stri
   return webhook.POST(new Request("https://payment.example.test/api/payment/webhook", { method: "POST", headers: { "stripe-signature": header }, body: payload }));
 }
 
+test("signed refund callbacks synchronise only successful full refunds and retry safely", async () => {
+  const result = await checkout();
+  const { session } = paidSession(result.order);
+  session.payment_intent = "pi_refund_regression";
+  expect((await send("checkout.session.completed", "evt_refund_paid", session.id)).status).toBe(200);
+  const previousCharge = stripe.charges.retrieve, previousList = stripe.refunds.list, previousRefund = stripe.refunds.retrieve, previousCreate = stripe.refunds.create;
+  const charge = { id: "ch_refund_regression", amount: result.order.amountMinor, currency: "usd", payment_intent: session.payment_intent, livemode: false };
+  let refunds = [{ id: "re_partial", charge: charge.id, amount: 100, currency: "usd", status: "succeeded" },
+    { id: "re_remaining", charge: charge.id, amount: result.order.amountMinor - 100, currency: "usd", status: "pending" }];
+  stripe.charges.retrieve = (async () => charge) as unknown as typeof stripe.charges.retrieve;
+  stripe.refunds.list = (async (input: { starting_after?: string }) => ({ data: input.starting_after ? refunds.slice(1) : refunds.slice(0, 1), has_more: !input.starting_after && refunds.length > 1 })) as unknown as typeof stripe.refunds.list;
+  stripe.refunds.retrieve = (async () => refunds[1]) as unknown as typeof stripe.refunds.retrieve;
+  try {
+    stripe.refunds.create = (async () => ({ id: "re_pending_operator", status: "pending" })) as unknown as typeof stripe.refunds.create;
+    const pending = await actOnOperatorOrder({ ...result.buyer, role: "operator", status: "active" }, { orderId: result.order.id, action: "refund" });
+    expect(pending.order?.status).toBe("paid");
+    expect((await store.checkEntitlement(result.buyer.id, "epicureanism")).allowed).toBe(true);
+    expect((await send("charge.refunded", "evt_refund_invalid_signature", charge.id, "invalid")).status).toBe(400);
+    expect((await send("charge.refunded", "evt_refund_partial", charge.id)).status).toBe(200);
+    expect((await store.getOrderForUser(result.buyer.id, result.order.id))?.status).toBe("paid");
+    expect((await store.getOrderForUser(result.buyer.id, result.order.id))?.refundedAmountMinor).toBe(100);
+    expect((await store.checkEntitlement(result.buyer.id, "epicureanism")).allowed).toBe(true);
+    refunds[1].status = "failed";
+    expect((await send("refund.failed", "evt_refund_failed", refunds[1].id)).status).toBe(200);
+    expect((await store.checkEntitlement(result.buyer.id, "epicureanism")).allowed).toBe(true);
+    refunds[1].status = "succeeded";
+    const paymentIntent = charge.payment_intent;
+    charge.payment_intent = "pi_unknown_refund";
+    expect((await send("refund.updated", "evt_refund_missing_order", refunds[1].id)).status).toBe(500);
+    expect((await store.readProductData()).stripeEvents.some(event => event.id === "evt_refund_missing_order")).toBe(false);
+    charge.payment_intent = paymentIntent;
+    charge.amount++;
+    expect((await send("refund.updated", "evt_refund_full", refunds[1].id)).status).toBe(400);
+    expect((await store.readProductData()).stripeEvents.some(event => event.id === "evt_refund_full")).toBe(false);
+    charge.amount--;
+    expect((await send("refund.updated", "evt_refund_full", refunds[1].id)).status).toBe(200);
+    expect((await store.getOrderForUser(result.buyer.id, result.order.id))?.status).toBe("refunded");
+    expect((await store.checkEntitlement(result.buyer.id, "epicureanism")).allowed).toBe(false);
+    expect((await send("refund.updated", "evt_refund_full", refunds[1].id)).status).toBe(200);
+    expect((await send("charge.refunded", "evt_refund_late", charge.id)).status).toBe(200);
+    expect((await store.readProductData()).orderActivities.filter(activity => activity.orderId === result.order.id && activity.action === "refund" && activity.result === "succeeded")).toHaveLength(1);
+    refunds = [];
+    expect((await send("charge.refunded", "evt_refund_stale", charge.id)).status).toBe(200);
+    expect((await store.getOrderForUser(result.buyer.id, result.order.id))?.refundedAmountMinor).toBe(result.order.amountMinor);
+    expect((await store.checkEntitlement(result.buyer.id, "epicureanism")).allowed).toBe(false);
+  } finally { stripe.charges.retrieve = previousCharge; stripe.refunds.list = previousList; stripe.refunds.retrieve = previousRefund; stripe.refunds.create = previousCreate; }
+});
+
+test("signed old-subscription cancellation preserves the replacement purchase", async () => {
+  const first = await checkout();
+  const old = paidSession(first.order);
+  expect((await send("checkout.session.completed", "evt_repurchase_old", old.session.id)).status).toBe(200);
+  await store.editProductData(data => {
+    const subscription = data.subscriptions.find(item => item.stripeSubscriptionId === old.subscription.id)!;
+    subscription.state = "expired";
+    subscription.validTo = new Date(Date.now() - 86400000).toISOString();
+    data.entitlements.filter(item => item.subscriptionId === subscription.id).forEach(item => { item.state = "expired"; item.validTo = subscription.validTo; });
+  });
+  const { quote } = await store.createQuote(first.buyer.id, first.order.planId);
+  const replacement = await payment.startPayment(first.buyer, { quoteId: quote.id, consents: consent }, request());
+  const next = paidSession(replacement.order);
+  expect((await send("checkout.session.completed", "evt_repurchase_new", next.session.id)).status).toBe(200);
+  old.subscription.status = "canceled";
+  expect((await send("customer.subscription.deleted", "evt_repurchase_old_deleted", old.subscription.id)).status).toBe(200);
+  expect((await send("customer.subscription.deleted", "evt_repurchase_old_deleted", old.subscription.id)).status).toBe(200);
+  expect((await store.checkEntitlement(first.buyer.id, "epicureanism")).allowed).toBe(true);
+  expect((await store.readProductData()).subscriptions.find(item => item.stripeSubscriptionId === next.subscription.id)?.state).toBe("active");
+});
+
 test("all eight lookup keys produce the correct subscription period and server price", async () => {
   for (const mapping of subscriptionPrices) {
     const result = await checkout(mapping.id);

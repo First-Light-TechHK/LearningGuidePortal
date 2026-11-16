@@ -153,6 +153,8 @@ export type ProductQuote = {
   createdAt: string;
 };
 export type ProductOrder = {
+  refundedAmountMinor?: number;
+  stripeRefundChargeId?: string;
   upgradeCredit?: StripeUpgradeCredit;
   upgradeCancellation?: { state: "pending" | "completed"; attempts: number; nextAttemptAt: string; lastFailureAt?: string };
   listAmountMinor?: number;
@@ -211,6 +213,7 @@ export type ProductSubscription = {
   renewalChange?: SubscriptionRenewalChange;
 };
 export type ProductEntitlement = {
+  subscriptionId?: string;
   id: string;
   userId: string;
   courseId: string;
@@ -477,9 +480,9 @@ function entitlementCoversCourse(entitlement: Pick<ProductEntitlement, "courseId
   return (entitlement.scopeId || entitlement.courseId) === course.id;
 }
 
-function entitlementForPlan(userId: string, plan: ProductPlan, source: ProductEntitlement["source"], validTo: string): ProductEntitlement {
+function entitlementForPlan(userId: string, plan: ProductPlan, source: ProductEntitlement["source"], validTo: string, subscriptionId: string): ProductEntitlement {
   const scope = planScope(plan);
-  return { id: id("entitlement"), userId, courseId: plan.courseId, state: "active", source, validTo, scope: scope.scope, scopeId: scope.scopeId, device: plan.device };
+  return { id: id("entitlement"), subscriptionId, userId, courseId: plan.courseId, state: "active", source, validTo, scope: scope.scope, scopeId: scope.scopeId, device: plan.device };
 }
 
 function studyHistoryFor(data: ProductData, userId: string, course: ProductCourse) {
@@ -521,7 +524,21 @@ function sameScope(left: { courseId: string; scope?: ProductEntitlement["scope"]
 }
 
 function entitlementMatchesSubscription(entitlement: ProductEntitlement, subscription: ProductSubscription) {
-  return entitlement.userId === subscription.userId && entitlement.source === subscription.source && sameScope(entitlement, subscription);
+  return entitlement.subscriptionId === subscription.id && entitlement.userId === subscription.userId && entitlement.source === subscription.source && sameScope(entitlement, subscription);
+}
+
+// Only unambiguous historical evidence may associate an old access grant.
+// This projection is persisted by the next aggregate transaction, not by a read.
+function bindLegacyEntitlements(data: ProductData) {
+  for (const entitlement of data.entitlements) {
+    if (entitlement.subscriptionId) continue;
+    const candidates = data.subscriptions.filter(subscription => subscription.userId === entitlement.userId
+      && subscription.source === entitlement.source && sameScope(entitlement, subscription)
+      && (!entitlement.device || !subscription.device || entitlement.device === subscription.device));
+    const period = candidates.filter(subscription => subscription.validTo === entitlement.validTo);
+    const matches = period.length ? period : candidates;
+    if (matches.length === 1) entitlement.subscriptionId = matches[0].id;
+  }
 }
 
 function alreadySubscribedToPlan(data: ProductData, userId: string, plan: ProductPlan) {
@@ -607,6 +624,7 @@ export async function readProductAggregate() {
 export async function ensureProductData() {
   const current = await readProductAggregate();
   await applyDataMigrations(current);
+  bindLegacyEntitlements(current);
   return current;
 }
 
@@ -893,6 +911,12 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
       // Google's verified identity proves control of the same address. Disabled
       // and WeChat accounts still require the explicit conflict path.
       if (input.provider === "google" && (emailUser.status === "active" || emailUser.status === "pending") && (emailUser.status === "pending" || emailUser.emailVerifiedAt)) {
+        if (emailUser.status === "pending" && !emailUser.emailVerifiedAt) {
+          emailUser.passwordHash = null;
+          data.sessions = data.sessions.filter(session => session.userId !== emailUser.id);
+          data.verificationTokens = data.verificationTokens.filter(token => token.userId !== emailUser.id);
+          data.passwordResetTokens = data.passwordResetTokens.filter(token => token.userId !== emailUser.id);
+        }
         emailUser.status = "active";
         emailUser.emailVerifiedAt ||= now();
         data.accounts.push({ id: id("account"), userId: emailUser.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
@@ -1436,7 +1460,7 @@ function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) 
   const trialEnd = new Date(validFrom);
   trialEnd.setUTCDate(trialEnd.getUTCDate() + TRIAL_DAYS);
   const subscription = subscriptionForPlan(userId, plan, "trial", validFrom, trialEnd.toISOString());
-  const entitlement = entitlementForPlan(userId, plan, "trial", subscription.validTo);
+  const entitlement = entitlementForPlan(userId, plan, "trial", subscription.validTo, subscription.id);
   data.subscriptions.unshift(subscription);
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Trial activated", body: `${course.title} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
@@ -1623,7 +1647,7 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     const subscription = subscriptionForPlan(userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: null });
     order.servicePeriodStart = subscription.validFrom;
     order.servicePeriodEnd = subscription.validTo;
-    const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
+    const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo, subscription.id);
     data.subscriptions.unshift(subscription);
     data.subscriptions.forEach((item) => { if (item.userId === userId && item.source === "trial" && item.state === "active" && item.planId === plan.id) item.state = "expired"; });
     data.entitlements.forEach((item) => {
@@ -1660,7 +1684,7 @@ function fulfilUpgrade(data: ProductData, userId: string, order: ProductOrder, t
   const subscription = subscriptionForPlan(userId, targetPlan, "purchase", validFrom, validTo, { stripeSubscriptionId: order.stripeSubscriptionId || null, stripeCustomerId: source.stripeCustomerId || null });
   order.servicePeriodStart = subscription.validFrom;
   order.servicePeriodEnd = subscription.validTo;
-  const entitlement = entitlementForPlan(userId, targetPlan, "purchase", subscription.validTo);
+  const entitlement = entitlementForPlan(userId, targetPlan, "purchase", subscription.validTo, subscription.id);
   data.subscriptions.unshift(subscription);
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Subscription upgraded", body: "Your PC Everything access is now available.", readAt: null, createdAt: now() });
@@ -1860,7 +1884,7 @@ export async function activateStripeTrial(input: { eventId?: string; eventType?:
     order.stripeCheckoutSessionId = input.sessionId;
     order.stripeSubscriptionId = input.subscriptionId;
     const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: input.subscriptionId, stripeCustomerId: input.customerId || null, graceEndsAt: null });
-    const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
+    const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo, subscription.id);
     data.subscriptions.unshift(subscription);
     data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
@@ -1881,7 +1905,7 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
     const validFrom = now();
     const subscription = subscriptionForPlan(trial.userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: input.subscriptionId, stripeCustomerId: trial.stripeCustomerId || null, graceEndsAt: null });
     const order: ProductOrder = { id: id("order"), userId: trial.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: subscription.validFrom, servicePeriodEnd: subscription.validTo, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
-    const entitlement = entitlementForPlan(trial.userId, plan, "purchase", subscription.validTo);
+    const entitlement = entitlementForPlan(trial.userId, plan, "purchase", subscription.validTo, subscription.id);
     data.subscriptions.unshift(subscription);
     data.entitlements = data.entitlements.filter((item) => !(item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
@@ -1901,7 +1925,8 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     if (!plan) throw new Error("Plan not found.");
     const start = input.currentPeriodStart || now();
     const end = input.currentPeriodEnd || addMonths(start, plan.termMonths);
-    if (!subscription.supersededBy) {
+    const refunded = data.orders.some(order => order.stripeSubscriptionId === input.subscriptionId && order.status === "refunded");
+    if (!subscription.supersededBy && !refunded) {
       subscription.state = "active";
       subscription.cancelAtPeriodEnd = false;
       subscription.validFrom = start;
@@ -1911,7 +1936,7 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     // D3: a paid renewal revives the entitlement even after a sweep expired it,
     // mirroring the invoice branch of applyVerifiedStripeEvent.
     const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription));
-    if (entitlement && !subscription.supersededBy) {
+    if (entitlement && !subscription.supersededBy && !refunded) {
       entitlement.state = "active";
       entitlement.validTo = end;
     }
@@ -2008,7 +2033,7 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   const subscription = subscriptionForPlan(userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: stripeSubscriptionId || null, stripeCustomerId: stripeCustomerId || null });
   order.servicePeriodStart = subscription.validFrom;
   order.servicePeriodEnd = subscription.validTo;
-  const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
+  const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo, subscription.id);
   data.subscriptions.unshift(subscription);
   const trial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial" && item.state === "active");
   if (trial) trial.state = "expired";
@@ -2322,25 +2347,26 @@ export async function recordOrderActivity(input: Omit<ProductOrderActivity, "id"
   return editData((data) => addOrderActivity(data, input));
 }
 
-export async function refundOrder(orderId: string, operatorId: string, providerReference: string | null = null, reason: string | null = null) {
-  return editData((data) => {
+function refundOrderInData(data: ProductData, orderId: string, operatorId: string, providerReference: string | null, reason: string | null) {
     const order = data.orders.find((item) => item.id === orderId);
     if (!order) throw new Error("Order not found.");
     if (order.status === "refunded") return order;
     if (order.status !== "paid") throw new Error("Only a paid order can be refunded.");
     order.status = "refunded";
-    const superseded = data.subscriptions.some(item => item.userId === order.userId && item.stripeSubscriptionId === order.stripeSubscriptionId && item.supersededBy);
-    const subscription = data.subscriptions.find((item) => item.userId === order.userId && item.planId === order.planId && item.source === "purchase" && item.state !== "expired");
-    if (subscription) subscription.state = "expired";
-    const plan = data.plans.find((item) => item.id === order.planId);
-    if (plan && !superseded) {
-      const entitlement = data.entitlements.find((item) => item.userId === order.userId && item.source === "purchase" && item.state === "active" && entitlementOverlapsPlan(data, item, plan));
-      if (entitlement) entitlement.state = "revoked";
+    const candidates = data.subscriptions.filter(item => item.userId === order.userId && item.planId === order.planId && item.source === "purchase"
+      && (order.stripeSubscriptionId ? item.stripeSubscriptionId === order.stripeSubscriptionId
+        : !item.stripeSubscriptionId && item.validFrom === order.servicePeriodStart && item.validTo === order.servicePeriodEnd));
+    for (const subscription of candidates) {
+      subscription.state = "expired";
+      data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription)).forEach(item => { item.state = "revoked"; });
     }
     data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Order refunded", body: "The demo order was refunded and course access was removed.", readAt: null, createdAt: now() });
     addOrderActivity(data, { orderId, operatorId, action: "refund", result: "succeeded", reason, providerReference });
     return order;
-  });
+}
+
+export async function refundOrder(orderId: string, operatorId: string, providerReference: string | null = null, reason: string | null = null) {
+  return editData(data => refundOrderInData(data, orderId, operatorId, providerReference, reason));
 }
 
 export async function refundDemoOrder(orderId: string, operatorId = "operator", reason: string | null = null) {
@@ -2375,7 +2401,7 @@ export async function applyStripeOrderState(input: { orderId: string; operatorId
         trialEnd.setUTCDate(trialEnd.getUTCDate() + TRIAL_DAYS);
         order.status = "paid";
         const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: order.stripeSubscriptionId || input.subscriptionId || null, stripeCustomerId: input.customerId || null, graceEndsAt: null });
-        const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
+        const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo, subscription.id);
         data.subscriptions.unshift(subscription);
         data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
         data.entitlements.unshift(entitlement);
@@ -2790,7 +2816,17 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
     const order = event.orderId ? data.orders.find(item => item.id === event.orderId && item.paymentMode === "stripe") : undefined;
     let subscription = data.subscriptions.find(item => item.stripeSubscriptionId === event.subscriptionId && item.state !== "expired")
       || data.subscriptions.find(item => item.stripeSubscriptionId === event.subscriptionId);
-    if (event.action === "credit_upgrade") {
+    if (event.action === "refund") {
+      if (!order || !event.chargeId || !event.paymentIntentId || order.stripePaymentIntentId !== event.paymentIntentId
+        || event.currency !== order.currency || event.amountMinor !== order.amountMinor
+        || !Number.isSafeInteger(event.refundedAmountMinor) || event.refundedAmountMinor! < 0 || event.refundedAmountMinor! > order.amountMinor
+        || order.stripeRefundChargeId && order.stripeRefundChargeId !== event.chargeId) throw new Error("Refund identity mismatch.");
+      order.stripeRefundChargeId = event.chargeId;
+      order.refundedAmountMinor = Math.max(order.refundedAmountMinor || 0, event.refundedAmountMinor!);
+      if (order.refundedAmountMinor === order.amountMinor && order.amountMinor > 0) refundOrderInData(data, order.id, "stripe", event.chargeId, "provider_refund");
+      data.stripeEvents.push({ id: event.id, type: event.type, processedAt: now() });
+      return { duplicate: false };
+    } else if (event.action === "credit_upgrade") {
       const credit = order?.upgradeCredit;
       const source = data.subscriptions.find(item => item.id === order?.sourceSubscriptionId && item.userId === order?.userId);
       if (!order || !credit || !source || source.stripeSubscriptionId !== credit.sourceStripeSubscriptionId
@@ -2812,7 +2848,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
         source.cancelAtPeriodEnd = true;
         data.entitlements.filter(item => entitlementMatchesSubscription(item, source)).forEach(item => { item.state = "revoked"; });
         data.subscriptions.unshift(target);
-        data.entitlements.push(entitlementForPlan(order.userId, plan, "purchase", event.periodEnd));
+        data.entitlements.push(entitlementForPlan(order.userId, plan, "purchase", event.periodEnd, target.id));
         Object.assign(order, { status: "paid", stripeCheckoutSessionId: event.sessionId, stripeSubscriptionId: event.subscriptionId,
           stripeInvoiceId: event.invoiceId, stripePaymentIntentId: event.paymentIntentId || null, amountMinor: event.amountMinor,
           listAmountMinor: credit.listAmountMinor, taxAmountMinor: event.taxAmountMinor || 0,
@@ -2853,7 +2889,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           order.status = "paid";
           subscription = subscriptionForPlan(order.userId, plan, event.trial ? "trial" : "purchase", event.periodStart, event.periodEnd, { stripeSubscriptionId: event.subscriptionId, stripeCustomerId: event.customerId });
           data.subscriptions.unshift(subscription);
-          data.entitlements.push(entitlementForPlan(order.userId, plan, subscription.source, event.periodEnd));
+          data.entitlements.push(entitlementForPlan(order.userId, plan, subscription.source, event.periodEnd, subscription.id));
           data.notifications.unshift({ id: id("notification"), userId: order.userId, title: event.trial ? "Trial activated" : "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
         }
         order.stripeCheckoutSessionId = event.sessionId;
@@ -2895,7 +2931,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
             subscription.state = subscription.cancelAtPeriodEnd ? "cancel_at_period_end" : "active";
             subscription.graceEndsAt = null;
             let entitlement = data.entitlements.find(item => entitlementMatchesSubscription(item, subscription!));
-            if (!entitlement) { entitlement = entitlementForPlan(subscription.userId, plan, "purchase", event.periodEnd); data.entitlements.push(entitlement); }
+            if (!entitlement) { entitlement = entitlementForPlan(subscription.userId, plan, "purchase", event.periodEnd, subscription.id); data.entitlements.push(entitlement); }
             entitlement.state = "active";
             entitlement.validTo = event.periodEnd;
           }

@@ -17,6 +17,10 @@ export async function actOnOperatorOrder(actor: ProductUser, input: { orderId: s
   try {
     const refund = await createFullRefund(order.stripePaymentIntentId);
     if (refund.status !== "succeeded" && refund.status !== "pending") throw new Error("Refund unavailable.");
+    if (refund.status === "pending") {
+      await recordOrderActivity({ orderId: order.id, operatorId: actor.id, action: "refund", result: "processing", reason: input.reason || null, providerReference: refund.id });
+      return { order, refund };
+    }
     return { order: await refundOrder(order.id, actor.id, refund.id, input.reason || null), refund };
   } catch {
     await recordOrderActivity({ orderId: order.id, operatorId: actor.id, action: "refund", result: "failed", reason: "provider_unavailable", providerReference: order.stripePaymentIntentId });

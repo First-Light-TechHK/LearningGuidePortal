@@ -229,3 +229,8 @@ Knowledge progress is explicitly rated cards / the existing six sample cards; it
 ## Coupon upgrade (2026-11-15)
 
 New Quote/Order.upgradeCredit stores an immutable new_subscription_credit snapshot (source Order/Stripe Subscription/Customer/Price, target Product, Coupon, list/credit/base amounts). Paid Order records listAmountMinor, taxAmountMinor, actual amountMinor and a durable upgradeCancellation task. Source Subscription.supersededBy links the replacement local Subscription; existing states remain valid and old paid Orders are never rewritten. These additive JSON payload fields use the existing aggregate/ORM transaction; no SQL migration. See [stripe-coupon-upgrade.md](stripe-coupon-upgrade.md).
+
+
+## Subscription grant identity and provider refunds (2026-11-16)
+
+ProductEntitlement adds optional subscriptionId in the existing aggregate/ORM JSON payload; all newly created grants set it. Historical grants bind only to one same-user/source/scope/device Subscription, preferring an exact validTo match. Ambiguous associations are left untouched; reads do not persist projections, and the next aggregate transaction persists proven associations. Cancellation, grace, renewal and refund updates use the bound Subscription identity. ProductOrder adds refundedAmountMinor (monotonic cumulative successful provider refunds) and stripeRefundChargeId; partial/pending/failed refunds do not revoke access. Event deduplication and all resulting changes commit together through the existing product transaction. No relational DDL or deletion of historical learner/payment data.

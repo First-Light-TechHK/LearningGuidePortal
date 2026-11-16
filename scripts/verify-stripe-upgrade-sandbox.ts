@@ -40,7 +40,7 @@ async function main() {
     repreviewMatchesPersistedQuote: true, originalPeriodRetained: true, charged: false }));
   const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
   console.log(JSON.stringify({ webhookChecks: endpoints.data.filter(endpoint => new URL(endpoint.url).hostname.endsWith("ilovelearningguide.com")).map(endpoint => ({
-    url: endpoint.url, status: endpoint.status, missingEvents: endpoint.enabled_events.includes("*") ? [] : ["invoice.paid", "invoice.payment_failed", "invoice.voided", "customer.subscription.updated", "customer.subscription.deleted"].filter(event => !endpoint.enabled_events.includes(event as typeof endpoint.enabled_events[number])),
+    url: endpoint.url, status: endpoint.status, missingEvents: endpoint.enabled_events.includes("*") ? [] : ["invoice.paid", "invoice.payment_failed", "invoice.voided", "customer.subscription.updated", "customer.subscription.deleted", "charge.refunded", "charge.refund.updated", "refund.created", "refund.updated", "refund.failed"].filter(event => !endpoint.enabled_events.includes(event as typeof endpoint.enabled_events[number])),
   })) }));
 }
 main().catch(error => {

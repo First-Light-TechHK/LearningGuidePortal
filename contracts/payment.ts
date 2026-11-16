@@ -38,7 +38,9 @@ export class PaymentError extends Error {
 export type VerifiedStripeEvent = {
   id: string;
   type: string;
-  action: "checkout" | "invoice" | "subscription" | "failed_checkout" | "upgrade_invoice" | "credit_upgrade";
+  action: "checkout" | "invoice" | "subscription" | "failed_checkout" | "upgrade_invoice" | "credit_upgrade" | "refund";
+  chargeId?: string;
+  refundedAmountMinor?: number;
   taxAmountMinor?: number;
   orderId?: string;
   sessionId?: string;
