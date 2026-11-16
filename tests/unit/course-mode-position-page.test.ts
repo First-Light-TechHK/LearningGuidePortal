@@ -8,7 +8,7 @@ import { getMessages } from "../../lib/i18n/messages";
 test("mode switching resumes the last visited point after backward review, with text scroll and paused video seek", { timeout: 120000 }, async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=p=>{window.currentProps=p;flushSync(()=>root.render(<PreviewLessonView key={p.lesson.id} {...p}/>))};window.navigate=href=>{window.destination=href;const url=new URL(href,location.href);window.mount({...window.currentProps,lesson:window.lessons[url.searchParams.get('lessonId')],preferredMode:url.searchParams.get('viewMode'),initialContentId:url.searchParams.get('contentId')})};` },
-    bundle: true, write: false, outfile: "mode-position.js", platform: "browser", jsx: "automatic", external: ["/portal/*"], loader: { ".css": "local-css" }, define: { "process.env.NODE_ENV": '"production"' },
+    bundle: true, write: false, outfile: "mode-position.js", platform: "browser", jsx: "automatic", external: ["/portal/*"], loader: { ".css": "local-css", ".woff2": "dataurl" }, define: { "process.env.NODE_ENV": '"production"' },
     plugins: [{ name: "next", setup(builder) {
       builder.onResolve({ filter: /Course(Model|Pdf)Preview$/ }, args => ({ path: args.path, namespace: "mock" }));
       builder.onResolve({ filter: /^next\// }, args => ({ path: args.path, namespace: "mock" }));

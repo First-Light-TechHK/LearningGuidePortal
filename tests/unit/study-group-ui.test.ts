@@ -974,7 +974,7 @@ test("the Study Group popups are real modals: showModal, Escape close, focus in,
   const modal = readFileSync(new URL("../../components/portal/PortalDialog.tsx", import.meta.url), "utf8");
   assert.match(modal, /node\?\.showModal\(\)/);
   assert.match(modal, /previousFocus\?\.focus\(\)/);
-  assert.match(modal, /onCancel=\{event => \{ event\.preventDefault\(\); if \(!busy\) onClose\(\); \}\}/);
+  assert.match(modal, /onCancel=\{event => \{ event\.preventDefault\(\); event\.stopPropagation\(\); if \(event\.target === event\.currentTarget && !busy\) onClose\(\); \}\}/);
   assert.match(modal, /onKeyDown=\{keepFocusInDialog\}/);
 });
 

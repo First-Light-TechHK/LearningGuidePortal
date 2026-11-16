@@ -12,7 +12,7 @@ test("Knowledge Result Review supports wheel and draggable scrollbars for long r
     const root=createRoot(document.getElementById('root'));window.mount=locale=>root.render(<KnowledgeTestDialog key={locale} locale={locale} lessonNumber="01" entrySource="overview" onExit={()=>{}}
       questions={Array.from({length:36},(_,i)=>({id:'q'+i,prompt:'Question '+(i+1)+' — '+('A detailed question about what you have learned. ').repeat(4),referenceAnswer:('Reference explanation and supporting examples. ').repeat(150)}))}
       initialAttempt={{kind:'knowledge',phase:'result',index:0,responses:Array.from({length:36},()=>({answer:('Actual saved learner answer. ').repeat(60),rating:'right'}))}}/>);
-  ` }, bundle: true, write: false, outfile: "review.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" },
+  ` }, bundle: true, write: false, outfile: "review.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css", ".woff2": "dataurl" },
     plugins: [{ name: "image", setup(builder) {
       builder.onResolve({ filter: /^next\/image$/ }, () => ({ path: "image", namespace: "fixture" }));
       builder.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({ contents: "import React from 'react';export default function Image(props){return <img {...props}/>}", loader: "tsx", resolveDir: process.cwd() }));

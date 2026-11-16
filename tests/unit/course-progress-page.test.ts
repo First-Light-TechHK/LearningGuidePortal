@@ -9,7 +9,7 @@ import { getMessages } from "../../lib/i18n/messages";
 test("text points share continuous anchors, track scroll and resume, and preserve Mark complete behaviour", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LearningRoom} from './components/portal/LearningRoom';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(props.room?<LearningRoom key={props.key} {...props} copy={getMessages(props.locale).learning}/>:<PreviewLessonView key={props.key} {...props}/>));` },
-    bundle: true, write: false, outfile: "progress.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
+    bundle: true, write: false, outfile: "progress.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css", ".woff2": "dataurl" }, external: ["/portal/*"],
     plugins: [{ name: "next", setup(b) {
       b.onResolve({ filter: /Course(Model|Pdf)Preview$/ }, args => ({ path: args.path, namespace: "mock" }));
       b.onResolve({ filter: /^next\// }, args => ({ path: args.path, namespace: "mock" }));

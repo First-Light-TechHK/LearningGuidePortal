@@ -52,7 +52,7 @@ test('later Knowledge and Application APIs accept drafts before any Study or pre
   clearCookies();
 });
 
-test('Understanding exposes every available test without Study or preceding-test prerequisites',async()=>{
+test('Understanding exposes every available test without Study or preceding-test prerequisites',async t=>{
   let view=await getUnderstandingOverview(user.id,COURSE_ID);
   assert.equal(view.total,6);assert.equal(view.completed,0);assert.equal(view.percent,0);
   assert.deepEqual(view.lessons.map(l=>[l.number,l.title,l.state]),[['01','Actual first lesson','current'],['02','Actual second lesson','current'],['03','Actual third lesson','current']]);
@@ -76,23 +76,21 @@ test('Understanding exposes every available test without Study or preceding-test
   view=await getUnderstandingOverview(user.id,COURSE_ID);assert.equal(view.completed,1);assert.equal(view.percent,16);assert.equal(view.lessons[1].state,'current');
   assert.equal(await readAssessment(user.id,COURSE_ID,PRIVATE_LP,'knowledge'),null);
   await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',{clientEventId:randomUUID(),expectedVersion:0,attempt:{kind:'application',answer:'Actual application answer',phase:'submitted'}}),{code:'ASSESSMENT_INVALID'},'a direct submission cannot complete before review');
-  const starts=[1,2].map(()=>({clientEventId:randomUUID(),expectedVersion:0,evaluationStartedAt:'2000-01-01',attempt:{kind:'application',answer:'Actual application answer',phase:'evaluating'}}));
-  const concurrent=await Promise.allSettled(starts.map(input=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',input)));
-  assert.equal(concurrent.filter(r=>r.status==='fulfilled').length,1);assert.equal(concurrent.filter(r=>r.status==='rejected').length,1);
-  const review=(await readAssessment(user.id,COURSE_ID,PREVIEW_LP,'application'))!;
-  assert.ok(review.evaluationStartedAt);assert.equal(review.completedAt,null);
-  assert.ok(Math.abs(Date.now()-Date.parse(review.evaluationStartedAt))<1000,'the server ignores a browser-supplied review timestamp');
-  assert.deepEqual(await writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',starts[concurrent.findIndex(item=>item.status==='fulfilled')]),review,'replaying the start cannot reset the review timer');
-  assert.equal((await getUnderstandingOverview(user.id,COURSE_ID)).lessons[0].application.percent,0);
-  const completion={clientEventId:randomUUID(),expectedVersion:1,attempt:{kind:'application',answer:'Actual application answer',phase:'submitted'}};
-  await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',completion),{code:'ASSESSMENT_INVALID'});
-  await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',{...completion,attempt:{...completion.attempt,answer:'Changed while reviewing'}}),{code:'ASSESSMENT_INVALID'});
-  await new Promise(resolve=>setTimeout(resolve,3050));
-  const result=await writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',completion);
-  assert.ok(result.completedAt);assert.deepEqual(await writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',completion),result,'result-save retries remain idempotent');
+  await assert.rejects(()=>writeAssessment(user.id,COURSE_ID,PREVIEW_LP,'application',{clientEventId:randomUUID(),expectedVersion:0,attempt:{kind:'application',answer:'Actual application answer',phase:'evaluating'}}),{code:'ASSESSMENT_INVALID'});
+  const oldUrl=process.env.KS_TUTOR_BASE_URL,oldKey=process.env.KS_TUTOR_API_KEY;
+  process.env.KS_TUTOR_BASE_URL='https://ks.example.test';process.env.KS_TUTOR_API_KEY='test';
+  t.after(()=>{if(oldUrl===undefined)delete process.env.KS_TUTOR_BASE_URL;else process.env.KS_TUTOR_BASE_URL=oldUrl;if(oldKey===undefined)delete process.env.KS_TUTOR_API_KEY;else process.env.KS_TUTOR_API_KEY=oldKey;});
+  t.mock.method(globalThis,'fetch',(_url:unknown,init:RequestInit)=>{
+    const input=JSON.parse(String(init.body));
+    return Promise.resolve(Response.json({data:{evaluationId:input.evaluationId,status:'evaluated',yourAnswer:input.answer,releaseId:'live',referenceAnswer:{status:'unavailable',contentMarkdown:null,sourceTitle:null},feedback:{schemaVersion:'application_feedback.v2',overallBand:'developing',whatYouDidWell:[],areasToImprove:[],needsReview:false,reviewReason:null}}}));
+  });
+  const {submitApplicationAssessment}=await import('../../services/applicationAssessmentService');
+  const completion={clientEventId:randomUUID(),expectedVersion:0,attempt:{kind:'application',answer:'Actual application answer',phase:'answer'},locale:'en-GB'};
+  const result=await submitApplicationAssessment(user.id,COURSE_ID,PREVIEW_LP,completion);
+  assert.ok(result.completedAt);assert.deepEqual(await submitApplicationAssessment(user.id,COURSE_ID,PREVIEW_LP,completion),result);
   view=await getUnderstandingOverview(user.id,COURSE_ID);
   assert.equal(view.lessons[0].knowledge.score,50);assert.equal(view.lessons[0].knowledge.percent,100);
-  assert.equal(view.lessons[0].application.status,'completed');assert.equal(view.lessons[0].application.score,null,'a simulated review never creates a numeric AI score');
+  assert.equal(view.lessons[0].application.status,'completed');assert.equal(view.lessons[0].application.score,null,'a band evaluation does not create a numeric score');
   assert.equal(view.completed,2);assert.equal(view.percent,33);assert.equal(view.lessons[1].knowledge.status,'not_started');assert.equal(view.lessons[1].state,'current');assert.equal(view.lessons[2].state,'current');
   assert.equal(await readAssessment(user.id,COURSE_ID,PRIVATE_LP,'knowledge'),null,'the next tests unlock without requiring another Study completion');
   await writeAssessment(user.id,COURSE_ID,PRIVATE_LP,'knowledge',{clientEventId:randomUUID(),expectedVersion:0,attempt:draft()});

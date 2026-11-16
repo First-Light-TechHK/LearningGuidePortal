@@ -17,7 +17,7 @@ test("video point selection plays real media across same/different sources while
     platform: "browser",
     jsx: "automatic",
     external: ["/portal/*"],
-    loader: { ".css": "local-css" },
+    loader: { ".css": "local-css", ".woff2": "dataurl" },
     define: { "process.env.NODE_ENV": '"production"' },
     plugins: [{
       name: "next",

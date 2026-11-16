@@ -9,7 +9,7 @@ import { getMessages } from "../../lib/i18n/messages";
 test("three lessons remain reachable across text/video changes, with locked and empty lessons retained", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(<PreviewLessonView key={p.lesson.id} {...p}/>));` },
-    bundle: true, write: false, outfile: "lesson.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" },
+    bundle: true, write: false, outfile: "lesson.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css", ".woff2": "dataurl" },
     plugins: [{ name: "next", setup(builder) {
       builder.onResolve({ filter: /Course(Model|Pdf)Preview$/ }, args => ({ path: args.path, namespace: "unrelated" }));
       builder.onLoad({ filter: /.*/, namespace: "unrelated" }, () => ({ contents: "export const CourseModelPreview=()=>null;export const CoursePdfPreview=()=>null;" }));

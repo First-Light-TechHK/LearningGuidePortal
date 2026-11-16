@@ -40,10 +40,10 @@ test("migrated Lesson 02 serves eight Knowledge questions and its Application re
     assert.equal((await put("knowledge", firstId, completeKnowledge)).status, 200);
     assert.equal((await get()).status, 200, "other test completion does not restrict Lesson 02");
     const evaluating: ApplicationAttempt = { kind: "application", answer: "Prior Lesson application response", phase: "evaluating" };
-    assert.equal((await put("application", firstId, evaluating)).status, 200);
+    assert.equal((await put("application", firstId, evaluating)).status, 400, "only the evaluation service may start a review");
     assert.equal((await put("application", firstId, { ...evaluating, phase: "submitted" }, 1)).status, 400);
     t.mock.timers.setTime(Date.now() + APPLICATION_TEST_EVALUATION_MS + 1);
-    assert.equal((await put("application", firstId, { ...evaluating, phase: "submitted" }, 1)).status, 200);
+    assert.equal((await put("application", firstId, { ...evaluating, phase: "submitted" }, 1)).status, 400, "elapsed time cannot manufacture an AI result");
 
     for (const kind of ["knowledge", "application"]) {
       const response = await get(kind);
@@ -61,7 +61,7 @@ test("migrated Lesson 02 serves eight Knowledge questions and its Application re
     const finished: KnowledgeAttempt = { ...draft, responses: draft.responses.map(response => ({ ...response, rating: "right" })), index: 7, phase: "result" };
     assert.equal((await put("knowledge", lessonId, finished, 1)).status, 200);
     overview = await getUnderstandingOverview(user.id, courseId);
-    assert.equal(overview.completed, 3);
+    assert.equal(overview.completed, 2);
     assert.equal(overview.lessons[1].knowledge.total, 8);
     assert.equal(overview.lessons[1].knowledge.score, 100);
 

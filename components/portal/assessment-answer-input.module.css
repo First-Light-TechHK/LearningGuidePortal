@@ -1,0 +1,35 @@
+.editor.editor { display:flex; flex-direction:column; padding:0; overflow:hidden; }
+.tools { display:flex; align-items:center; flex-wrap:wrap; flex:none; gap:8px; padding:6px 12px; border-bottom:1px solid #dee4ec; }
+.editor .tools button { padding:4px 8px; border:1px solid #dee4ec; border-radius:6px; background:#fff; color:#465060; font:500 12px/18px Inter,Arial,sans-serif; cursor:pointer; }
+.editor .tools button:disabled { opacity:.5; cursor:default; }
+.tools span { min-width:0; color:#637594; font-size:12px; line-height:18px; overflow-wrap:anywhere; }
+.editor.editor.editor textarea { flex:1; min-height:0; height:0; padding:14px 18px; }
+.editor.editor textarea[hidden] { display:none; }
+.surface { flex:1; min-height:0; overflow:auto; padding:14px 18px; }
+.surface :global(.tiptap) { min-height:100%; outline:none; font:400 17px/1.5 Inter,Arial,sans-serif; overflow-wrap:anywhere; }
+.surface :global(.tiptap p) { margin:0; min-height:1.5em; }
+.surface :global(.tiptap p.is-editor-empty:first-child::before) { content:attr(data-placeholder); color:#969eaa; float:left; height:0; pointer-events:none; }
+.surface :global(.tiptap-mathematics-render) { cursor:pointer; max-width:100%; overflow-x:auto; }
+.templates { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.mathfield { min-height:64px; margin:0; }
+.mathfield :global(math-field) { display:block; width:100%; font-size:24px; }
+.keyboard { position:relative; min-width:0; overflow-x:auto; }
+
+@media(max-width:900px) { .surface { min-height:220px; } }
+
+.formulaDialog.formulaDialog { width:min(640px,calc(100vw - 24px)); padding:16px; gap:12px; }
+.formulaDialog details textarea { width:100%; min-height:80px; }
+
+.formulaDialog > label { display:flex; align-items:center; gap:8px; }
+.formulaDialog > label input { width:auto; min-height:0; margin:0; }
+.formulaDialog.formulaDialog footer button:first-child { background:#fff; border-color:#dee4ec; color:#15233a; }
+.formulaDialog footer button:last-child { background:#1d6bff; border-color:#1d6bff; color:#fff; }
+
+.surface :global(.tiptap:has(> p:only-child > br.ProseMirror-trailingBreak:only-child))::before { content:attr(data-placeholder); color:#969eaa; position:absolute; pointer-events:none; }
+
+.editor .tools button.sourceSwitch { display:inline-flex; align-items:center; gap:8px; margin-left:auto; padding:4px 0; border:0; background:transparent; }
+.editor .sourceSwitch .switchTrack { position:relative; display:block; flex:none; width:28px; height:16px; border-radius:8px; background:#c8d2e0; }
+.editor .sourceSwitch .switchTrack > span { position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; }
+.editor .sourceSwitch[aria-checked="true"] .switchTrack { background:#1d6bff; }
+.editor .sourceSwitch[aria-checked="true"] .switchTrack > span { transform:translateX(12px); }
+.editor .sourceHelp { flex:none; margin:0; padding:8px 12px; color:#637594; font-size:12px; line-height:18px; }

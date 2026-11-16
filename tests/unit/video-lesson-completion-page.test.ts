@@ -9,7 +9,7 @@ import { chromium } from "playwright";
 test("video pages always offer entitled manual completion, isolate content, save explicitly and retry failures", async () => {
   const bundle = await build({
     stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LearningRoom} from './components/portal/LearningRoom';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(props.room ? <LearningRoom key={props.key} {...props} copy={getMessages(props.locale).learning}/> : <PreviewLessonView key={props.key} {...props}/>));`,resolveDir:process.cwd(),loader:"tsx"},
-    bundle:true,write:false,outfile:"completion.js",platform:"browser",jsx:"automatic",external:["/portal/*"],loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},
+    bundle:true,write:false,outfile:"completion.js",platform:"browser",jsx:"automatic",external:["/portal/*"],loader:{".css":"local-css", ".woff2": "dataurl"},define:{"process.env.NODE_ENV":'"production"'},
     plugins:[{name:"next",setup(builder){
       builder.onResolve({filter:/Course(Model|Pdf)Preview$/},args=>({path:args.path,namespace:"unrelated"}));
       builder.onLoad({filter:/.*/,namespace:"unrelated"},()=>({contents:"export const CourseModelPreview=()=>null;export const CoursePdfPreview=()=>null;"}));
