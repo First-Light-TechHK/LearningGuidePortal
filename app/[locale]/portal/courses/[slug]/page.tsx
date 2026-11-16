@@ -130,7 +130,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
                       const lastStudied = lesson.lessonId === page.actionLessonId && (page.openedLearningPointCount > 0 || Boolean(bookmark));
                       return <article className={`${styles.lesson} ${lastStudied ? styles.lastStudied : ""}`} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
-                          <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
+                          <h3><span>{detail.lesson} {index + 1}</span><span className={styles.lessonTitle} title={lesson.title}>{lesson.title}</span></h3>
                           <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
                         </div>
                         {lastStudied && <span className={styles.lastStudiedTag}>{detail.lastStudied}</span>}

@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import { TutorChat } from "./TutorChat";
 import { TutorDrawer } from "./TutorDrawer";
 import { ExplorationDialog } from "./ExplorationDialog";
-import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useId, useRef, useState, type MouseEvent } from "react";
 import type { LessonContent } from "@/contracts/lesson-content";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
@@ -172,6 +172,18 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
   const nextLessonId = nextHref ? new URLSearchParams(nextHref.split("?")[1] || "").get("lessonId") : null;
   const nextLesson = outline.find(item => item.id === nextLessonId);
   const courseHref = `/${locale}/portal/courses/${courseId}`;
+  const courseReturnPending = useRef(false);
+  async function returnToCourse(event: MouseEvent<HTMLAnchorElement>) {
+    if (!entitled || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (courseReturnPending.current) return;
+    courseReturnPending.current = true;
+    try {
+      await resume.flush();
+      // Fetch a fresh server page after the checkpoint, rather than a prefetched Course snapshot.
+      window.location.assign(courseHref);
+    } finally { courseReturnPending.current = false; }
+  }
   const pricingHref = trialGate?.pricingHref || `/${locale}/subscription?courseId=${encodeURIComponent(courseId)}`;
   async function chooseAccessPlan() {
     if (entitled) return;
@@ -198,7 +210,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
     <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb}>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
       {category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span aria-hidden="true">/</span></>}
-      <Link href={courseHref}>{courseTitle}</Link>
+      <Link href={courseHref} prefetch={false} onClick={returnToCourse}>{courseTitle}</Link>
       <span aria-hidden="true">/</span><span aria-current="page">{messages.courseDetailDesign.lesson}</span>
     </nav>
     <div className={`${styles.layout} ${mode === "text" ? styles.textLayout : ""}`}>
@@ -220,7 +232,6 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
               if (modeSaving) { event.preventDefault();return; }
               if (bookmarkSnapshot || destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
             }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
-            {bookmark?.mode === "text" && <p className={styles.bookmark} data-lesson-bookmark={item.id}>{messages.lessonBookmark.text.replace("{lp}", bookmark.lpNumber)}</p>}
             {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
           </div>; })}
           {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}

@@ -186,6 +186,25 @@ test("course detail hides the plan card for entitled learners and retains purcha
         await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
         await page.screenshot({path:path.join(output,`modeling-life-${locale}-${width}.png`),fullPage:true});
       }
+      // Saved reading status must not squeeze the long Lesson title into multiple lines.
+      context.user = everything;
+      const firstLesson = modeling.sections[0].lessons[0], firstText = firstLesson.contents!.find(content => content.type === 'text')!;
+      const modelBookmarks = await store.getLessonBookmarks(everything.id, modeling.id);
+      const previousText = modelBookmarks.bookmarks[firstLesson.id]?.text;
+      await store.saveLessonBookmark(everything.id, { courseId: modeling.id, lessonId: firstLesson.id, mode: 'text', contentId: firstText.id,
+        paragraphId: `${firstText.id}:paragraph:0`, contentVersion: modelBookmarks.versions[firstLesson.id].text,
+        expectedRevision: previousText?.revision || 0, expectedLessonRevision: Object.values(modelBookmarks.bookmarks[firstLesson.id] || {}).reduce((sum, value) => sum + value.revision, 0), clientEventId: `model-title-${locale}` });
+      await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({params:Promise.resolve({locale,slug:modeling.id})})));
+      const title = page.locator(`[data-lesson-id="${firstLesson.id}"] h3 > span[title]`);
+      assert.equal(await title.getAttribute('title'), 'State Spaces, Vector Spaces and Trajectories');
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({width, height:1000});
+        const geometry = await title.evaluate(element => ({ height: element.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(element).lineHeight), width: element.clientWidth, fullWidth: element.scrollWidth }));
+        assert.ok(geometry.height <= geometry.lineHeight + 1, `${locale}/${width}: Lesson title stays on one line`);
+        if (width === 1440) assert.ok(geometry.fullWidth <= geometry.width + 1, `${locale}: full desktop title remains visible beside reading status and the action`);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+        await page.screenshot({path:path.join(output,`modeling-life-title-${locale}-${width}.png`),fullPage:true});
+      }
       await page.close();
     }
   } finally { delete (globalThis as any).courseCardTest;await browser.close();await restore(); }

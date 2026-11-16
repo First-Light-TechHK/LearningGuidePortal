@@ -8,7 +8,7 @@ import { getMessages } from "../../lib/i18n/messages";
 import { resolveLessonEntry } from "../../services/lessonEntryPolicy";
 import type { LessonBookmarkSnapshot } from "../../contracts/lesson-bookmark";
 
-test("entitled Lesson restores video and paragraph positions while hiding video position labels and retaining text labels", async () => {
+test("entitled Lesson restores video and paragraph positions without video or text position labels", async () => {
   const bundle = await build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LearningRoom} from './components/portal/LearningRoom';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>flushSync(()=>root.render(props.room?<LearningRoom key={props.key} {...props} copy={getMessages(props.locale).learning}/>:<PreviewLessonView key={props.key} {...props}/>));` },
     bundle: true, write: false, outfile: "progress.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"],
@@ -60,14 +60,16 @@ test("entitled Lesson restores video and paragraph positions while hiding video 
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),0,"saved video positions do not add a sidebar label");
     assert.equal(await page.getByText(getMessages(locale).lessonBookmark.video.replace("{lp}","1.2"),{exact:true}).count(),0);
     const select=page.getByRole('combobox',{name:getMessages(locale).previewVideoDesign.learningMode});
+    const textCheckpoint = page.waitForResponse(response => response.url().endsWith('/api/study/bookmarks') && response.request().postDataJSON()?.mode === 'text' && response.request().postDataJSON()?.paragraphId === 't1:paragraph:0');
     await select.click();await page.getByTitle(getMessages(locale).previewVideoDesign.textMode,{exact:true}).last().click();
     const paragraph=page.locator('[data-text-point-id="t1"]');
     await paragraph.waitFor();
     await page.waitForFunction(()=>{const p=document.querySelector('[data-text-point-id="t1"]');return p&&Math.abs(p.getBoundingClientRect().top-12)<3;});
     await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
-    await page.waitForFunction(expected=>document.querySelector('[data-lesson-bookmark]')?.textContent===expected,getMessages(locale).lessonBookmark.text.replace("{lp}","1.1"));
+    assert.equal((await (await textCheckpoint).json()).data.lpNumber, '1.1', 'text position still saves without a sidebar label');
     assert.equal(writes.at(-1).paragraphId,"t1:paragraph:0");
-    assert.equal(await page.locator('[data-lesson-bookmark]').count(),1);
+    assert.equal(await page.locator('[data-lesson-bookmark]').count(),0);
+    assert.equal(await page.getByText(getMessages(locale).lessonBookmark.text.replace('{lp}', '1.1'), { exact: true }).count(), 0);
     // A stale checkpoint must not interrupt Lesson browsing with a save/reload notice.
     bookmarkFailure = 409;
     const rejected = page.waitForResponse(response => response.url().endsWith('/api/study/bookmarks') && response.status() === 409);

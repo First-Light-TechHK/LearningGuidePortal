@@ -737,3 +737,20 @@ Local verification (2026-11-16): 222 selected unit/service/API regressions, 84 R
 Lesson browsing save-notice removal (2026-11-16): local verification covers bilingual rejected text checkpoints without the reading-position failure notice or Reload button, plus existing bookmark retry and restoration behaviour. Target smoke after deployment: read a Lesson in both modes/locales, simulate bookmark write failure and verify uninterrupted browsing with no save/reload prompt. Automatic saves, completion and mode-switch error handling retain their existing rules. No migration.
 
 Local result: all 4 bookmark browser/service/API tests passed, including both locales with a rejected save. TypeScript, scoped lint and npm run build passed; the production build retains the existing image lint warnings. Target-environment visual smoke remains pending.
+
+
+Lesson browsing text-position label removal (2026-11-16, local only): verify the content-view sidebar has no Video / Watched to or Text / Read to position row in either locale, on desktop/mobile, while text/video checkpoints and re-entry restoration continue. Course detail/Overview displays retain their existing behaviour. No migration. Owner requests no commit/push; target smoke pending.
+
+Local validation: both bookmark browser tests passed, including bilingual hidden-label assertions and unchanged checkpoint writes/restoration; desktop screenshot inspected. TypeScript, scoped lint and npm run build passed with existing build warnings. No commit or push performed.
+
+
+Course curriculum title width (2026-11-16, local only): check Modeling life first Lesson title in visitor/entitled states, with saved text position and existing action. Desktop shows the full single-line title; mobile keeps one line with ellipsis and a native full-title tooltip. Check both locales and 1440/390/320 widths, description/status/action alignment and no horizontal overflow. No migration; owner requests local changes only, no commit/push. Target smoke pending.
+
+Local title-width verification passed: real-service bilingual Course detail browser regression, 1440/390/320 geometry/no-overflow assertions, desktop/mobile screenshot review, TypeScript, scoped lint and npm run build. Existing image build warnings remain. Changes remain uncommitted and unpushed.
+
+
+Lesson breadcrumb checkpoint ordering (2026-11-16, local only): reproduce with Modeling life Lesson 2, reach text/video 2.2 then immediately use the Course breadcrumb while the checkpoint response is delayed beyond 1.2s. The first Course detail request must follow the accepted save and show 2.2 without manual reload; paused video keeps its exact milliseconds. Repeat both locales, lost/failed writes, previews, and modified/new-tab clicks. Existing browser Back reconciliation remains independent. No migration or new visible status message. Owner requests no commit/push; target smoke pending.
+
+Owner now authorises commit/push of the complete local UI/navigation batch to dev after verification. Local regression initially reproduced the stale 2.1 Course read, then passed all 9 relevant browser/API cases after save-before-navigation ordering, including both locales, modes, a 1500ms write and failed writes. TypeScript and production build passed; final verification is repeated on the submitted implementation. Target smoke remains a separate deployment gate.
+
+Final local result for the authorised batch: 9 relevant browser/API regressions passed; the final breadcrumb implementation and original bookmark Hook were rechecked after removing an unnecessary force-capture change. TypeScript, full lint (0 errors, 13 existing img warnings), production npm run build and git diff --check passed.

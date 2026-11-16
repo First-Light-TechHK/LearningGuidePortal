@@ -632,3 +632,14 @@ Registration & Authentication: productStore.getOrCreateSocialUser removes unveri
 
 
 Lesson browsing save-notice removal (2026-11-16, owner request): PreviewLessonView no longer renders the reading-position save error or Retry/Reload action in the Lesson sidebar, in either locale or learning mode. The existing bookmark Hook, automatic persistence/retry/recovery, access checks and completion remain unchanged. Existing bilingual lesson-bookmark-integration-page coverage now exercises a rejected checkpoint and verifies the notice/action are absent. No API/schema change; target smoke pending.
+
+
+Lesson browsing text-position label removal (2026-11-16, owner request, local only): PreviewLessonView omits Text / Read to LP sidebar rows, matching the already hidden video-position labels. Remove unused sidebar bookmark CSS. Bookmarks still save and restore, and the existing bookmark-derived navigation remains. Course detail and My Learning retain their own position displays. Existing bilingual lesson-bookmark-integration-page coverage asserts hidden text/video labels and successful text checkpoint writes. No API/schema change. Owner explicitly requests no commit or push.
+
+
+Course curriculum title width (2026-11-16, owner request, local only): course-detail.module.css uses a shared title row across description/status columns, with the original entry action at the right. The lesson title has a flexible single-line span and native full-title tooltip; constrained screens use ellipsis without horizontal page overflow. The full Modeling life first Lesson title remains visible on desktop with a saved reading bookmark. Existing bilingual course-detail-access-page verifies the long title, bookmark/action coexistence and 1440/390/320 widths. No API/schema/access change; no commit/push authorised.
+
+
+Lesson breadcrumb checkpoint ordering (2026-11-16, owner report, local only): PreviewLessonView disables Course breadcrumb prefetch and, for an ordinary entitled same-tab click, captures/awaits the latest text or paused-video checkpoint before fresh document navigation to Course detail. The existing useLessonBookmarks.flush captures genuine reading/playback positions and reuses its queue/revisions and failure recovery without fabricating an untouched video bookmark. Modified/new-tab clicks and previews retain native navigation; failed saves do not fabricate progress or show a notice. Real Modeling life browser/Route Handler regression reproduces old 2.1 reads before the fix and verifies first-load 2.2 after a 1500ms save in both locales and modes. No API/schema change; no commit/push authorised.
+
+Owner follow-up (2026-11-16): after validation, commit and push this batch to fix/* and dev. This supersedes the earlier local-only instruction for the text-position label removal, curriculum title width and breadcrumb checkpoint ordering changes.
