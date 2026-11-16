@@ -212,7 +212,6 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
             ]}
             onChange={value => void switchMode(value)} />
         </PortalProvider> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
-        {resume.error && <p className={styles.modeError} role="alert">{messages.lessonBookmark.saveError}<button type="button" onClick={() => resume.reloadRequired ? window.location.reload() : void resume.flush()}>{resume.reloadRequired ? messages.lessonBookmark.reload : messages.assessmentRecords.retry}</button></p>}
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
           {outline.map(item => { const bookmark = entitled ? latestLessonBookmark(resume.bookmarks, item.id, bookmarkSnapshot?.versions[item.id]) : undefined; const destination = lessonOutlineDestination(item, (item.id === lesson.id ? lessonCompleted : completedLessonIds.includes(item.id)) ? mode : bookmark?.mode || mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>

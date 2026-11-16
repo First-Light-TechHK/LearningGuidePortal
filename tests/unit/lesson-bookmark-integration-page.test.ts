@@ -26,10 +26,12 @@ test("entitled Lesson restores video and paragraph positions while hiding video 
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const writes: any[] = [];
+    let bookmarkFailure: number | undefined;
     await page.route("http://progress.test/**", async route => {
       const pathname = new URL(route.request().url()).pathname;
       if (pathname === "/api/study/bookmarks") {
         const input = route.request().postDataJSON(); writes.push(input);
+        if (bookmarkFailure) return route.fulfill({ status: bookmarkFailure, json: { ok: false } });
         return route.fulfill({ json: { ok: true, data: { ...input, revision: input.expectedRevision + 1, updatedAt: new Date().toISOString(), lpNumber: input.mode === "video" && input.positionMs >= 30_000 ? "1.2" : "1.1" } } });
       }
       if (pathname.includes("learning-mode")) return route.fulfill({json:{ok:true,data:{courseId:"course",mode:route.request().postDataJSON().mode,position:{lessonId:"lesson",contentId:"t1"}}}});
@@ -66,6 +68,15 @@ test("entitled Lesson restores video and paragraph positions while hiding video 
     await page.waitForFunction(expected=>document.querySelector('[data-lesson-bookmark]')?.textContent===expected,getMessages(locale).lessonBookmark.text.replace("{lp}","1.1"));
     assert.equal(writes.at(-1).paragraphId,"t1:paragraph:0");
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),1);
+    // A stale checkpoint must not interrupt Lesson browsing with a save/reload notice.
+    bookmarkFailure = 409;
+    const rejected = page.waitForResponse(response => response.url().endsWith('/api/study/bookmarks') && response.status() === 409);
+    await paragraph.locator('.la-prose p').last().evaluate(element => element.scrollIntoView());
+    await rejected;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.getByText(getMessages(locale).lessonBookmark.saveError, { exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: getMessages(locale).lessonBookmark.reload, exact: true }).count(), 0);
+    bookmarkFailure = undefined;
     await mkdir('test-results/lesson-bookmarks',{recursive:true});
     await page.screenshot({path:`test-results/lesson-bookmarks/${locale}-text-desktop.png`});
     await page.setViewportSize({width:390,height:844});
