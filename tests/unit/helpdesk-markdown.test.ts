@@ -86,11 +86,12 @@ const ADMIN_CORPUS_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-mark
 type CorpusCase = { name: string; input: string; blocks: unknown; summaryMax: number; summary: string; unsafeLinks: string[] };
 
 test("the shared Markdown corpus is the pinned copy, byte-identical to the Admin copies when that repo is checked out", (t) => {
-  const bytes = readFileSync(CORPUS_FILE);
+  // Pins describe repository LF bytes, independent of Windows checkout conversion.
+  const bytes = Buffer.from(readFileSync(CORPUS_FILE, "utf8").replace(/\r\n/g, "\n"));
   assert.equal(createHash("sha256").update(bytes).digest("hex"), CORPUS_SHA256);
   const admin = path.resolve(process.cwd(), process.env.LEARNINGGUIDE_ADMIN_DIR || "../learningguideadmin");
   if (!existsSync(path.join(admin, ADMIN_CORPUS_COPIES[0]))) { t.diagnostic(`Admin repo not found at ${admin}; checked the pin only`); return; }
-  for (const copy of ADMIN_CORPUS_COPIES) assert.ok(bytes.equals(readFileSync(path.join(admin, copy))), `${copy} differs from Portal's corpus`);
+  for (const copy of ADMIN_CORPUS_COPIES) assert.ok(bytes.equals(Buffer.from(readFileSync(path.join(admin, copy), "utf8").replace(/\r\n/g, "\n"))), `${copy} differs from Portal's corpus`);
 });
 
 test("every corpus case parses, summarises and reports unsafe links exactly as the corpus says", () => {

@@ -103,11 +103,12 @@ const FIXTURE_SHA256 = "ce0916a76f76f053b5aed43f9203a97ebf9ac07433fb118a313c990b
 const ADMIN_COPIES = ["server/src/backoffice/tests/fixtures/helpdesk-contract.json", "client/tests/fixtures/helpdesk-contract.json"];
 
 test("the contract fixture is the pinned copy, and matches the Admin copies byte for byte when that repo is checked out next to this one", async (t) => {
-  const bytes = await readFile(path.join(cwd, "tests/fixtures/helpdesk-contract.json"));
+  // Pins describe repository LF bytes, independent of Windows checkout conversion.
+  const bytes = Buffer.from((await readFile(path.join(cwd, "tests/fixtures/helpdesk-contract.json"), "utf8")).replace(/\r\n/g, "\n"));
   assert.equal(createHash("sha256").update(bytes).digest("hex"), FIXTURE_SHA256);
   const admin = path.resolve(cwd, process.env.LEARNINGGUIDE_ADMIN_DIR || "../learningguideadmin");
   if (!existsSync(path.join(admin, ADMIN_COPIES[0]))) { t.diagnostic(`Admin repo not found at ${admin}; checked the pin only`); return; }
-  for (const copy of ADMIN_COPIES) assert.ok(bytes.equals(await readFile(path.join(admin, copy))), `${copy} differs from Portal's fixture`);
+  for (const copy of ADMIN_COPIES) assert.ok(bytes.equals(Buffer.from((await readFile(path.join(admin, copy), "utf8")).replace(/\r\n/g, "\n"))), `${copy} differs from Portal's fixture`);
 });
 
 test("contract enums match Portal's own constants", () => {

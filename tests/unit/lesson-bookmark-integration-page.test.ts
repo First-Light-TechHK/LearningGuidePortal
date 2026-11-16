@@ -77,6 +77,8 @@ test("entitled Lesson restores video and paragraph positions while hiding video 
     await page.waitForFunction(()=>Math.abs(document.querySelector('video')!.currentTime-45.555)<.001);
     assert.equal(await page.locator('video').getAttribute('data-bookmark-content-id'),'v2');
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),0,"completed re-entry also omits the video position label");
+    // Restoration suppresses writes until the next frame; seek only after that guard clears.
+    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
     const checkpoint = page.waitForResponse(response=>response.url().endsWith('/api/study/bookmarks')&&response.request().postDataJSON()?.positionMs===50_555);
     await page.locator('video').evaluate(element=>{(element as HTMLVideoElement).currentTime=50.555;element.dispatchEvent(new Event('timeupdate'));element.dispatchEvent(new Event('pause'));});
     const savedReview = (await (await checkpoint).json()).data;
