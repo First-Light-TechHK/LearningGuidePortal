@@ -5,6 +5,7 @@ import { validateSubscriptionPrice } from "./stripePriceService";
 import { PaymentError } from "@/contracts/payment";
 import { appEnvironment, isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "./runtimeConfig";
 import { startStripeUpgradePayment } from "./stripeUpgradePayment";
+import { startCreditUpgradePayment } from "./stripeCreditUpgradePayment";
 import type { HostedOrderReceipt } from "@/contracts/order-receipt";
 
 export type CheckoutRequest = { quoteId?: string; planId?: string; courseId?: string; locale?: "en-GB" | "zh-CN"; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
@@ -106,6 +107,7 @@ export async function startPayment(user: ProductUser, body: CheckoutRequest, req
   if (!quoted || (trial ? quoted.quote.kind !== "trial" : quoted.quote.kind === "trial")) throw new PaymentError("quote_expired");
   const upgrade = quoted.quote.kind === "upgrade";
   if (upgrade) {
+    if (mode === "stripe" && quoted.quote.upgradeCredit) return startCreditUpgradePayment(user.id, quoted, origin, locale);
     if (mode !== "stripe" || !quoted.quote.upgradeProration) throw new PaymentError("quote_expired");
     return startStripeUpgradePayment(user.id, quoted, origin, locale);
   }

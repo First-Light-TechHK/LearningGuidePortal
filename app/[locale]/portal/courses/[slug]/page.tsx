@@ -5,7 +5,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryPlan, courseDurationParts, courseLessonDuration, coursePrimaryLessonId } from "@/lib/courseDetailPresentation";
+import { courseCategoryPlan, courseDurationParts, coursePrimaryLessonId } from "@/lib/courseDetailPresentation";
 import { formatPlanPrice } from "@/lib/planPricing";
 import { getCoursePage, getProductCourse, getCourseLearningMode, listPlans } from "@/services/productStore";
 import { CourseLearningModeDialog } from "@/components/portal/CourseLearningModeDialog";
@@ -63,7 +63,6 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const durationNumber = new Intl.NumberFormat(locale);
   const durationLabel = `${durationNumber.format(durationParts.hours)}${messages.homeDesign.hourShort}${durationNumber.format(durationParts.minutes)}${messages.homeDesign.minuteShort}`;
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
-    duration: courseLessonDuration(lesson),
     // Only public syllabus metadata, never protected lesson body/content.
     description: lesson.summary?.trim() || "",
   }] as const)) || []);
@@ -130,8 +129,8 @@ export default async function CourseDetailPage({ params, searchParams }: {
                       const lastStudied = lesson.lessonId === page.actionLessonId && (page.openedLearningPointCount > 0 || Boolean(bookmark));
                       return <article className={`${styles.lesson} ${lastStudied ? styles.lastStudied : ""}`} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
-                          <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
-                          <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
+                          <h3><span>{detail.lesson} {index + 1}</span><span className={styles.lessonTitle} title={lesson.title}>{lesson.title}</span></h3>
+                          {metadata?.description && <p className={styles.lessonDescription} title={metadata.description}>{metadata.description}</p>}
                         </div>
                         {lastStudied && <span className={styles.lastStudiedTag}>{detail.lastStudied}</span>}
                         {lesson.completed ? <p className={styles.lessonBookmark} data-lesson-completed={lesson.lessonId}><Image src="/portal/course-detail/completed.svg" alt="" width={16} height={16}/>{detail.completed}</p> : bookmark && <p className={styles.lessonBookmark} data-lesson-bookmark={lesson.lessonId}><Image src={`/portal/course-detail/bookmark-${bookmark.mode}.svg`} alt="" width={16} height={16}/>{(bookmark.mode === "video" ? messages.lessonBookmark.video : messages.lessonBookmark.text).replace("{lp}", bookmark.lpNumber)}</p>}

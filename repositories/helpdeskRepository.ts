@@ -3,7 +3,7 @@
 // STORAGE_BACKEND is local, mirroring repositories/contactRequestRepository.ts.
 // Production never falls back: without PostgreSQL it fails closed.
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { PoolClient, QueryResultRow } from "pg";
 import { HelpdeskProblem, INSIGHT_LIMITS, TICKET_STATUSES, type AgentListQuery, type HelpdeskJob, type TicketCounts } from "@/contracts/helpdesk";
@@ -14,6 +14,7 @@ import { ensureSchema, getPool } from "@/services/persistence/db";
 import { persistenceEnabled } from "@/services/persistence/config";
 import { isProductionEnvironment } from "@/services/runtimeConfig";
 import { systemRoot } from "@/services/fileStore";
+import { replaceLocalFile } from "@/services/persistence/localRename";
 
 const LEARNER_LIST_MAX = 200;
 /** Enough of the first message for a 120-character one-line preview after whitespace is collapsed. */
@@ -169,7 +170,7 @@ export function createLocalHelpdeskRepository(root: string): HelpdeskRepository 
     await mkdir(root, { recursive: true });
     const temporary = path.join(root, `${randomUUID()}.tmp`);
     await writeFile(temporary, JSON.stringify(store), { mode: 0o600 });
-    await rename(temporary, file);
+    await replaceLocalFile(temporary, file);
   }
 
   // One writer at a time per store file within this process (DEV only).

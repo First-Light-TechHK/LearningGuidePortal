@@ -1,7 +1,8 @@
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { persistenceEnabled } from "./config";
+import { replaceLocalFile } from "./localRename";
 import { query } from "./db";
 import { s3DeleteMany, s3Get, s3GetRange, s3Put } from "./s3";
 
@@ -47,7 +48,7 @@ async function localWriteFile(file: string, data: string | Buffer) {
   if (typeof data === "string") {
     const tmp = `${file}.${crypto.randomBytes(6).toString("hex")}.tmp`;
     await writeFile(tmp, data, "utf8");
-    await rename(tmp, file);
+    await replaceLocalFile(tmp, file);
     return;
   }
   await writeFile(file, data);

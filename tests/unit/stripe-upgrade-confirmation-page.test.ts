@@ -5,17 +5,21 @@ import { build } from "esbuild";
 import { chromium } from "playwright";
 import { getMessages } from "../../lib/i18n/messages";
 
-test("Stripe upgrade confirmation shows proration, unchanged term and renewal, localised retry and one consented submission", async () => {
+test("Stripe upgrade confirmation distinguishes new credit cycles from legacy proration in both locales and submits once", async () => {
   const bundle = await build({ stdin: { contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {SubscriptionConfirmation} from './components/portal/SubscriptionConfirmation';import {getMessages} from './lib/i18n/messages';const root=createRoot(document.getElementById('root'));window.mount=props=>root.render(<SubscriptionConfirmation key={props.locale} {...props} copy={getMessages(props.locale).portal.subscriptionConfirmation}/>);`, resolveDir: process.cwd(), loader: "tsx" }, bundle: true, write: false, platform: "browser", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "navigation", setup(b) {
     b.onResolve({ filter: /^next\/(navigation|image|link)$/ }, args => ({ path: args.path, namespace: "mock" }));
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader:"tsx",resolveDir:process.cwd(),contents: args.path === "next/navigation" ? "export const useRouter=()=>({replace(url){window.dismissed=url}})" : args.path === "next/link" ? "import React from 'react';export default function Link({prefetch,...props}){return <a {...props}/>}" : "import React from 'react';export default function Image(props){return <img {...props}/>}" }));
   } }] });
   await mkdir("test-results/stripe-upgrade-confirmation", { recursive: true });
   const browser = await chromium.launch();
-  try { for (const locale of ["en-GB", "zh-CN"] as const) {
+  try { for (const mode of ["proration", "credit"] as const) for (const locale of ["en-GB", "zh-CN"] as const) {
     const copy = getMessages(locale), page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
     let reject = true; const requests: any[] = [];
     await page.route("http://upgrade.test/**", async route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname.startsWith("/portal/subscription-confirmation/") && pathname.endsWith(".svg")) {
+        return route.fulfill({ contentType: "image/svg+xml", body: await readFile(`public${pathname}`) });
+      }
       if (new URL(route.request().url()).pathname === "/api/purchase/checkout") {
         requests.push(route.request().postDataJSON());
         return route.fulfill({ status: reject ? 409 : 200, json: reject ? { code: "upgrade_in_progress", blockingOrderId: "order-blocked" } : { checkoutUrl: `http://upgrade.test/${locale}/account/my-learning/subscription?orderId=order-native` } });
@@ -25,22 +29,22 @@ test("Stripe upgrade confirmation shows proration, unchanged term and renewal, l
     await page.goto(`http://upgrade.test/${locale}/portal/subscription/confirmation?quoteId=quote-native`);
     for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
-    await page.evaluate(props => (window as any).mount(props), { locale, quote: { id: "quote-native", kind: "upgrade", amountMinor: 3586, currency: "usd", creditMinor: 3000, sourceSubscriptionId: "local-source", upgradeProration: { subscriptionId: "sub_original", customerId: "cus_original", itemId: "si_original", sourcePriceId: "price_category_6", periodStart: 1785542400, periodEnd: 1801353600, billingCycleAnchor: 1785542400, prorationDate: 1792195200, debitMinor: 6000, creditMinor: 3000, adjustmentsMinor: 586, invoiceTotalMinor: 3586, amountDueMinor: 3586 } }, plan: { id: "everything-pc-6", name: "Everything", termMonths: 6, device: "pc", amountMinor: 9900, currency: "usd" }, planHeading: "Everything", scopeDescription: "All categories", upgradeSource: { name: "Category", validTo: "2027-01-31T00:00:00Z" } });
+    await page.evaluate(props => (window as any).mount(props), { locale, quote: { id: "quote-native", kind: "upgrade", amountMinor: 3586, currency: "usd", creditMinor: 3000, sourceSubscriptionId: "local-source", upgradeProration: { subscriptionId: "sub_original", customerId: "cus_original", itemId: "si_original", sourcePriceId: "price_category_6", periodStart: 1785542400, periodEnd: 1801353600, billingCycleAnchor: 1785542400, prorationDate: 1792195200, debitMinor: 6000, creditMinor: 3000, adjustmentsMinor: 586, invoiceTotalMinor: 3586, amountDueMinor: 3586 } , ...(mode === "credit" ? { upgradeProration: undefined, amountMinor: 6000, creditMinor: 3900, upgradeCredit: { strategy: "new_subscription_credit", sourceOrderId: "source-order", sourceStripeSubscriptionId: "sub_original", customerId: "cus_original", sourcePriceId: "price_category_6", sourcePeriodEnd: 1801353600, couponId: "coupon39", productId: "prod_everything", listAmountMinor: 9900, creditMinor: 3900, amountDueMinor: 6000 } } : {}) }, plan: { id: "everything-pc-6", name: "Everything", termMonths: 6, device: "pc", amountMinor: 9900, currency: "usd" }, planHeading: "Everything", scopeDescription: "All categories", upgradeSource: { name: "Category", validTo: "2027-01-31T00:00:00Z" } });
     const dialog = page.getByRole("dialog"); await dialog.waitFor();
     const price = page.locator(".upgrade-price");
-    assert.match(await price.textContent() || "", /US\$60\.00/);
-    assert.match(await price.textContent() || "", /US\$30\.00/);
-    assert.match(await price.textContent() || "", /US\$5\.86/);
-    assert.match(await price.textContent() || "", /US\$35\.86/);
+    assert.match(await price.textContent() || "", mode === "credit" ? /US\$99\.00/ : /US\$60\.00/);
+    assert.match(await price.textContent() || "", mode === "credit" ? /US\$39\.00/ : /US\$30\.00/);
+    if (mode === "proration") assert.match(await price.textContent() || "", /US\$5\.86/);
+    assert.match(await price.textContent() || "", mode === "credit" ? /US\$60\.00/ : /US\$35\.86/);
     assert.match(await page.locator(".upgrade-renewal-note").textContent() || "", /US\$99\.00 \/ 6/);
-    assert.ok((await page.locator(".upgrade-validity").textContent())?.includes("2027"));
-    assert.ok((await price.textContent())?.includes(copy.upgradeConfirmation.remainingPrice));
+    assert.ok((await page.locator(".upgrade-validity").textContent())?.includes(mode === "credit" ? copy.upgradeConfirmation.newCycle : "2027"));
+    assert.ok((await price.textContent())?.includes(mode === "credit" ? copy.upgradeConfirmation.fullCredit : copy.upgradeConfirmation.remainingPrice));
     const submit = page.locator(".confirmation-actions button").last();
     assert.equal(await submit.isDisabled(), true);
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 1024 });
       assert.equal(await dialog.evaluate(e => e.scrollWidth > e.clientWidth), false, `${locale}/${width} overflow`);
-      await page.screenshot({ path: `test-results/stripe-upgrade-confirmation/${locale}-${width}.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/stripe-upgrade-confirmation/${mode}-${locale}-${width}.png`, fullPage: true });
     }
     for (const input of await page.getByRole("checkbox").all()) await input.check();
     await submit.evaluate((e: HTMLButtonElement) => { e.click(); e.click(); });
