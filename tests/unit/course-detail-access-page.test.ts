@@ -118,7 +118,7 @@ test("course detail hides the plan card for entitled learners and retains purcha
       assert.equal(await page.locator('[data-course-primary="true"]').count(),1);
       assert.equal(await page.locator('[data-lesson-id="unstarted-fixture"]').getByRole('link',{name:copy.start,exact:true}).getAttribute('data-course-primary'),'false');
       assert.equal(await page.locator(`[data-lesson-id="${course.sections[0].lessons[0].id}"]`).getByRole('link',{name:copy.review,exact:true}).getAttribute('data-course-primary'),'false');
-      assert.deepEqual(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).evaluate(link=>({width:link.getBoundingClientRect().width,height:link.getBoundingClientRect().height})),{width:110,height:40});
+      assert.deepEqual(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).evaluate(link=>({width:link.getBoundingClientRect().width,height:link.getBoundingClientRect().height})),{width:100,height:40});
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
         await bookmark.scrollIntoViewIfNeeded();
@@ -192,48 +192,58 @@ test("course detail hides the plan card for entitled learners and retains purcha
         await page.setViewportSize({width,height:1000});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
         await page.screenshot({path:path.join(output,`modeling-life-${locale}-${width}.png`),fullPage:true});
       }
-      // Saved reading status must not squeeze the long Lesson title into multiple lines.
+      // Reading and video progress must fit independently of the description.
       context.user = everything;
       const firstLesson = modeling.sections[0].lessons[0], firstText = firstLesson.contents!.find(content => content.type === 'text')!;
-      const modelBookmarks = await store.getLessonBookmarks(everything.id, modeling.id);
-      const previousText = modelBookmarks.bookmarks[firstLesson.id]?.text;
-      await store.saveLessonBookmark(everything.id, { courseId: modeling.id, lessonId: firstLesson.id, mode: 'text', contentId: firstText.id,
-        paragraphId: `${firstText.id}:paragraph:0`, contentVersion: modelBookmarks.versions[firstLesson.id].text,
-        expectedRevision: previousText?.revision || 0, expectedLessonRevision: Object.values(modelBookmarks.bookmarks[firstLesson.id] || {}).reduce((sum, value) => sum + value.revision, 0), clientEventId: `model-title-${locale}` });
-      await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({params:Promise.resolve({locale,slug:modeling.id})})));
-      const title = page.locator(`[data-lesson-id="${firstLesson.id}"] h3 > span[title]`);
-      const modelRow = page.locator(`[data-lesson-id="${firstLesson.id}"]`);
-      const description = modelRow.locator('p[title]');
-      assert.equal(await title.getAttribute('title'), 'State Spaces, Vector Spaces and Trajectories');
-      assert.equal(await description.getAttribute('title'), firstLesson.summary);
-      await page.evaluate(() => document.fonts.ready);
-      for (const width of [1440, 1100, 1024, 801, 800, 700, 390, 320]) {
-        await page.setViewportSize({width, height:1000});
-        const geometry = await title.evaluate(element => ({ height: element.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(element).lineHeight), width: element.clientWidth, fullWidth: element.scrollWidth }));
-        assert.ok(geometry.height <= geometry.lineHeight + 1, `${locale}/${width}: Lesson title stays on one line`);
-        const layout = await modelRow.evaluate(row => {
-          const heading = row.querySelector('h3')!, description = row.querySelector('p[title]')!, info = heading.parentElement!, status = row.querySelector('[data-lesson-bookmark]')!, action = row.querySelector('[data-course-cta-link]')!;
-          const rect = (element: Element) => { const box = element.getBoundingClientRect();return { x:box.x, y:box.y, width:box.width, height:box.height }; };
-          return { row:rect(row), info:rect(info), heading:rect(heading), description:rect(description), status:rect(status), action:rect(action), descriptionLine:parseFloat(getComputedStyle(description).lineHeight), ellipsis:getComputedStyle(description).textOverflow };
-        });
-        assert.equal(layout.heading.width, layout.description.width, `${locale}/${width}: title and description share one Info column`);
-        assert.ok(layout.info.width <= 395, `${locale}/${width}: Info never grows past its design width`);
-        assert.equal(layout.heading.x, layout.description.x);
-        assert.ok(layout.description.height <= layout.descriptionLine + 1);
-        assert.equal(layout.ellipsis, 'ellipsis');
-        if (width === 1440) {
-          assert.equal(layout.row.width, 779);
-          assert.equal(layout.row.height, 80);
-          assert.equal(layout.info.width, 395);
-          assert.equal(layout.status.width, 200);
-          assert.equal(layout.action.width, 110);
-          assert.equal(layout.heading.width, 395);
-          assert.equal(layout.description.y - layout.heading.y, 25);
-          assert.ok(geometry.fullWidth > geometry.width, `${locale}: the long title is ellipsised at the Figma width`);
+      for (const mode of ["text", "video"] as const) {
+        const content = mode === "text" ? firstText : firstLesson.contents!.find(item => item.type === "video")!;
+        const modelBookmarks = await store.getLessonBookmarks(everything.id, modeling.id);
+        const previousBookmark = modelBookmarks.bookmarks[firstLesson.id]?.[mode];
+        await store.saveLessonBookmark(everything.id, { courseId: modeling.id, lessonId: firstLesson.id, mode, contentId: content.id,
+          ...(mode === "text" ? { paragraphId: `${content.id}:paragraph:0` } : { positionMs: 60000 }), contentVersion: modelBookmarks.versions[firstLesson.id][mode],
+          expectedRevision: previousBookmark?.revision || 0, expectedLessonRevision: Object.values(modelBookmarks.bookmarks[firstLesson.id] || {}).reduce((sum, value) => sum + value.revision, 0), clientEventId: `model-title-${locale}-${mode}` });
+        await page.locator('#root').evaluate((element, html) => { element.innerHTML = html; }, renderToStaticMarkup(await render({params:Promise.resolve({locale,slug:modeling.id})})));
+        const title = page.locator(`[data-lesson-id="${firstLesson.id}"] h3 > span[title]`);
+        const modelRow = page.locator(`[data-lesson-id="${firstLesson.id}"]`);
+        const description = modelRow.locator('p[title]');
+        assert.equal(await title.getAttribute('title'), 'State Spaces, Vector Spaces and Trajectories');
+        assert.equal(await description.getAttribute('title'), firstLesson.summary);
+        await page.evaluate(() => document.fonts.ready);
+        for (const width of [1440, 1366, 1300, 1200, 1199, 1100, 1024, 801, 800, 700, 390, 320]) {
+          await page.setViewportSize({width, height:1000});
+          const geometry = await title.evaluate(element => ({ height: element.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(element).lineHeight), width: element.clientWidth, fullWidth: element.scrollWidth }));
+          assert.ok(geometry.height <= geometry.lineHeight + 1, `${locale}/${width}: Lesson title stays on one line`);
+          const layout = await modelRow.evaluate(row => {
+            const heading = row.querySelector('h3')!, description = row.querySelector('p[title]')!, info = heading.parentElement!, status = row.querySelector('[data-lesson-bookmark]')!, action = row.querySelector('[data-course-cta-link]')!;
+            const rect = (element: Element) => { const box = element.getBoundingClientRect();return { x:box.x, y:box.y, width:box.width, height:box.height }; };
+            return { row:rect(row), info:rect(info), heading:rect(heading), description:rect(description), status:rect(status), action:rect(action), descriptionLine:parseFloat(getComputedStyle(description).lineHeight), ellipsis:getComputedStyle(description).textOverflow, statusFits:status.scrollWidth <= status.clientWidth + 1 };
+          });
+          assert.equal(layout.heading.width, layout.description.width, `${locale}/${width}: title and description share one Info column`);
+          assert.ok(layout.info.x + layout.info.width <= layout.row.x + layout.row.width, `${locale}/${width}: Info stays within the Lesson row`);
+          assert.equal(layout.heading.x, layout.description.x);
+          assert.ok(layout.description.height <= layout.descriptionLine + 1);
+          assert.equal(layout.ellipsis, 'ellipsis');
+          assert.equal(layout.statusFits, true, `${locale}/${width}: progress text stays inside its column`);
+          if (width >= 1200) {
+            assert.ok(layout.info.x + layout.info.width + 15 <= layout.status.x, `${locale}/${width}: description and progress do not overlap`);
+            assert.ok(layout.status.x + layout.status.width < layout.action.x, `${locale}/${width}: progress and action do not overlap`);
+          } else {
+            assert.ok(layout.status.y >= layout.info.y + layout.info.height, `${locale}/${width}: progress moves below description`);
+            assert.ok(layout.action.y >= layout.info.y + layout.info.height, `${locale}/${width}: action moves below description`);
+            assert.ok(layout.status.x + layout.status.width < layout.action.x, `${locale}/${width}: second row separates progress and action`);
+          }
+          if (width === 1440) {
+            assert.equal(layout.row.width, 779);
+            assert.equal(layout.row.height, 80);
+            assert.equal(layout.action.width, 100);
+            assert.equal(layout.description.y - layout.heading.y, 25);
+            assert.equal(await title.evaluate(element => getComputedStyle(element).textOverflow), "ellipsis");
+          }
+          if (width === 320) assert.ok(geometry.fullWidth > geometry.width, `${locale}: overflowing titles are ellipsised on narrow screens`);
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+          await page.screenshot({path:path.join(output,`modeling-life-title-${locale}-${mode}-${width}.png`),fullPage:true});
+          if (width === 1440) await modelRow.screenshot({path:path.join(output,`figma-780-1799-${locale}-${mode}.png`)});
         }
-        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-        await page.screenshot({path:path.join(output,`modeling-life-title-${locale}-${width}.png`),fullPage:true});
-        if (width === 1440) await modelRow.screenshot({path:path.join(output,`figma-780-1799-${locale}.png`)});
       }
       // Match the reference node's completed/Review row using real service facts.
       const designUser = await verifiedUser(store, `figma-row-${locale}@example.test`);

@@ -42,6 +42,25 @@ test("video previews choose access from the title row, share the cutoff modal an
     assert.equal(cta.height, 37); if (locale === "en-GB") assert.ok(cta.width >= 150 && cta.width <= 200, `unexpected choose-plan width ${cta.width}`);
     assert.deepEqual(await choose.evaluate(e => { const s = getComputedStyle(e); return [s.borderRadius, s.backgroundColor, s.fontSize, s.fontWeight]; }), ["8px", "rgb(29, 107, 255)", "14px", "600"]);
     await page.screenshot({ path: `${output}/${locale}-entry.png`, fullPage: true });
+    const longTitle = "State Spaces, Vector Spaces and Trajectories";
+    await mount("long-title", { lesson: { ...props.lesson, title: longTitle } });
+    for (const width of [1300, 1366, 1440, 1600, 1920]) {
+      await page.setViewportSize({ width, height: 1024 });
+      const heading = page.getByRole("heading", { name: longTitle, exact: true });
+      const geometry = await heading.evaluate(element => {
+        const box = element.getBoundingClientRect(), header = element.parentElement!;
+        const button = header.querySelector("button")!.getBoundingClientRect();
+        return { height: box.height, line: parseFloat(getComputedStyle(element).lineHeight), beside: button.x >= box.right && Math.abs(button.y + button.height / 2 - box.y - box.height / 2) <= 1, right: button.right, edge: header.getBoundingClientRect().right - 20 };
+      });
+      assert.ok(geometry.height <= geometry.line + 1, `${locale}/${width}: preview Lesson title stays on one line`);
+      assert.equal(geometry.beside, true, "purchase entry stays beside the Lesson title");
+      assert.equal(geometry.right, geometry.edge);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await page.screenshot({ path: `${output}/${locale}-title-${width}.png`, fullPage: true });
+    }
+    await page.setViewportSize({ width: 1440, height: 1024 });
+    await mount("preview");
+
     await page.locator("video").evaluate(video => {
       const media = video as HTMLVideoElement;
       Object.defineProperty(media, "paused", { configurable: true, value: false });

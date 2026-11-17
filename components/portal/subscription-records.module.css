@@ -47,7 +47,7 @@
 .historyClip { min-height:0; overflow:hidden; }
 .history { padding:20px 16px; margin:0 0 24px; border-radius:8px; background:#f7faff; color:#1a2945; font-size:13px; }
 .history > p { margin:0; }
-.tableWrap { overflow-x:auto; }
+.tableWrap { overflow-x:auto; container-type:inline-size; }
 .table { border-collapse:collapse; width:100%; min-width:850px; text-align:left; table-layout:fixed; }
 .table th { padding:0 12px 18px 0; font-size:12px; color:#526687; font-weight:600; }
 .table td { padding:0 12px 18px 0; font-size:13px; line-height:16px; vertical-align:middle; }
@@ -89,6 +89,28 @@
 .cancelKeep { border:1.5px solid #246bfd; color:white; background:#246bfd; }
 .cancelDialog button:disabled,.cancelDialog input:disabled,.cancelDialog textarea:disabled { cursor:wait; opacity:.6; }
 .cancelDialog button:focus-visible,.otherReason:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
+/* Size the desktop history against its own available space, not the viewport. */
+@media(min-width:721px) {
+  .table { min-width:560px; }
+  .table th:nth-child(1) { width:112px; }
+  .table th:nth-child(2) { width:124px; }
+  .table th:nth-child(3) { width:100px; }
+  .table th:nth-child(4) { width:auto; }
+  .table th:last-child { width:104px; }
+  .table th,.table td { overflow-wrap:anywhere; }
+  .dateValue,.amountValue { white-space:nowrap; }
+  .period { display:flex; flex-wrap:wrap; column-gap:4px; }
+  @container (max-width:799px) {
+    .table th,.table td { padding-right:8px; padding-bottom:14px; }
+    .table th:nth-child(1) { width:108px; }
+    .table th:nth-child(2) { width:116px; }
+    .table th:nth-child(3) { width:88px; }
+    .table th:last-child { width:96px; }
+    .table th:last-child,.table td:last-child { padding-right:0; }
+    .table tr:last-child td { padding-bottom:0; }
+    .period { flex-direction:column; }
+  }
+}
 @media(max-width:1350px) { .inner { padding-right:40px; padding-left:40px; }.summary { grid-template-columns:minmax(170px,1.4fr) minmax(115px,1fr) minmax(110px,1fr) 132px; gap:18px; } }
 @media(max-width:1100px) { .page:global(.portal-account-page) { grid-template-columns:240px minmax(0,1fr); }.page > :global(.account-nav) { width:240px; padding:32px 16px; }.inner { padding:32px 24px 64px; }.summary { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; }.product { grid-row:span 2; }.historyToggle { grid-column:2; }.card { padding:0 20px; } }
 @media(max-width:720px) { .page:global(.portal-account-page) { display:block; }.page > :global(.account-nav) { width:100%; padding:16px 20px; }.inner { min-height:600px; padding:28px 20px 48px; }.inner > h1 { font-size:26px; line-height:34px; }.intro { font-size:14px; }.summary { padding:20px 0; gap:20px 16px; }.product { grid-column:1 / -1; grid-row:auto; }.historyToggle { grid-column:1 / -1; }.card { padding:0 16px; }.history { padding:16px 12px; margin-bottom:20px; }.sections { gap:32px; }.cancelDialog { inset:16px 0 auto; max-height:calc(100dvh - 32px); padding:24px; }.cancelDialog[open] { gap:24px; }.cancelHeader h2 { font-size:22px; }.cancelActions { flex-direction:column-reverse; } }
