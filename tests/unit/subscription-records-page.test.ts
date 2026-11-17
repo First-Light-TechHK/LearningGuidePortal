@@ -102,6 +102,19 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await page.locator('img[src*="/subscriptions/design/"]').evaluateAll(async images => Promise.all(images.map(img => (img as HTMLImageElement).decode())));
     for (const icon of await page.locator('img[src*="/subscriptions/design/"]:visible').all()) assert.equal(await icon.evaluate(e => (e as HTMLElement).offsetWidth), 16, "rotation preserves the icon's 16px layout size");
     await page.screenshot({ path: `${output}/${locale}-current-v4.png`, fullPage: true });
+    for (const width of [1440, 1366, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 1024 });
+      const geometry = await card("science").getByRole("table").evaluate(table => {
+        const wrapper = table.parentElement!;
+        return { available: wrapper.clientWidth, content: wrapper.scrollWidth,
+          clipped: Array.from(table.querySelectorAll("th,td")).some(cell => cell.scrollWidth > cell.clientWidth + 1) };
+      });
+      assert.ok(geometry.content <= geometry.available + 1, `${locale} ${width}px: history fits ${JSON.stringify(geometry)}`);
+      assert.equal(geometry.clipped, false, `${locale} ${width}px: cells keep their full content`);
+      await page.screenshot({ path: `${output}/${locale}-history-${width}.png`, fullPage: true });
+    }
+    await page.setViewportSize({ width: 1440, height: 1563 });
+
     await card("chinese").getByRole("button", { name: copy.learning.payNow , exact: true }).click();
     await page.getByRole("alert").waitFor(); assert.equal(await page.getByRole("alert").textContent(), "Fixture billing failure");
     const cancel = card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true });
@@ -173,6 +186,22 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await mount("pending-upgrade", [science], [{ ...order(science, "pending-upgrade", "pending"), kind: "upgrade", quoteId: "quote-pending", upgradeProration: { subscriptionId: science.stripeSubscriptionId } }]);
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
     assert.equal(await page.locator(`a[href="/${locale}/account/my-learning/subscription?orderId=pending-upgrade#order-pending-upgrade"]`).count(), 1);
+    const longOrders = ["paid", "refunded", "failed", "pending", "canceled"].map((status, index) => ({
+      ...order(science, `long-${index}`, status, "2026-09-28"), amountMinor: 12345678,
+      servicePeriodStart: "2026-09-28", servicePeriodEnd: "2027-09-28",
+      kind: "upgrade", upgradeProration: { subscriptionId: science.stripeSubscriptionId }
+    }));
+    await mount("long-history", [science], longOrders);
+    await card("science").getByRole("button", { name: copy.subscriptionDesign.paymentHistory, exact: true }).click();
+    for (const width of [1440, 1366, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 1024 });
+      const table = card("science").getByRole("table");
+      assert.equal(await table.locator("tbody tr").count(), 5);
+      assert.equal(await table.evaluate(element => {
+        const wrapper = element.parentElement!;
+        return wrapper.scrollWidth > wrapper.clientWidth + 1 || Array.from(element.querySelectorAll("th,td")).some(cell => cell.scrollWidth > cell.clientWidth + 1);
+      }), false, `${locale} ${width}px: long amounts, statuses, dates and upgrade notes fit`);
+    }
     await mount("empty", [], []); await page.locator('a.portal-button[href$="/subscription"]').waitFor();
     assert.equal(await page.locator('[data-subscription-id]').count(), 0);
     await page.close();
