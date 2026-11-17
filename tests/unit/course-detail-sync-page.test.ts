@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
 import { chromium } from "playwright";
+import type { Route } from "playwright";
 
-test("course restoration refreshes changed Study/access once and keeps the current page on failed or aborted reads", async () => {
-  const bundle = await build({
+async function buildSync() {
+  return build({
     stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {CourseDetailSync} from './components/portal/CourseDetailSync';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p?<CourseDetailSync {...p}/>:null));window.refreshCount=0;` },
     bundle: true, write: false, platform: "browser", jsx: "automatic",
     plugins: [{ name: "router", setup(builder) {
@@ -12,6 +13,10 @@ test("course restoration refreshes changed Study/access once and keeps the curre
       builder.onLoad({ filter: /.*/, namespace: "router" }, () => ({ contents: "const router={refresh(){window.refreshCount++}};export const useRouter=()=>router" }));
     } }],
   });
+}
+
+test("course restoration refreshes changed Study/access once and keeps the current page on failed or aborted reads", async () => {
+  const bundle = await buildSync();
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -35,7 +40,12 @@ test("course restoration refreshes changed Study/access once and keeps the curre
       await page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), { slug: "modeling-life", snapshot: {...snapshot,continuableLessonIds:snapshot.syllabus.filter(lesson=>lesson.continuable).map(lesson=>lesson.lessonId),completedLessonIds:snapshot.syllabus.filter(lesson=>lesson.completed).map(lesson=>lesson.lessonId)} });
       await finished;await page.waitForLoadState("networkidle");
     };
-    const check = async (back = false) => {
+    const check = async (back = false, expectsRequest = true) => {
+      if (!expectsRequest) {
+        await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+        await page.waitForTimeout(1400);
+        return;
+      }
       const finished = failure === "network"
         ? page.waitForEvent("requestfailed", request => request.url().includes("/api/portal/courses/"))
         : page.waitForResponse(response => response.url().includes("/api/portal/courses/"));
@@ -58,7 +68,7 @@ test("course restoration refreshes changed Study/access once and keeps the curre
     await mount();await page.waitForLoadState("networkidle");assert.equal(await refreshes(), 0);
     current = { ...initial, actionLessonId: "two", progress: 86, openedLearningPointCount: 6 };
     await check(true);await waitRefreshes(1, "the browser Back button reconciles a retained Course page without pageshow/focus");
-    await check();await waitRefreshes(1, "a stale snapshot requests only one server refresh");
+    await check(false, false);await waitRefreshes(1, "a stale snapshot requests only one server refresh");
     await mount(current);await page.waitForLoadState("networkidle");await check();await waitRefreshes(1, "the updated snapshot does not loop");
     current={...current,syllabus:[{lessonId:'two',continuable:true}]};
     await check();await waitRefreshes(2,'a new checkpoint refreshes Continue even when the Lesson and open count stay the same');
@@ -87,5 +97,88 @@ test("course restoration refreshes changed Study/access once and keeps the curre
     await waitRefreshes(6, "bounded restoration rechecks pick up a late pagehide bookmark save");
     await mount(current);await check(true);await waitRefreshes(6, "the accepted revision does not refresh repeatedly");
     assert.equal(await page.locator("#root").innerHTML(), "", "reconciliation adds no UI or progress notices");
+  } finally { await browser.close(); }
+});
+
+test("course sync lets slow reads finish, coalesces restoration demand and cancels only on leaving", async () => {
+  const bundle = await buildSync();
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const requests: Route[] = [], failures: string[] = [];
+    let autoAnswer = false;
+    const initial = { pageState: "available", cta: "continue_learning", actionLessonId: "one", progress: 0, openedLearningPointCount: 0, bookmarkRevision: 0, syllabus: [] };
+    const api = (url: string) => url.includes("/api/portal/courses/");
+    page.on("requestfailed", request => { if (api(request.url())) failures.push(request.failure()?.errorText || "failed"); });
+    await page.route("http://detail-slow.test/**", route => {
+      if (api(route.request().url())) {
+        requests.push(route);
+        if (autoAnswer) return route.fulfill({ json: { ok: true, page: { ...initial, bookmarkRevision: 2 } } });
+        return;
+      }
+      return route.fulfill({ contentType: "text/html", body: "<div id='root'></div>" });
+    });
+    await page.goto("http://detail-slow.test/course");
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const mount = (revision: number) => page.evaluate(snapshot => (window as any).mount({ slug: "modeling-life", snapshot }), { ...initial, bookmarkRevision: revision });
+    const waitRequests = async (count: number) => {
+      const deadline = Date.now() + 5000;
+      while (requests.length < count && Date.now() < deadline) await page.waitForTimeout(20);
+      assert.equal(requests.length, count);
+    };
+    const answer = async (index: number, revision = 0, status = 200) => {
+      const finished = page.waitForEvent("requestfinished", request => request === requests[index].request());
+      await requests[index].fulfill({ status, json: { ok: true, page: { ...initial, bookmarkRevision: revision } } });
+      await finished;
+    };
+    await mount(0);await waitRequests(1);
+    await page.waitForTimeout(1700);
+    assert.equal(requests.length, 1, "initial entry performs one check even when it takes over 1.6 seconds");
+    assert.deepEqual(failures, [], "timers must not abort the slow initial request");
+    await answer(0);
+    await page.evaluate(() => {
+      dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+      dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+    });
+    await waitRequests(2);
+    await page.waitForTimeout(1700);
+    assert.equal(requests.length, 2, "overlapping events and both retry deadlines leave the active read alone");
+    assert.deepEqual(failures, []);
+    await answer(1);await waitRequests(3);
+    // The delayed bookmark has arrived since the preceding request's old snapshot.
+    await answer(2, 1);
+    await page.waitForFunction(() => (window as any).refreshCount === 1);
+    await page.evaluate(() => { dispatchEvent(new Event("focus"));dispatchEvent(new PopStateEvent("popstate")); });
+    await page.waitForTimeout(1400);
+    assert.equal(requests.length, 3, "one trailing read consumes all queued demand and refresh stops further checks");
+    assert.deepEqual(failures, []);
+
+    await mount(1);await waitRequests(4);
+    const cancelled = page.waitForEvent("requestfailed", request => request === requests[3].request());
+    await page.evaluate(() => { history.pushState({}, "", "/other-course");dispatchEvent(new PopStateEvent("popstate")); });
+    await cancelled;
+    await requests[3].fulfill({ json: { ok: true, page: { ...initial, bookmarkRevision: 2 } } }).catch(() => {});
+    await page.waitForTimeout(1400);
+    assert.equal(requests.length, 4, "leaving clears pending work and retries");
+    assert.equal(await page.evaluate(() => (window as any).refreshCount), 1, "late responses cannot refresh another page");
+    assert.equal(failures.length, 1, "only navigation cancels a request");
+
+    // An unsuccessful initial read does not start an unbounded retry loop.
+    await page.evaluate(() => { history.replaceState({}, "", "/course");(window as any).mount(null); });
+    await mount(2);await waitRequests(5);await answer(4, 2, 503);
+    await page.waitForTimeout(1400);
+    assert.equal(requests.length, 5);
+    assert.equal(await page.evaluate(() => (window as any).refreshCount), 1);
+
+    autoAnswer = true;
+    await page.evaluate(() => dispatchEvent(new Event("focus")));
+    await page.waitForTimeout(20);
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.waitForTimeout(20);
+    await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+    await waitRequests(6);await page.waitForTimeout(1400);
+    assert.equal(requests.length, 8, "fast responses still share one bounded restoration cycle across nearby events");
+    assert.equal(await page.evaluate(() => (window as any).refreshCount), 1);
   } finally { await browser.close(); }
 });
