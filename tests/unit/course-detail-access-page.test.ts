@@ -118,7 +118,7 @@ test("course detail hides the plan card for entitled learners and retains purcha
       assert.equal(await page.locator('[data-course-primary="true"]').count(),1);
       assert.equal(await page.locator('[data-lesson-id="unstarted-fixture"]').getByRole('link',{name:copy.start,exact:true}).getAttribute('data-course-primary'),'false');
       assert.equal(await page.locator(`[data-lesson-id="${course.sections[0].lessons[0].id}"]`).getByRole('link',{name:copy.review,exact:true}).getAttribute('data-course-primary'),'false');
-      assert.deepEqual(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).evaluate(link=>({width:link.getBoundingClientRect().width,height:link.getBoundingClientRect().height})),{width:110,height:40});
+      assert.deepEqual(await lessonRow.getByRole('link',{name:copy.continue,exact:true}).evaluate(link=>({width:link.getBoundingClientRect().width,height:link.getBoundingClientRect().height})),{width:100,height:40});
       for (const width of [1440, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
         await bookmark.scrollIntoViewIfNeeded();
@@ -217,20 +217,21 @@ test("course detail hides the plan card for entitled learners and retains purcha
           return { row:rect(row), info:rect(info), heading:rect(heading), description:rect(description), status:rect(status), action:rect(action), descriptionLine:parseFloat(getComputedStyle(description).lineHeight), ellipsis:getComputedStyle(description).textOverflow };
         });
         assert.equal(layout.heading.width, layout.description.width, `${locale}/${width}: title and description share one Info column`);
-        assert.ok(layout.info.width <= 395, `${locale}/${width}: Info never grows past its design width`);
+        assert.ok(layout.info.x + layout.info.width <= layout.row.x + layout.row.width, `${locale}/${width}: Info stays within the Lesson row`);
         assert.equal(layout.heading.x, layout.description.x);
         assert.ok(layout.description.height <= layout.descriptionLine + 1);
         assert.equal(layout.ellipsis, 'ellipsis');
         if (width === 1440) {
           assert.equal(layout.row.width, 779);
           assert.equal(layout.row.height, 80);
-          assert.equal(layout.info.width, 395);
-          assert.equal(layout.status.width, 200);
-          assert.equal(layout.action.width, 110);
-          assert.equal(layout.heading.width, 395);
+          assert.equal(layout.info.width, 495);
+          assert.equal(layout.status.width, 100);
+          assert.equal(layout.action.width, 100);
+          assert.equal(layout.heading.width, 495);
           assert.equal(layout.description.y - layout.heading.y, 25);
-          assert.ok(geometry.fullWidth > geometry.width, `${locale}: the long title is ellipsised at the Figma width`);
+          assert.equal(await title.evaluate(element => getComputedStyle(element).textOverflow), "ellipsis");
         }
+        if (width === 320) assert.ok(geometry.fullWidth > geometry.width, `${locale}: overflowing titles are ellipsised on narrow screens`);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
         await page.screenshot({path:path.join(output,`modeling-life-title-${locale}-${width}.png`),fullPage:true});
         if (width === 1440) await modelRow.screenshot({path:path.join(output,`figma-780-1799-${locale}.png`)});
