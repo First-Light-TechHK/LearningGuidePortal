@@ -40,9 +40,9 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const hasCourseAccess = page.cta === "continue_learning";
   const primaryLessonId = coursePrimaryLessonId(page);
   const needsMode = !savedMode && Boolean(course && availableCourseLearningModes(course).length > 1);
-  const entryLesson = page.pageState === "available" ? entryLessonId
+  const entryLesson = page.pageState === "available" && entryLessonId
     ? page.syllabus.find(lesson => lesson.lessonId === entryLessonId && lesson.openable)
-    : user && hasCourseAccess && needsMode ? page.syllabus.find(lesson => lesson.lessonId === primaryLessonId) : null : null;
+    : null;
   const entryDestination = course && entryLesson ? entryLesson.access === "entitled"
     ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(entryLesson.lessonId)}`
     : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(entryLesson.lessonId)}` : null;

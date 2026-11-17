@@ -110,7 +110,7 @@ test("legacy shared preview preferences cannot suppress formal choice, while ver
   assert.equal(await store.getCourseLearningMode(user.id, course.id), "text");
 });
 
-test("both locale Course entries prompt again after preview purchase and stop after the formal choice", async () => {
+test("both locale Course Start entries prompt after preview purchase while details remain chooser-free", async () => {
   const user = await store.registerUser({ email: "mode-entry-split@example.test", password: "password1" });
   await store.verifyEmailToken(await store.issueEmailVerificationToken(user.id));
   const course = (await store.getProductCourse("modeling-life"))!, lessonId = store.publicFirstLesson(course)!.id;
@@ -140,7 +140,8 @@ test("both locale Course entries prompt again after preview purchase and stop af
     for (const locale of ["en-GB", "zh-CN"]) await assert.rejects(() => page(locale), /redirect:.*public-lesson/);
     const { quote } = await store.createQuote(user.id, "science-pc-6"); await store.completeDemoCheckout(user.id, quote.id);
     for (const locale of ["en-GB", "zh-CN"]) {
-      assert.equal(chooser(await page(locale, false))?.props.accessContext, "entitled", "the first subscribed Course visit prompts without another Start click");
+      assert.equal(chooser(await page(locale, false)), null, "the first subscribed Course detail visit waits for Start");
+      assert.equal(await store.getCourseLearningMode(user.id, course.id), null, "viewing details does not confirm a formal preference");
       const dialog = chooser(await page(locale));
       assert.equal(dialog.props.accessContext, "entitled");
       assert.ok(dialog.props.destinationHref.includes("/account/learn/"));
@@ -149,7 +150,7 @@ test("both locale Course entries prompt again after preview purchase and stop af
     await store.saveCourseLearningMode(user.id, course.id, "text");
     for (const locale of ["en-GB", "zh-CN"]) {
       await assert.rejects(() => page(locale), /redirect:.*account\/learn/);
-      assert.equal(chooser(await page(locale,false)),null,"the saved formal preference suppresses subsequent automatic choosers");
+      assert.equal(chooser(await page(locale,false)),null,"details remain chooser-free after the formal preference is saved");
     }
   } finally { delete (globalThis as any).splitModeEntry; }
 });
