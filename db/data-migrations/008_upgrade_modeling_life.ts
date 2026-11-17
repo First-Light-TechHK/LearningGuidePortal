@@ -179,8 +179,8 @@ export const modelingLifeImport = {
     },
     {
       "file": "cover.png",
-      "sha256": "4d2b4be71b156133e8bed82aa8c407642545d7e7f1121f4272214eaa9c7919e0",
-      "bytes": 1750526
+      "sha256": "d58476ecdbfe2c9a47466397297f578845395dac7c34a3b98a5b946185a1b686",
+      "bytes": 488368
     },
     {
       "file": "lesson1-exhibit-1-s.png",
