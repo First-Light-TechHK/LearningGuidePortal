@@ -113,3 +113,9 @@
   .layout > .tools[data-reading-sticky="true"] { position:sticky; top:12px; }
 }
 @media(max-width:700px) { .layout > .tools { margin:0 20px 20px; } }
+
+/* Keep the preview purchase entry beside a responsive Lesson heading. */
+.heading[data-preview="true"] > h1 { min-width:0; }
+@media(min-width:1300px) {
+  .heading[data-preview="true"] > h1 { font-size:clamp(24px,calc(2vw - 2px),28px); line-height:1.3; }
+}
