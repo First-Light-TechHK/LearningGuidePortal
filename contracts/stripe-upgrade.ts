@@ -29,3 +29,16 @@ export type LegacyStripeUpgradeSource = {
   checkoutSessionId: string; orderId: string; userId: string; planId: string;
   subscriptionId: string; customerId: string; amountMinor: number; currency: string;
 };
+export type StripeUpgradeCredit = {
+  strategy: "new_subscription_credit";
+  sourceOrderId: string;
+  sourceStripeSubscriptionId: string;
+  customerId: string;
+  sourcePriceId: string;
+  sourcePeriodEnd: number;
+  couponId: string;
+  productId: string;
+  listAmountMinor: number;
+  creditMinor: number;
+  amountDueMinor: number;
+};

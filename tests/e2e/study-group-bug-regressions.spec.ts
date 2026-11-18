@@ -603,3 +603,40 @@ test("BUG-0119: a learner without access reaches the Course and Subscription pag
     await learner.context.close();
   }
 });
+
+test("BUG-0315: with a long session list the Members column's buttons sit right under the last member, on screen", async ({ browser, baseURL }) => {
+  const origin = appOrigin(baseURL);
+  const host = await newMember(browser, origin, "0315-a", "Study Host");
+  const member = await newMember(browser, origin, "0315-b", "Study Member");
+  try {
+    const groupId = await createGroup(host, unique("E2E 0315"));
+    await joinGroup(member, groupId);
+    // Enough sessions that the Live Sessions list runs well past one screen.
+    for (let index = 1; index <= 8; index += 1) await scheduleSession(host, groupId, { title: `E2E 0315 session ${index}`, startsInMs: (index + 1) * 2 * HOUR });
+    const cases: Array<[Member, string[]]> = [
+      [host, ["Schedule Live Session", "Edit Group", "Cancel Group"]],
+      [member, ["Leave Study Group"]],
+    ];
+    for (const [viewer, labels] of cases) {
+      const page = await openGroupPage(viewer, groupId);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await expect(page.getByRole("heading", { name: "E2E 0315 session 8" })).toBeVisible();
+      const lastSession = await page.locator("article").filter({ hasText: "E2E 0315 session 8" }).last().boundingBox();
+      expect(lastSession!.y, "the session list is longer than the screen").toBeGreaterThan(900);
+      const column = page.getByRole("complementary", { name: "Members" });
+      const lastMember = await column.getByRole("listitem").last().boundingBox();
+      for (const label of labels) {
+        const button = await column.getByRole("button", { name: label }).boundingBox();
+        expect(button, label).not.toBeNull();
+        // Before the fix the buttons were pinned to the bottom of a column as
+        // tall as the session list, here more than 1000px below the members.
+        expect(button!.y - (lastMember!.y + lastMember!.height), `${label} follows the last member`).toBeLessThan(200);
+        expect(button!.y + button!.height, `${label} is on screen without scrolling`).toBeLessThanOrEqual(900);
+      }
+      await page.close();
+    }
+  } finally {
+    await host.context.close();
+    await member.context.close();
+  }
+});

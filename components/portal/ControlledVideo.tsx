@@ -244,7 +244,7 @@ export const ControlledVideo = forwardRef<HTMLVideoElement, VideoHTMLAttributes<
         </div>}
       </div>
       <span className="la-video-speed">
-        <span aria-hidden="true">{rate === 1 ? t.videoNormalSpeed : `${rate}×`}</span><ChevronDown size={12} aria-hidden="true" />
+        <span aria-hidden="true">{rate === 1 ? t.videoSpeedDefault : `${rate}×`}</span><ChevronDown size={12} aria-hidden="true" />
         <select aria-label={t.videoSpeed} title={t.videoSpeed} value={rate} onChange={event => { if (media.current) { media.current.playbackRate = Number(event.target.value); setRate(media.current.playbackRate); } }}>
           {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => <option key={speed} value={speed}>{speed === 1 ? t.videoNormalSpeed : `${speed}×`}</option>)}
         </select>

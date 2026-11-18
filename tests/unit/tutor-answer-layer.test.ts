@@ -15,11 +15,14 @@ async function render(text: string, courseId?: string) {
   return renderToStaticMarkup(createElement(TutorAnswer, { text, courseId, sourcesLabel: "Sources" }));
 }
 
-test("D1: fenced code keeps its own lines, blank lines and backslashes; prose around it still gets one paragraph per line", () => {
+test("D1: fenced code keeps its own lines, blank lines and backslashes; prose around it still gets one paragraph per line", async () => {
   const code = "```python\nx = 1\n\n\n# \\(not math\\) [Source: not a citation]\nprint(2*3)\n```";
   const { markdown, sources } = tutorAnswerParts(`First point\nSecond point\n${code}\nAfter`);
-  assert.equal(markdown, `First point\n\nSecond point\n\n${code}\n\nAfter`);
+  // Prose lines become paragraphs after parsing (remarkTutorLines); the text only marks block edges.
+  assert.equal(markdown, `First point\nSecond point\n\n${code}\n\nAfter`);
   assert.deepEqual(sources, []);
+  const html = await render(`First point\nSecond point\n${code}\nAfter`);
+  assert.match(html, /<p>First point<\/p>\s*<p>Second point<\/p>\s*<pre><code class="language-python">x = 1\n\n\n# \\\(not math\\\) \[Source: not a citation\]\nprint\(2\*3\)\n<\/code><\/pre>\s*<p>After<\/p>/);
 });
 
 test("D1: inline code is not rewritten; the prose beside it is", () => {
@@ -48,6 +51,23 @@ test("D2: KaTeX renders HTML only, so the formula's text is not there twice", as
   const html = await render("Power rule $(x^n)'=nx^{n-1}$");
   assert.match(html, /class="katex-html"/);
   assert.doesNotMatch(html, /katex-mathml/);
+});
+
+test("Ask AI Tutor and Group Study render the common Markdown formats through the shared answer", async () => {
+  const asset = "22222222-2222-4222-8222-222222222222.png";
+  const html = await render(`# Heading\n**bold** *italic* ~~old~~\n- [x] done\n- [ ] pending\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n> quoted\n\n---\n\n\`inline\`\n\n\`\`\`js\nconst x = 1;\n\`\`\`\n\n![chart](/api/user/courses/course/images/${asset})\n\nInline \\(x^2\\) and block:\n\\[\\frac{1}{2}\\]`, "course-1");
+  for (const tag of ["h1", "strong", "em", "del", "ul", "table", "blockquote", "pre"]) assert.match(html, new RegExp(`<${tag}(?: |>)`), tag);
+  assert.match(html, /<hr\/>/);
+  assert.match(html, /type="checkbox"[^>]*checked=""/);
+  assert.match(html, new RegExp(`/api/ai-tutor/images/${asset}\\?courseId=course-1`));
+  assert.match(html, /class="katex-display"/);
+  assert.match(html, /class="katex"/);
+});
+
+test("Markdown continuation lines stay in their list items and answer lines use the shared paragraph rule", async () => {
+  const html = await render("- first item\n  continued detail\n- second item\n\nline one  \nline two");
+  assert.match(html, /<li>\s*<p>first item<\/p>\s*<p>continued detail<\/p>\s*<\/li>/);
+  assert.match(html, /<p>line one<\/p>\s*<p>line two<\/p>/);
 });
 
 test("D2: the answer and its sources use the shared class names, nothing page-specific", async () => {

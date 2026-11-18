@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 import { getMessages } from "../../lib/i18n/messages";
 
 test("video previews choose access from the title row, share the cutoff modal and omit the video unlock banner", async () => {
-  const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LessonContentPlayer} from './components/portal/LessonContentPlayer';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p.standalone?<LessonContentPlayer key={p.key} contents={p.lesson.contents} locale={p.locale} trialGate={p.trialGate}/>:<PreviewLessonView key={p.key} {...p}/>));` }, bundle: true, write: false, outfile: "access.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css" }, external: ["/portal/*"], define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "next", setup(b) {
+  const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: "tsx", contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {LessonContentPlayer} from './components/portal/LessonContentPlayer';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(p.standalone?<LessonContentPlayer key={p.key} contents={p.lesson.contents} locale={p.locale} trialGate={p.trialGate}/>:<PreviewLessonView key={p.key} {...p}/>));` }, bundle: true, write: false, outfile: "access.js", platform: "browser", jsx: "automatic", loader: { ".css": "local-css", ".woff2": "dataurl" }, external: ["/portal/*"], define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "next", setup(b) {
     b.onResolve({ filter: /Course(Model|Pdf)Preview$/ }, args => ({ path: args.path, namespace: "mock" }));
     b.onResolve({ filter: /^next\// }, args => ({ path: args.path, namespace: "mock" }));
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ loader: "tsx", resolveDir: process.cwd(), contents: args.path.endsWith("Preview") ? "export const CourseModelPreview=()=>null;export const CoursePdfPreview=()=>null" : args.path === "next/navigation" ? "export const useRouter=()=>({refresh(){},push(){}})" : args.path === "next/dynamic" ? "export default ()=>()=>null" : "import React from 'react';export default function Component({prefetch,unoptimized,...p}){return p.src?<img {...p}/>:<a {...p}/>}" }));
@@ -42,6 +42,25 @@ test("video previews choose access from the title row, share the cutoff modal an
     assert.equal(cta.height, 37); if (locale === "en-GB") assert.ok(cta.width >= 150 && cta.width <= 200, `unexpected choose-plan width ${cta.width}`);
     assert.deepEqual(await choose.evaluate(e => { const s = getComputedStyle(e); return [s.borderRadius, s.backgroundColor, s.fontSize, s.fontWeight]; }), ["8px", "rgb(29, 107, 255)", "14px", "600"]);
     await page.screenshot({ path: `${output}/${locale}-entry.png`, fullPage: true });
+    const longTitle = "State Spaces, Vector Spaces and Trajectories";
+    await mount("long-title", { lesson: { ...props.lesson, title: longTitle } });
+    for (const width of [1300, 1366, 1440, 1600, 1920]) {
+      await page.setViewportSize({ width, height: 1024 });
+      const heading = page.getByRole("heading", { name: longTitle, exact: true });
+      const geometry = await heading.evaluate(element => {
+        const box = element.getBoundingClientRect(), header = element.parentElement!;
+        const button = header.querySelector("button")!.getBoundingClientRect();
+        return { height: box.height, line: parseFloat(getComputedStyle(element).lineHeight), beside: button.x >= box.right && Math.abs(button.y + button.height / 2 - box.y - box.height / 2) <= 1, right: button.right, edge: header.getBoundingClientRect().right - 20 };
+      });
+      assert.ok(geometry.height <= geometry.line + 1, `${locale}/${width}: preview Lesson title stays on one line`);
+      assert.equal(geometry.beside, true, "purchase entry stays beside the Lesson title");
+      assert.equal(geometry.right, geometry.edge);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await page.screenshot({ path: `${output}/${locale}-title-${width}.png`, fullPage: true });
+    }
+    await page.setViewportSize({ width: 1440, height: 1024 });
+    await mount("preview");
+
     await page.locator("video").evaluate(video => {
       const media = video as HTMLVideoElement;
       Object.defineProperty(media, "paused", { configurable: true, value: false });

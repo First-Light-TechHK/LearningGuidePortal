@@ -130,7 +130,7 @@
 .la-video-controls input.la-video-seek[type=range]:disabled { cursor:not-allowed; opacity:.45; }
 .la-video-seek-preview { position:absolute; bottom:calc(100% + 8px); transform:translateX(-50%); padding:4px 6px; border-radius:4px; background:#101820; color:#fff; font-size:12px; font-variant-numeric:tabular-nums; white-space:nowrap; pointer-events:none; }
 .la-video-controls span { white-space:nowrap; font-size:12px; font-variant-numeric:tabular-nums; }
-.la-video-controls .la-video-speed { position:relative; display:inline-flex; flex:0 0 auto; align-items:center; gap:4px; min-height:36px; padding:4px 10px; border:1px solid #64748b; border-radius:4px; background:#101820; color:white; font-size:12px; }
+.la-video-controls .la-video-speed { position:relative; display:inline-flex; flex:0 0 auto; align-items:center; gap:4px; min-height:36px; padding:4px 10px; border:0; border-radius:4px; background:transparent; color:white; font-size:12px; }
 .la-video-controls .la-video-speed > span { font-size:inherit; }
 .la-video-speed > svg { flex:none; }
 .la-video-speed:has(select:focus-visible) { outline:2px solid #167568; outline-offset:2px; }

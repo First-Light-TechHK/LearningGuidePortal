@@ -53,7 +53,7 @@ secret('SMTP_PASS', original.SMTP_PASS);
 if (!original.STRIPE_SECRET_KEY.startsWith('sk_test_')) throw new Error('SIT refuses live Stripe keys');
 const stripe = new Stripe(original.STRIPE_SECRET_KEY);
 const url = 'https://sit.ilovelearningguide.com/api/payment/webhook';
-const events = ['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired','invoice.paid','invoice.payment_failed','customer.subscription.updated','customer.subscription.deleted'];
+const events = ['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired','invoice.paid','invoice.payment_failed','customer.subscription.updated','customer.subscription.deleted','charge.refunded','charge.refund.updated','refund.created','refund.updated','refund.failed'];
 let webhook = (await stripe.webhookEndpoints.list({ limit: 100 })).data.find(x => x.url === url);
 if (!webhook) {
   webhook = await stripe.webhookEndpoints.create({ url, enabled_events: events, description: 'Learning Guide isolated SIT; sandbox only' });

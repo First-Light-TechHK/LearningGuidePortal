@@ -18,9 +18,9 @@ import {getMessages} from "../../lib/i18n/messages";
 import {isolate,jsonRequest,setCookie,SESSION_COOKIE} from "../io/harness";
 import {verifiedUser} from "./helpers/my-learning";
 
-test("Modeling life renders authored bilingual text, timed video points, resources and real eighteen-card saved tests",{timeout:120000},async()=>{
+test("Modeling life renders authored bilingual text, timed video points, resources and real eighteen-card saved tests",{timeout:120000},async t=>{
   const cwd=process.cwd(),output=path.join(cwd,"test-results/modeling-life/browser");await mkdir(output,{recursive:true});
-  const bundle=await build({stdin:{resolveDir:cwd,loader:"tsx",contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {PersistedAssessmentDialog} from './components/portal/PersistedAssessmentDialog';import {UnderstandingOverview} from './components/portal/UnderstandingOverview';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(<main className="portal-page portal-public-lesson-page">{p.view==='assessment'?<PersistedAssessmentDialog key={p.key} {...p} onExit={()=>root.render(null)}/>:p.view==='overview'?<UnderstandingOverview key={p.key} {...p}/>:<PreviewLessonView key={p.key} {...p}/>}</main>));`},bundle:true,write:false,outfile:"modeling.js",platform:"browser",jsx:"automatic",external:["/portal/*"],loader:{".css":"local-css"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){
+  const bundle=await build({stdin:{resolveDir:cwd,loader:"tsx",contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {PreviewLessonView} from './components/portal/PreviewLessonView';import {PersistedAssessmentDialog} from './components/portal/PersistedAssessmentDialog';import {UnderstandingOverview} from './components/portal/UnderstandingOverview';const root=createRoot(document.getElementById('root'));window.mount=p=>flushSync(()=>root.render(<main className="portal-page portal-public-lesson-page">{p.view==='assessment'?<PersistedAssessmentDialog key={p.key} {...p} onExit={()=>root.render(null)}/>:p.view==='overview'?<UnderstandingOverview key={p.key} {...p}/>:<PreviewLessonView key={p.key} {...p}/>}</main>));`},bundle:true,write:false,outfile:"modeling.js",platform:"browser",jsx:"automatic",external:["/portal/*"],loader:{".css":"local-css", ".woff2": "dataurl"},define:{"process.env.NODE_ENV":'"production"'},plugins:[{name:"next",setup(b){
     b.onResolve({filter:/Course(Model|Pdf)Preview$/},args=>({path:args.path,namespace:"mock"}));
     b.onResolve({filter:/^next\//},args=>({path:args.path,namespace:"mock"}));
     b.onLoad({filter:/.*/,namespace:"mock"},args=>({resolveDir:cwd,loader:"tsx",contents:args.path.endsWith("Preview")?"export const CourseModelPreview=()=>null;export const CoursePdfPreview=()=>null":args.path==="next/navigation"?"export const useRouter=()=>({refresh(){},push(href){window.destination=href}})":args.path==="next/dynamic"?"export default ()=>()=>null":args.path==="next/link"?"import React from 'react';export default function Link({prefetch,...p}){return <a {...p}/>}":"import React from 'react';export default function Image({unoptimized,fill,...p}){return <img {...p} style={{...p.style,...(fill?{width:'100%',height:'100%',objectFit:'contain'}:{})}}/>}"}));
@@ -37,6 +37,12 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
     lesson2Readings.apply(orm,{store:"memory",dryRun:true,now:"2026-10-29T05:00:00Z"});
     lesson2Exhibits.apply(orm,{store:"memory",dryRun:true,now:"2026-10-29T08:00:00Z"});
     const course=orm.table<ProductCourse>("courses").findById(fixture.id)!,[first,second]=course.sections[0].lessons;
+    process.env.KS_TUTOR_BASE_URL="https://ks.example.test";process.env.KS_TUTOR_API_KEY="test";
+    t.mock.method(globalThis,"fetch",async(_url:unknown,init:RequestInit)=>{
+      const input=JSON.parse(String(init.body));
+      return Response.json({data:{evaluationId:input.evaluationId,status:"evaluated",yourAnswer:input.answer,releaseId:"fixture-release",referenceAnswer:{status:"available",contentMarkdown:first.assessments!.application!.reference.join("\n\n"),sourceTitle:"Fixture release Q&A"},feedback:{schemaVersion:"application_feedback.v2",overallBand:"developing",whatYouDidWell:["Provider fixture feedback."],areasToImprove:[],needsReview:false,reviewReason:null}}});
+    });
+    const evaluationRoute=await import("../../app/api/courses/[courseId]/lessons/[lessonId]/assessments/application/evaluate/route");
     for(const locale of ["en-GB","zh-CN"] as const){
       const user=await verifiedUser(store,`modeling-browser-${locale}@example.test`),session=await store.createSession(user.id);setCookie(SESSION_COOKIE,session.token);
       const {quote}=await store.createQuote(user.id,"science-pc-6");await store.completeDemoCheckout(user.id,quote.id);
@@ -51,6 +57,11 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
           const file=files[media[1]];
           if(!file)return route.fulfill({status:404});
           return route.fulfill({body:await readFile(path.join(cwd,"public/courses/modeling-life",file)),contentType:"image/png"});
+        }
+        const evaluate=url.pathname.match(/^\/api\/courses\/([^/]+)\/lessons\/([^/]+)\/assessments\/application\/evaluate$/);
+        if(evaluate){
+          const response=await evaluationRoute.POST(jsonRequest("POST","http://localhost"+url.pathname,request.postDataJSON()),{params:Promise.resolve({courseId:evaluate[1],lessonId:evaluate[2]})});
+          return route.fulfill({status:response.status,body:await response.text(),contentType:"application/json"});
         }
         const match=url.pathname.match(/^\/api\/courses\/([^/]+)\/lessons\/([^/]+)\/assessments\/(knowledge|application)$/);
         if(match){
@@ -202,7 +213,7 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       await mount({view:"assessment",kind:"knowledge",key:"knowledge",locale,courseId:course.id,lessonId:first.id,lessonTitle:first.title,lessonNumber:"01"});
       dialog=page.getByRole('dialog');await dialog.getByText(first.assessments!.knowledge[0].prompt,{exact:true}).waitFor();
       assert.ok((await dialog.getByRole('progressbar').getAttribute('aria-valuemax'))==="18");
-      await dialog.locator('textarea').fill('Saved Modeling life note');await page.screenshot({path:path.join(output,`${locale}-knowledge-first.png`),fullPage:true});
+      await dialog.getByRole('textbox').fill('Saved Modeling life note');await page.screenshot({path:path.join(output,`${locale}-knowledge-first.png`),fullPage:true});
       for(let index=0;index<18;index++){
         await dialog.getByRole('button',{name:messages.knowledgeTest.check,exact:true}).click();await dialog.getByRole('radio').nth(1).check();
         await dialog.getByRole('button',{name:index===17?messages.knowledgeTest.seeResults:messages.knowledgeTest.next,exact:true}).click();
@@ -215,12 +226,12 @@ test("Modeling life renders authored bilingual text, timed video points, resourc
       assert.ok(saved?.completedAt);
       await page.screenshot({path:path.join(output,`${locale}-knowledge-result.png`),fullPage:true});
       await mount({view:"assessment",kind:"application",key:"application",locale,courseId:course.id,lessonId:first.id,lessonTitle:first.title,lessonNumber:"01"});
-      await dialog.locator('textarea').waitFor();await dialog.locator('textarea').fill('The mixed equilibrium consists of two thirds hawks and one third doves.');
-      await dialog.getByRole('button',{name:messages.applicationTest.submit,exact:true}).click();await dialog.getByRole('button',{name:messages.applicationTest.retake,exact:true}).waitFor();
+      await dialog.getByRole('textbox').waitFor();await dialog.getByRole('textbox').fill('The mixed equilibrium consists of two thirds hawks and one third doves.');
+      await dialog.getByRole('button',{name:messages.applicationTest.submit,exact:true}).click();await page.getByRole('button',{name:messages.assessmentFlow.confirm,exact:true}).click();await dialog.getByRole('button',{name:messages.applicationTest.retake,exact:true}).waitFor();
       await dialog.getByText(first.assessments!.application!.reference[0],{exact:true}).waitFor();
-      assert.equal(await dialog.getByRole('heading',{name:messages.applicationTest.feedback,exact:true}).count(),0,"authored references never fabricate sample feedback");
+      assert.equal(await dialog.getByRole('heading',{name:messages.applicationTest.feedback,exact:true}).count(),1);await dialog.getByText("Provider fixture feedback.",{exact:true}).waitFor();
       await page.screenshot({path:path.join(output,`${locale}-application-result.png`),fullPage:true});
-      const data=await overview.getUnderstandingOverview(user.id,course.id);assert.equal(data.total,4);assert.equal(data.completed,2);assert.equal(data.lessons[0].application.latestResult,null);assert.equal(data.lessons[1].knowledge.total,8);
+      const data=await overview.getUnderstandingOverview(user.id,course.id);assert.equal(data.total,4);assert.equal(data.completed,2);assert.equal(data.lessons[0].application.latestResult,"developing");assert.equal(data.lessons[1].knowledge.total,8);
       await mount({view:'overview',key:'overview',locale,courseId:course.id,courseTitle:course.title,category:'Science',backHref:`/${locale}/account/learn/${course.id}`,data});
       assert.equal(await page.locator(`[data-lesson-id="${second.id}"] [data-assessment-kind] button`).count(),2,"both authored Lesson 2 tests unlock after Lesson 1 tests complete");
       await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,`${locale}-understanding-mobile.png`),fullPage:true});

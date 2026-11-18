@@ -83,7 +83,11 @@ export async function currentEmailBindingUser() {
 }
 
 export async function rejectIfUnauthenticated(request: Request) {
-  if (isAdminHost(request) && isKnowledgeAdminPath(new URL(request.url).pathname)) {
+  if (isKnowledgeAdminPath(new URL(request.url).pathname)) {
+    if (!isAdminHost(request)) {
+      const learner = await currentProductUserFromRequest(request);
+      return NextResponse.json({ ok: false, error: learner ? "Operator access is required." : "Sign in is required." }, { status: learner ? 403 : 401, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
+    }
     const user = await currentAuthorRequest(request);
     if (user && isOperator(user) && (["GET", "HEAD", "OPTIONS"].includes(request.method) || requestOriginMatches(request))) return null;
     return NextResponse.json({ ok: false, error: "Operator access is required." }, { status: user ? 403 : 401, headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });

@@ -40,7 +40,7 @@ test("Overview renders both catalogue lists, learning progress, protected links 
       assert.equal(await page.locator("[data-learning-courses] article").count(), 3);
       assert.equal(await page.locator("[data-previewed-courses] article").count(), 3);
       assert.equal(await page.locator("[data-previewed-courses] [role=progressbar]").count(), 0);
-      assert.deepEqual(await page.getByRole("progressbar").evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-valuenow"))), ["46", "100", "0"]);
+      assert.deepEqual(await page.getByRole("progressbar").evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-valuenow"))), []);
       assert.equal(await page.locator("[data-learning-courses] a").first().getAttribute("href"), `/${locale}/account/learn/course-0?viewMode=video&lessonId=lesson-4`);
       assert.equal(await page.locator("[data-previewed-courses] a").first().getAttribute("href"), `/${locale}/portal/courses/course-0`);
       await page.screenshot({ path: `test-results/learning-overview/${locale}-desktop.png`, fullPage: true });

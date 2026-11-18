@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { tutorAnswerParts } from "@/lib/tutorAnswer";
+import { remarkTutorLines, remarkTutorNoIndentedCode, tutorAnswerParts } from "@/lib/tutorAnswer";
 
 // D2 (docs/phase1/ai-tutor-answer-layer.md): the one renderer for an AI Tutor
 // answer. The lesson drawer (TutorChat) and the Study Group room both use it,
@@ -68,7 +68,7 @@ export function TutorAnswer({ text, courseId, sourcesLabel }: { text: string; co
   }), [courseId]);
   return (
     <div className="tutor-answer" data-testid="tutor-answer">
-      <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[[rehypeKatex, KATEX]]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkTutorNoIndentedCode, remarkMath, remarkGfm, remarkTutorLines]} rehypePlugins={[[rehypeKatex, KATEX]]} components={components}>
         {markdown}
       </ReactMarkdown>
       {sources.length ? <div className="tutor-answer-sources"><p>{sourcesLabel}</p>{sources.map((source) => <p key={source}>{source}</p>)}</div> : null}

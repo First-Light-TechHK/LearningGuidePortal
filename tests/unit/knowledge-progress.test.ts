@@ -1,3 +1,4 @@
+// Course percentage assertions superseded by the 2026-11-11 Lesson-only completion policy.
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -24,33 +25,33 @@ test("same-mode ordinal excludes other modes and inactive points across lessons"
   assert.equal(knowledgeProgress({sections:[]},"video").progress,0);
 });
 
-test("Modeling life 86-percent video progress places the entitled course action on Lesson 2", async () => {
+test("Modeling life course action follows the current Lesson without a percentage", async () => {
   const user = await verifiedUser(store, "modeling-resume@example.test");
   const { quote } = await store.createQuote(user.id, "science-pc-6");await store.completeDemoCheckout(user.id, quote.id);
   const course = await store.getProductCourse("modeling-life");assert.ok(course);
   const lessons = course.sections.flatMap(section => section.lessons), lesson = lessons[1];
   const content = lesson.contents!.find(content => content.type === "video")!;
   const record = await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lesson.id, contentId: content.id, learningMode: "video", event: "open", seconds: 0, clientEventId: "modeling-video-86" });
-  assert.equal(record?.progress, 86);
+  assert.equal(record?.progress, 0);
   const firstVideo = lessons[0].contents!.find(content => content.type === "video")!;
   const revisit = await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lessons[0].id, contentId: firstVideo.id, learningMode: "video", event: "open", seconds: 0, clientEventId: "modeling-video-review" });
-  assert.equal(revisit?.progress, 86);assert.equal(revisit?.currentLessonId, lessons[0].id);
-  assert.deepEqual(revisit?.highestProgress, { progress: 86, mode: "video", lessonId: lesson.id, contentId: content.id });
+  assert.equal(revisit?.progress, 0);assert.equal(revisit?.currentLessonId, lessons[0].id);
+  assert.equal(revisit?.highestProgress, undefined);
   const page = await store.getCoursePage(course.slug, user.id);
-  assert.equal(page.progress, 86);assert.equal(page.actionLessonId, lesson.id);assert.equal(page.cta, "continue_learning");
+  assert.equal(page.progress, 0);assert.equal(page.actionLessonId, lessons[0].id);assert.equal(page.cta, "continue_learning");
   const firstText = lessons[0].contents!.find(content => content.type === "text")!;
   await store.recordStudyEvent({ userId: user.id, courseId: course.id, lessonId: lessons[0].id, contentId: firstText.id, learningMode: "text", event: "open", seconds: 0, clientEventId: "modeling-text-review" });
-  assert.equal((await store.getCoursePage(course.slug, user.id)).actionLessonId, lesson.id, "changing review mode cannot move Start behind the highest course progress");
+  assert.equal((await store.getCoursePage(course.slug, user.id)).actionLessonId, lessons[0].id, "changing review mode cannot move Start behind the highest course progress");
   const guest = await store.getCoursePage(course.slug);
   assert.equal(guest.actionLessonId, lessons[0].id);
   const data = await readProductData();
   delete data.studyRecords.find((row: { userId: string; courseId: string }) => row.userId === user.id && row.courseId === course.id).highestProgress;
   await writeProductData(data);
-  assert.equal((await store.getCoursePage(course.slug, user.id)).actionLessonId, lesson.id, "existing DEV records recover from history without a migration");
+  assert.equal((await store.getCoursePage(course.slug, user.id)).actionLessonId, lessons[0].id, "existing DEV records recover from history without a migration");
   assert.equal((await readProductData()).studyRecords.find((row: { userId: string }) => row.userId === user.id).highestProgress, undefined, "read-side recovery does not rewrite history");
   data.entitlements.filter((row: { userId: string }) => row.userId === user.id).forEach((row: { validTo: string }) => { row.validTo = "2020-01-01T00:00:00Z"; });await writeProductData(data);
   const expired = await store.getCoursePage(course.slug, user.id);
-  assert.equal(expired.progress, 86);assert.equal(expired.actionLessonId, lessons[0].id);
+  assert.equal(expired.progress, 0);assert.equal(expired.actionLessonId, lessons[0].id);
 });
 
 test("save current knowledge point per mode, replay safely and deny inaccessible/foreign points",async()=>{
@@ -62,27 +63,27 @@ test("save current knowledge point per mode, replay safely and deny inaccessible
   data.courses.forEach((item:ProductCourse)=>{item.cover="/portal/course-book.jpg";item.thumbnailPath="/portal/course-book.jpg";});
   await writeProductData(data);
   const open=(lessonId:string,contentId:string,learningMode:"video"|"text",clientEventId:string,access:"paid"|"preview"="paid")=>store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId,contentId,learningMode,event:"open",seconds:0,clientEventId},access);
-  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,67);
-  assert.equal((await open(PRIVATE_LP,"t2","text","text-second"))!.progress,100);
-  const back=await open(PREVIEW_LP,"v1","video","video-back");assert.equal(back!.progress,100);assert.equal(back!.knowledgePositions?.text?.contentId,"t2");
-  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,100,"replayed older event cannot move the cursor");
+  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,0);
+  assert.equal((await open(PRIVATE_LP,"t2","text","text-second"))!.progress,0);
+  const back=await open(PREVIEW_LP,"v1","video","video-back");assert.equal(back!.progress,0);assert.equal(back!.knowledgePositions?.text?.contentId,"t2");
+  assert.equal((await open(PREVIEW_LP,"v2","video","video-second"))!.progress,0,"replayed older event cannot move the cursor");
   const card=(await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!;
-  assert.equal(card.progress,100);assert.equal(card.totalLearningPoints,3);assert.equal(card.currentContentId,"v1");assert.equal(card.mode,"video");
+  assert.equal(card.progress,0);assert.equal(card.totalLearningPoints,3);assert.equal(card.currentContentId,"v1");assert.equal(card.mode,"video");
   const display=await (await import("../../services/learningOverviewDisplay")).getLearningOverviewDisplay(user.id);
-  assert.equal(display.learning.find(item=>item.courseId===COURSE_ID)!.progress,100);
+  assert.equal(display.learning.find(item=>item.courseId===COURSE_ID)!.progress,0);
   const progress=await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PREVIEW_LP,contentId:"v2",learningMode:"video",event:"video_progress",seconds:15,clientEventId:"playing-second-point"});
-  assert.equal(progress!.progress,100);
+  assert.equal(progress!.progress,0);
   assert.equal(progress!.knowledgePositions?.video?.contentId,"v2");
   const completed=await store.recordStudyEvent({userId:user.id,courseId:COURSE_ID,lessonId:PRIVATE_LP,contentId:"t2",learningMode:"text",event:"complete",seconds:0,clientEventId:"manual-text-final"});
-  assert.equal(completed!.progress,100);
-  assert.ok(completed!.completedAt);
+  assert.equal(completed!.progress,0);
+  assert.equal(completed!.completedAt, null);
   const completionCard=(await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!;
-  assert.deepEqual(completionCard.completedContentIds,["t2"]);
-  assert.equal(completionCard.completedContentIds.includes("v3"),false,"same lesson text completion is not video completion");
-  assert.equal((await store.getCoursePage(COURSE_ID,user.id)).progress,100);
+  assert.deepEqual(completionCard.completedContentIds,["t2","v3"]);
+  assert.equal(completionCard.completedContentIds.includes("v3"),true,"Lesson completion is shared between text and video");
+  assert.equal((await store.getCoursePage(COURSE_ID,user.id)).progress,0);
   await open(PREVIEW_LP,"v1","video","revisit-completed-course");
   const revisited=await store.getCoursePage(COURSE_ID,user.id);
-  assert.equal(revisited.actionLessonId,PRIVATE_LP,"completed course keeps Start on the last lesson after revisiting an earlier point");
+  assert.equal(revisited.actionLessonId,PREVIEW_LP,"Start follows the current Lesson after review");
   assert.ok(revisited.syllabus.every(item=>item.access==="entitled"),"revisiting a completed subscribed course must never switch to Preview");
   await assert.rejects(open(PREVIEW_LP,"t1","video","wrong-mode"),/Knowledge point not found/);
   await assert.rejects(open(PREVIEW_LP,"v3","video","foreign-point"),/Knowledge point not found/);
@@ -102,8 +103,8 @@ test("save current knowledge point per mode, replay safely and deny inaccessible
   assert.equal((await invoke()).status,401);
   apiState.user={id:other.id};assert.equal((await invoke()).status,403);
   apiState.user={id:user.id};assert.equal((await invoke("v3")).status,400);
-  const response=await invoke();assert.equal(response.status,200);assert.equal((await response.json()).record.progress,100);
-  assert.equal((await invoke()).status,200);assert.equal((await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!.progress,100);
+  const response=await invoke();assert.equal(response.status,200);assert.equal((await response.json()).record.progress,0);
+  assert.equal((await invoke()).status,200);assert.equal((await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!.progress,0);
   const manual=()=>compiled.exports.POST(new Request("http://localhost/api/study/events",{method:"POST",body:JSON.stringify({courseId:COURSE_ID,lessonId:PREVIEW_LP,contentId:"v1",learningMode:"video",event:"complete",seconds:0,clientEventId:"manual-video-before-playback"})}));
   assert.equal((await manual()).status,200,"a video may be manually completed without playback or watched-percentage evidence");
   assert.equal((await manual()).status,200);

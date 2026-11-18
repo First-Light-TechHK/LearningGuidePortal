@@ -10,7 +10,8 @@ test('shared video toolbar keeps controls usable without playback or picture-in-
   try {
     for (const locale of ['en-GB', 'zh-CN']) {
       const page = await browser.newPage();
-      await page.setContent('<div id="root"></div>');
+      await page.setContent('<div class="la" id="root"></div>');
+      await page.addStyleTag({ content: await readFile('components/portal/lesson-authoring.css', 'utf8') });
       await page.evaluate(() => {
         Object.defineProperty(document, 'pictureInPictureEnabled', { value: true, configurable: true });
         HTMLVideoElement.prototype.requestPictureInPicture = async function () {
@@ -27,6 +28,31 @@ test('shared video toolbar keeps controls usable without playback or picture-in-
       await page.addScriptTag({ content: bundle.outputFiles[0].text });
       await page.evaluate(locale => (window as unknown as {mount: (locale: string) => void}).mount(locale), locale);
       const speed = page.getByRole('combobox', { name: locale === 'zh-CN' ? '播放速度' : 'Playback speed' });
+      const speedControl = page.locator('.la-video-speed'), speedLabel = speedControl.locator('span');
+      const defaultSpeed = locale === 'zh-CN' ? '倍速' : 'Speed';
+      assert.equal(await speed.inputValue(), '1');
+      assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), 1);
+      assert.equal(await speedLabel.textContent(), defaultSpeed);
+      assert.equal(await speed.locator('option[value="1"]').textContent(), '1.0×');
+      assert.equal(await speedControl.evaluate(e => getComputedStyle(e).borderTopWidth), '0px');
+      assert.equal(await speed.evaluate(e => getComputedStyle(e).borderTopWidth), '0px');
+      await mkdir('test-results/video-speed', { recursive: true });
+      for (const width of [1100, 390, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        assert.equal(await speedLabel.textContent(), defaultSpeed);
+        assert.equal(await speedControl.evaluate(e => e.scrollWidth > e.clientWidth), false);
+        await page.screenshot({ path: `test-results/video-speed/${locale}-default-${width}.png` });
+      }
+      await page.setViewportSize({ width: 1100, height: 800 });
+      for (const rate of ['0.5', '0.75', '1', '1.25', '1.5', '1.75', '2']) {
+        await speed.selectOption(rate);
+        assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), Number(rate));
+        assert.equal(await speedLabel.textContent(), rate === '1' ? defaultSpeed : `${rate}×`);
+      }
+      await speed.selectOption('1'); await speed.focus(); await page.keyboard.press('ArrowDown');
+      assert.equal(await speed.inputValue(), '1.25', 'native keyboard selection remains available');
+      await page.locator('video').evaluate(video => { (video as HTMLVideoElement).playbackRate = 1; });
+      await page.waitForFunction(expected => document.querySelector('.la-video-speed > span')?.textContent === expected, defaultSpeed);
       await speed.selectOption('1.5');
       assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), 1.5);
       await page.locator('video').evaluate(video => { Object.defineProperty(video, 'duration', { value: 120 }); video.dispatchEvent(new Event('loadedmetadata')); });

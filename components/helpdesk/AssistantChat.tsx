@@ -131,6 +131,8 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   const text = copy.chat;
   // Part D: the fixed line of an explanation not given; only "the model said the card does not say it" claims so (待视觉验收)
   const uncoveredLine = (turn: AssistantTurn) => (turn.uncovered === "unavailable" ? text.clarifyUnavailable : text.clarifyNotCovered);
+  /** v8: the fixed line for the asks of one message that found no card (the handover card follows the reply). */
+  const missedLine = (missed: number) => (missed === 1 ? text.missedOne : fillTemplate(text.missedMany, { n: missed }));
   const ids = useId();
   const storageKey = chatStorageKey(accountId);
   const [entries, setEntriesState] = useState<ChatEntry[]>([]);
@@ -323,8 +325,11 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
     if (turn?.kind === "clarify") return turn.covered === true && turn.explanation ? turn.explanation : uncoveredLine(turn);
     if (entry.reply && turn?.kind === "answer") {
       if (turn.nodeType === "choice") return [plainText(entry.reply.answer), turn.next ? turn.next.steps.map((step, index) => `${optionLetter(index)}. ${step.label}`).join("; ") : ""].filter(Boolean).join(" ");
-      const body = turn.excerpt ? turn.excerpt.map((block) => plainText(block.text)).join(" ") : plainText(entry.reply.answer);
-      return [turn.opening ?? "", body, turn.closing ?? "", turn.next?.kind === "follow_up" ? steps(text.followUpsTitle, turn.next.steps) : ""].filter(Boolean).join(" ");
+      const body = (excerpt: AssistantTurn["excerpt"], answer: string) => (excerpt ? excerpt.map((block) => plainText(block.text)).join(" ") : plainText(answer));
+      // v8: several asks: every card in the order shown, the missed line; their follow-ups are not shown (one card's chips under three would mislead).
+      const more = turn.more ?? [];
+      return [turn.opening ?? "", body(turn.excerpt, entry.reply.answer), ...more.map((card) => body(card.excerpt, card.answer)), turn.missed ? missedLine(turn.missed) : "", turn.closing ?? "",
+        turn.next?.kind === "follow_up" && !more.length ? steps(text.followUpsTitle, turn.next.steps) : ""].filter(Boolean).join(" ");
     }
     if (entry.reply) return plainText(entry.reply.answer);
     const alternatives = entry.alternatives ?? [];
@@ -370,6 +375,8 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
       // v5 Part D: an explanation the card does not cover hands over at once; Part B: thanks after an answer asks for a rating.
       let cards = cardsAfterChange(next);
       if (turn?.kind === "clarify" && turn.covered !== true) cards = [{ kind: "handover", reason: "unsolved" }];
+      // v8: an ask of the message that found no card offers a person at once (the reply said so).
+      if (turn?.kind === "answer" && turn.missed && !cards.some((card) => card.kind === "handover")) cards = [{ kind: "handover", reason: "unsolved" }];
       const rate = ratingAfterFarewell(next);
       if (rate) cards = [...cards, rate];
       setEntries([...next, ...cards]);
@@ -471,11 +478,11 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   }
 
   /** v5 Part H: "Show the full answer" opens the whole card in place (and Show less closes it); the first open is reported. */
-  function toggleFull(entry: AnswerEntry) {
+  function toggleFull(entry: AnswerEntry, key: string = entry.id) {
     touched();
-    const open = expanded.has(entry.id);
+    const open = expanded.has(key);
     const next = new Set(expanded);
-    if (open) next.delete(entry.id); else next.add(entry.id);
+    if (open) next.delete(key); else next.add(key);
     setExpanded(next);
     if (!open && entry.turn && !reported.current.has(entry.id)) {
       reported.current.add(entry.id);
@@ -517,14 +524,16 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
   const helpLink = (faqId: string, label: string) => <a className="helpdesk-chat-related" href={`/${locale}/help?faq=${encodeURIComponent(faqId)}`} target="_blank" rel="noopener noreferrer">{label}</a>;
 
   /** v5 Part H: the quoted FAQ card: the excerpt (or the whole answer) verbatim, the Figma "Related FAQ" link to the Help Centre and "Show the full answer". */
-  const quotedCard = (entry: AnswerEntry, index: number, reply: NonNullable<AnswerEntry["reply"]>, excerpt: AssistantTurn["excerpt"]) => {
-    const open = expanded.has(entry.id);
-    const textId = `${ids}-card-text-${index}`;
-    return <blockquote className="helpdesk-chat-excerpt">
+  // v8: slot 0 is the turn's card, 1 and 2 the further cards of a several-asks answer (each opens on its own).
+  const quotedCard = (entry: AnswerEntry, index: number, reply: { faqId: string; question: string; answer: string }, excerpt: AssistantTurn["excerpt"], slot = 0) => {
+    const key = slot ? `${entry.id}#${slot}` : entry.id;
+    const open = expanded.has(key);
+    const textId = `${ids}-card-text-${index}${slot ? `-${slot}` : ""}`;
+    return <blockquote key={key} className="helpdesk-chat-excerpt">
       <Markdown className="helpdesk-chat-answer-text" id={textId} text={excerpt && !open ? excerpt.map((block) => block.text).join("\n\n") : reply.answer} />
       <div className="helpdesk-chat-excerpt-actions">
         {helpLink(reply.faqId, fillTemplate(text.relatedFaq, { question: reply.question }))}
-        {excerpt ? <button type="button" className="helpdesk-chat-expand" aria-expanded={open} aria-controls={textId} onClick={() => toggleFull(entry)}>{open ? text.showLess : text.showFull}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}</button> : null}
+        {excerpt ? <button type="button" className="helpdesk-chat-expand" aria-expanded={open} aria-controls={textId} onClick={() => toggleFull(entry, key)}>{open ? text.showLess : text.showFull}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}</button> : null}
       </div>
     </blockquote>;
   };
@@ -590,11 +599,16 @@ export function AssistantChat({ locale, copy, questionMax, accountId, chips, onI
         <div id={`${ids}-prompt-${index}`}><Markdown className="helpdesk-chat-answer-text helpdesk-chat-choice-prompt" text={reply.answer} /></div>
         {steps.length ? stepButtons(entry, index, turn, steps) : null}
       </div>;
-      return <div className="helpdesk-chat-answer helpdesk-chat-three-part">
+      // v8: one message that asked several things: a card per ask in the order asked (待视觉验收: the quoted-card style
+      // stacked), then the fixed line for the asks with no card; the first card's follow-ups are left out.
+      const more = turn.more ?? [];
+      return <div className={`helpdesk-chat-answer helpdesk-chat-three-part${more.length ? " helpdesk-chat-several" : ""}`}>
         {turn.opening ? <p className="helpdesk-chat-opening">{turn.opening}</p> : null}
         {quotedCard(entry, index, reply, turn.excerpt)}
+        {more.map((card, position) => quotedCard(entry, index, card, card.excerpt, position + 1))}
+        {turn.missed ? <p className="helpdesk-chat-missed">{missedLine(turn.missed)}</p> : null}
         {turn.closing ? <p className="helpdesk-chat-closing">{turn.closing}</p> : null}
-        {steps.length ? stepButtons(entry, index, turn, steps) : null}
+        {steps.length && !more.length ? stepButtons(entry, index, turn, steps) : null}
         {voteRow(entry)}
       </div>;
     }

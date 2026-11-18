@@ -17,7 +17,7 @@ test("video point selection plays real media across same/different sources while
     platform: "browser",
     jsx: "automatic",
     external: ["/portal/*"],
-    loader: { ".css": "local-css" },
+    loader: { ".css": "local-css", ".woff2": "dataurl" },
     define: { "process.env.NODE_ENV": '"production"' },
     plugins: [{
       name: "next",
@@ -103,6 +103,10 @@ test("video point selection plays real media across same/different sources while
       await point(1).and(page.locator('[aria-current="step"]')).waitFor();
       assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
       assert.ok(Math.abs(await video.evaluate(el=>(el as HTMLVideoElement).currentTime)-0.8)<0.01,"following a seek must retain its exact position");
+      // Re-enter v2 from another point: a paused scrub may already have saved v2,
+      // so clicking that same active point need not emit another open request.
+      await point(0).click();await playing();
+      await video.evaluate(el=>(el as HTMLVideoElement).pause());
       const openedPoint=!player?page.waitForRequest(request=>request.url().includes("/api/study/")&&request.postDataJSON()?.contentId==="v2"):undefined;
       await point(1).click();await playing();await openedPoint;
       assert.equal(await video.getAttribute("data-identity"),"same-video","same-source navigation retains the video element");
@@ -134,6 +138,18 @@ test("video point selection plays real media across same/different sources while
       assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).currentTime),0.5);
       assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);
       if (!player) {
+        await page.evaluate(() => {
+          const nativePlay = HTMLMediaElement.prototype.play;
+          (window as any).restorePlay = () => { HTMLMediaElement.prototype.play = nativePlay; };
+          HTMLMediaElement.prototype.play = function () {
+            if (!this.muted) return Promise.reject(new DOMException('Audible autoplay blocked', 'NotAllowedError'));
+            return nativePlay.call(this);
+          };
+        });
+        await mount({key:"confirmed-video-mode",autoPlayVideo:true});await ready();await playing();
+        assert.ok(await video.evaluate(el => (el as HTMLVideoElement).currentTime > 0 || !(el as HTMLVideoElement).paused), "confirmed Video mode starts playback without another click");
+        assert.equal(await video.evaluate(el => (el as HTMLVideoElement).muted), true, "browser policy rejection retries muted playback");
+        await page.evaluate(() => (window as any).restorePlay());
         await mount({key:"trial",entitled:false,trialGate:{pricingHref:"/subscription",recommendations:[],videoLimitSeconds:0.1}});await ready();
         await point(1).click();await page.getByRole("dialog").waitFor();
         assert.equal(await video.evaluate(el=>(el as HTMLVideoElement).paused),true);

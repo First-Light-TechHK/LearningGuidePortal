@@ -31,7 +31,8 @@ test("email registration requires a one-time verification token before sign-in",
     expect(linkedPendingGoogle.id).toBe(pendingGoogleAccount.id);
     expect(linkedPendingGoogle.status).toBe("active");
     expect(linkedPendingGoogle.emailVerifiedAt).toBeTruthy();
-    await expect(store.authenticateUser(pendingGoogleAccount.email, "strong-password")).resolves.toMatchObject({ id: pendingGoogleAccount.id });
+    expect(linkedPendingGoogle.passwordHash).toBeNull();
+    await expect(store.authenticateUser(pendingGoogleAccount.email, "strong-password")).rejects.toThrow("incorrect");
     const googleUser = await store.getOrCreateSocialUser({ provider: "google", providerSubject: "google-subject", email: "google@example.test", nickname: "Google User", locale: "en-GB" });
     expect(googleUser.nickname).toBe("google");
     expect(googleUser.status).toBe("active");

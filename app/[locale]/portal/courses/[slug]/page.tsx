@@ -1,9 +1,11 @@
+import { getLessonBookmarks } from "@/services/productStore";
+import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getMessages } from "@/lib/i18n/messages";
 import { localeFrom } from "@/lib/i18n/config";
-import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "@/lib/courseDetailPresentation";
+import { courseCategoryPlan, courseDurationParts, coursePrimaryLessonId } from "@/lib/courseDetailPresentation";
 import { formatPlanPrice } from "@/lib/planPricing";
 import { getCoursePage, getProductCourse, getCourseLearningMode, listPlans } from "@/services/productStore";
 import { CourseLearningModeDialog } from "@/components/portal/CourseLearningModeDialog";
@@ -35,8 +37,12 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const courseDetailHref = `/${locale}/portal/courses/${encodeURIComponent(slug)}`;
   const signInHref = `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(courseDetailHref)}`;
   const entryLessonId = (await searchParams)?.lessonEntry;
-  const entryLesson = page.pageState === "available" ? page.syllabus.find(lesson => lesson.lessonId === entryLessonId && lesson.openable) : null;
+  const hasCourseAccess = page.cta === "continue_learning";
+  const primaryLessonId = coursePrimaryLessonId(page);
   const needsMode = !savedMode && Boolean(course && availableCourseLearningModes(course).length > 1);
+  const entryLesson = page.pageState === "available" && entryLessonId
+    ? page.syllabus.find(lesson => lesson.lessonId === entryLessonId && lesson.openable)
+    : null;
   const entryDestination = course && entryLesson ? entryLesson.access === "entitled"
     ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(entryLesson.lessonId)}`
     : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(entryLesson.lessonId)}` : null;
@@ -47,11 +53,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const detail = messages.courseDetailDesign;
   const identity = page.identity;
   const catalogHref = `/${locale}/portal/courses`;
-  const hasCourseAccess = page.cta === "continue_learning";
-  const actionLesson = page.syllabus.find(lesson => lesson.lessonId === page.actionLessonId && lesson.openable && lesson.access === "entitled");
-  const learningHref = course && actionLesson ? needsMode
-    ? `${courseDetailHref}?lessonEntry=${encodeURIComponent(actionLesson.lessonId)}`
-    : `/${locale}/account/learn/${encodeURIComponent(course.id)}?lessonId=${encodeURIComponent(actionLesson.lessonId)}` : null;
+  const bookmarkSnapshot = user && course && hasCourseAccess ? await getLessonBookmarks(user.id, course.id) : undefined;
   const plans = page.pageState === "available" && !hasCourseAccess ? await listPlans() : [];
   const plan = courseCategoryPlan(plans, identity?.track || "");
   const pricingHref = `/${locale}/subscription?courseId=${encodeURIComponent(course?.id || slug)}${plan ? `&planId=${encodeURIComponent(plan.id)}` : ""}`;
@@ -61,7 +63,6 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const durationNumber = new Intl.NumberFormat(locale);
   const durationLabel = `${durationNumber.format(durationParts.hours)}${messages.homeDesign.hourShort}${durationNumber.format(durationParts.minutes)}${messages.homeDesign.minuteShort}`;
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
-    duration: courseLessonDuration(lesson),
     // Only public syllabus metadata, never protected lesson body/content.
     description: lesson.summary?.trim() || "",
   }] as const)) || []);
@@ -69,7 +70,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
       <StreamedContent>
-      {user && course && <CourseDetailSync slug={slug} snapshot={{ pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount }}/>}
+      {user && course && <CourseDetailSync slug={slug} snapshot={{ bookmarkRevision: page.bookmarkRevision, pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount, continuableLessonIds: page.syllabus.filter(lesson => lesson.continuable).map(lesson => lesson.lessonId), completedLessonIds: page.syllabus.filter(lesson => lesson.completed).map(lesson => lesson.lessonId) }}/>}
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} serverUserId={user?.id ?? null} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">
@@ -124,12 +125,16 @@ export default async function CourseDetailPage({ params, searchParams }: {
                         ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(lesson.lessonId)}`
                         : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(lesson.lessonId)}`;
                       const metadata = lessonMetadata.get(lesson.lessonId);
-                      return <article className={styles.lesson} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
+                      const bookmark = bookmarkSnapshot ? latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.lessonId, bookmarkSnapshot.versions[lesson.lessonId]) : undefined;
+                      const lastStudied = lesson.lessonId === page.actionLessonId && (page.openedLearningPointCount > 0 || Boolean(bookmark));
+                      return <article className={`${styles.lesson} ${lastStudied ? styles.lastStudied : ""}`} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
-                          <h3><span>{detail.lesson} {index + 1}</span>{lesson.title}</h3>
-                          <div className={styles.lessonDescription}><time>{metadata?.duration || "—"}</time>{metadata?.description ? <p>{metadata.description}</p> : null}</div>
+                          <h3><span>{detail.lesson} {index + 1}</span><span className={styles.lessonTitle} title={lesson.title}>{lesson.title}</span></h3>
+                          {metadata?.description && <p className={styles.lessonDescription} title={metadata.description}>{metadata.description}</p>}
                         </div>
-                        <CourseCurriculumAction lesson={lesson} href={lessonHref && !user ? signInHref : lessonHref && needsMode ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} />
+                        {lastStudied && <span className={styles.lastStudiedTag}>{detail.lastStudied}</span>}
+                        {lesson.completed ? <p className={styles.lessonBookmark} data-lesson-completed={lesson.lessonId}><Image src="/portal/course-detail/completed.svg" alt="" width={16} height={16}/>{detail.completed}</p> : bookmark && <p className={styles.lessonBookmark} data-lesson-bookmark={lesson.lessonId}><Image src={`/portal/course-detail/bookmark-${bookmark.mode}.svg`} alt="" width={16} height={16}/>{(bookmark.mode === "video" ? messages.lessonBookmark.video : messages.lessonBookmark.text).replace("{lp}", bookmark.lpNumber)}</p>}
+                        <CourseCurriculumAction lesson={lesson} href={lessonHref && !user ? signInHref : lessonHref && needsMode ? `/${locale}/portal/courses/${slug}?lessonEntry=${encodeURIComponent(lesson.lessonId)}` : lessonHref} className={styles.preview} copy={detail} cta={page.cta} actionLessonId={page.actionLessonId} primaryLessonId={primaryLessonId} />
                       </article>;
                     })}
                   </div>
@@ -141,10 +146,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
                 <h2>{detail.provides}</h2>
                 <ul>{(course?.features || detail.features).map((feature, index) => <li key={feature}><Image src={asset(["video", "exhibits", "assistant", "comprehension", "readings", "bilingual"][index % 6])} alt="" width={20} height={20} />{feature}</li>)}</ul>
               </section>
-              {hasCourseAccess ? <section className={styles.planStatus} data-course-plan-status="included">
-                <h2><Image src={asset("plan-check")} alt="" width={24} height={24}/>{detail.includedInPlan}</h2>
-                {learningHref && <Link className={styles.learningAction} href={learningHref}>{page.openedLearningPointCount > 0 ? detail.continueLearning : detail.startLearning}</Link>}
-              </section> : <section className={styles.subscription} data-course-plan-status="purchase">
+              {!hasCourseAccess && <section className={styles.subscription} data-course-plan-status="purchase">
                 <h2>{detail.included}</h2>
                 <p className={styles.price}>{price && plan ? <><strong>{price} /</strong><span>{plan.termMonths} {detail.months}</span></> : <span>{messages.pricingDesign.unavailable}</span>}</p>
                 <Link className={styles.benefits} href={pricingHref} data-course-cta-link={page.cta === "view_plans" ? "view_plans" : undefined} data-course-secondary-cta={page.secondaryCta || undefined}>{detail.benefits}</Link>
@@ -154,7 +156,7 @@ export default async function CourseDetailPage({ params, searchParams }: {
         )}
       </>}
       <PortalFooter locale={locale} />
-      {course && user && needsMode && entryDestination ? <CourseLearningModeDialog key={`${user.id}:${course.id}:${entryLessonId}`} courseId={course.id} locale={locale} signedIn destinationHref={entryDestination}/> : null}
+      {course && user && needsMode && entryDestination ? <CourseLearningModeDialog key={`${user.id}:${course.id}:${entryLessonId}:${entryLesson?.access}`} courseId={course.id} locale={locale} signedIn destinationHref={entryDestination} accessContext={entryLesson?.access === "entitled" ? "entitled" : "preview"}/> : null}
       </StreamedContent>
     </main>
   );

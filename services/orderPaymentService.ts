@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { OrderManagementError, type ManagedOrder, type OrderAction, type OrderActionResult, type PaymentReview } from "@/contracts/order-management";
 import { getStripe } from "./stripeClient";
+import { validateCreditCheckoutIdentity } from "./stripeCreditUpgradePayment";
 import { reconcileStripeCheckout } from "./stripeCheckoutPayment";
 import { reconcileStripeUpgradeInvoice, validateInvoice } from "./stripeUpgradePayment";
 import { getOrderForUser, listOrdersForUser, recordOrderPaymentReview, updateDemoOrderStatus, attachStripeUpgradeInvoice,
@@ -38,6 +39,7 @@ function hostedUrl(value: string | null | undefined, kind: "checkout" | "invoice
 }
 
 function validateCheckout(order: OwnedOrder, session: Stripe.Checkout.Session) {
+  if (order.upgradeCredit) return validateCreditCheckoutIdentity(order, session);
   const metadata = session.metadata;
   if (session.id !== order.stripeCheckoutSessionId || metadata?.app !== "learning_guide"
     || metadata.orderId !== order.id || metadata.userId !== order.userId || metadata.planId !== order.planId || metadata.quoteId !== order.quoteId

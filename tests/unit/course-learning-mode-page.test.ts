@@ -5,8 +5,8 @@ import { createRequire } from "node:module";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-test("first course entry skips the chooser for single-mode courses in both locales", async () => {
-  const state = { user: null as null | { id: string }, savedMode: null as string | null, pageState: "available", lessons: [] as unknown[] };
+test("course details wait for an explicit Lesson entry before showing the chooser in both locales", async () => {
+  const state = { user: null as null | { id: string }, savedMode: null as string | null, entitled: false, pageState: "available", lessons: [] as unknown[] };
   (globalThis as unknown as { modePageState: unknown }).modePageState = state;
   const bundle = await build({
     entryPoints: ["app/[locale]/portal/courses/[slug]/page.tsx"], bundle: true, write: false,
@@ -17,9 +17,9 @@ test("first course entry skips the chooser for single-mode courses in both local
         args.path.endsWith(".css") ? "export default {}"
         : args.path.endsWith("productStore") ? `
           export async function getProductCourse(){return {id:'course',sections:[{lessons:globalThis.modePageState.lessons}]}};
-          export async function getCourseLearningMode(){return globalThis.modePageState.savedMode};
+          export async function getLessonBookmarks(){return {bookmarks:{},versions:{}}};export async function getCourseLearningMode(){return globalThis.modePageState.savedMode};
           export async function listPlans(){return []};
-          export async function getCoursePage(){return {pageState:globalThis.modePageState.pageState,identity:{title:'Course',track:'Art',lessonCount:1,totalMinutes:1},syllabus:[{lessonId:'lesson',title:'Lesson',openable:true,access:'previewable'}],cta:'start_preview',accessState:'none',actionLessonId:'lesson'}};
+          export async function getCoursePage(){const entitled=globalThis.modePageState.entitled;return {pageState:globalThis.modePageState.pageState,identity:{title:'Course',track:'Art',lessonCount:1,totalMinutes:1},syllabus:[{lessonId:'lesson',title:'Lesson',openable:true,access:entitled?'entitled':'previewable'}],cta:entitled?'continue_learning':'start_preview',accessState:entitled?'active':'none',actionLessonId:'lesson'}};
         ` : args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.modePageState.user}"
         : args.path.endsWith("/s3") ? "export async function signCourseMediaUrl(){return ''}"
         : args.path === "next/navigation" ? "export function redirect(url){throw new Error('redirect:'+url)}"
@@ -48,12 +48,17 @@ test("first course entry skips the chooser for single-mode courses in both local
     if (!node || typeof node !== "object") return;
     if (Array.isArray(node)) { node.forEach(assertPlainLessonTitles); return; }
     if (node.type === "h3" && Array.isArray(node.props.children) && node.props.children[0]?.type === "span") {
-      assert.equal(typeof node.props.children[1],"string","syllabus lesson title must not be a navigation link");
+      const title = node.props.children[1];
+      assert.equal(title.type, "span", "syllabus lesson title must remain plain text");
+      assert.equal(title.props.children, "Lesson");
+      assert.equal(title.props.title, "Lesson");
+      assert.equal(title.props.href, undefined, "syllabus lesson title must not be a navigation link");
     }
     assertPlainLessonTitles(node.props?.children);
   }
-  for (const locale of ["en-GB", "zh-CN"]) for (const user of [null, { id: "learner" }]) {
-    state.user = user; state.savedMode = null; state.pageState = "available";
+  for (const locale of ["en-GB", "zh-CN"]) for (const user of [null, { id: "learner" }]) for (const entitled of user ? [false, true] : [false]) {
+    state.user = user; state.savedMode = null; state.entitled = entitled; state.pageState = "available";
+    const destination = entitled ? "account/learn/course" : "portal/courses/course/public-lesson";
     const render = (lessonEntry?: string) => page({ params: Promise.resolve({ locale, slug: "course" }), searchParams: Promise.resolve({ lessonEntry }) });
     for (const lessons of [
       [{ contents: [{ type: "video" }, { type: "text", active: false }] }],
@@ -61,10 +66,10 @@ test("first course entry skips the chooser for single-mode courses in both local
     ]) {
       state.lessons = lessons;
       assert.equal(hasChooser(await render()), false);
-      if (user) await assert.rejects(() => render("lesson"), /redirect:.*public-lesson.*lessonId=lesson/);
+      if (user) await assert.rejects(() => render("lesson"), { message: `redirect:/${locale}/${destination}?lessonId=lesson` });
     }
     state.lessons = [{ contents: [{ type: "video" }] }, { contents: [{ type: "text" }] }];
-    assert.equal(hasChooser(await render()), false);
+    assert.equal(hasChooser(await render()), false, "opening details must not prompt, including after subscription");
     const detail = await render();
     assertPlainLessonTitles(detail);
     const action = curriculumAction(detail);
@@ -76,7 +81,7 @@ test("first course entry skips the chooser for single-mode courses in both local
     if (user) {
       assert.equal(hasChooser(await render("lesson")), true);
       state.savedMode = "video";
-      await assert.rejects(()=>render("lesson"), /redirect:.*public-lesson.*lessonId=lesson/);
+      await assert.rejects(()=>render("lesson"), { message: `redirect:/${locale}/${destination}?lessonId=lesson` });
       assert.equal(hasChooser(await render()), false); state.savedMode = null;
     } else {
       await assert.rejects(()=>render("lesson"), error=> {

@@ -907,7 +907,7 @@ export function StudyGroupsApp({ locale, signedIn }: { locale: Locale; signedIn:
               <ul className={styles.memberList}>
                 {(selected.members || []).map((member) => <li key={member.userId}><span className={styles.memberAvatar}>{(member.displayName || copy.room.participant).slice(0, 1)}</span><span>{member.displayName || copy.room.participant}</span>{member.role === "host" ? <span className={styles.hostTag}>{copy.room.host}</span> : null}</li>)}
               </ul>
-              {selected.role === "host" ? <div className={`${styles.hostFoot} ${styles.hostFootWithCopy}`}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={openEditGroup}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
+              {selected.role === "host" ? <div className={styles.hostFoot}><p>{copy.hostingNote}</p><button className={styles.primary} type="button" onClick={openSchedule}>{copy.schedule}</button><button className={styles.ghost} type="button" onClick={openEditGroup}>{copy.editGroup}</button><button className={styles.danger} type="button" onClick={() => setDialog("cancel-group")}>{copy.cancelGroup}</button></div> : null}
               {selected.role === "member" ? <div className={styles.hostFoot}><button className={styles.ghost} type="button" disabled={mutating !== null} onClick={() => { setErrorCode("idle"); setDialog("leave-group"); }}>{copy.leaveGroup}</button></div> : null}
             </aside>
           </div>

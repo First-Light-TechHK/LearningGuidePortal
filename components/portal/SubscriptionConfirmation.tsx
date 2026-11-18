@@ -11,10 +11,10 @@ import Image from "next/image";
 import { formatPlanPrice } from "@/lib/planPricing";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
 import { getMessages } from "@/lib/i18n/messages";
-import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
+import type { StripeUpgradeProration, StripeUpgradeCredit } from "@/contracts/stripe-upgrade";
 import type { SubscriptionConfirmationDisplay } from "@/contracts/subscription-confirmation";
 
-type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number; sourceSubscriptionId?: string | null; upgradeProration?: StripeUpgradeProration };
+type Quote = { id: string; kind?: "purchase" | "trial" | "upgrade"; amountMinor: number; currency: string; creditMinor?: number; sourceSubscriptionId?: string | null; upgradeProration?: StripeUpgradeProration; upgradeCredit?: StripeUpgradeCredit };
 type Plan = { id: string; name: string; termMonths: number; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
 
 type Copy = {
@@ -30,7 +30,9 @@ export function SubscriptionConfirmation(props: Parameters<typeof SubscriptionCo
 
 function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeading, planSubtitle, scopeDescription, upgradeSource, display }: { locale: "en-GB" | "zh-CN"; quote: Quote; plan: Plan; copy: Copy; planHeading: string; planSubtitle?: string; scopeDescription: string; upgradeSource?: { name: string; validTo: string }; display?: SubscriptionConfirmationDisplay }) {
   const details = getMessages(locale).confirmationDetails;
-  const upgrade = getMessages(locale).upgradeConfirmation;
+  const upgradeCopy = getMessages(locale).upgradeConfirmation;
+  const upgrade = quote.upgradeCredit ? { ...upgradeCopy, retainDate: upgradeCopy.newCycle, credit: upgradeCopy.fullCredit,
+    consentSchedule: upgradeCopy.newConsentSchedule, renewalNote: upgradeCopy.newRenewalNote } : upgradeCopy;
   const dialog = useRef<HTMLDialogElement>(null);
   const router = useRouter();
   const [renewal, setRenewal] = useState(false);
@@ -98,7 +100,7 @@ function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeadin
 
   return <dialog ref={dialog} tabIndex={-1} className={`subscription-confirmation${isUpgrade ? " upgrade-confirmation" : ""}`} aria-labelledby="subscription-confirmation-title" aria-describedby="subscription-confirmation-intro" onKeyDown={keepFocusInDialog} onCancel={(event) => { event.preventDefault(); if (!busy) dismiss(); }}>
     <header className="confirmation-heading">
-      <h1 id="subscription-confirmation-title">{copy.title}</h1><p id="subscription-confirmation-intro" className={!isUpgrade ? "confirmation-intro-hidden" : undefined}>{isUpgrade ? upgrade.intro : copy.description}</p>
+      <h1 id="subscription-confirmation-title">{isUpgrade ? upgrade.title : copy.title}</h1><p id="subscription-confirmation-intro" className={!isUpgrade ? "confirmation-intro-hidden" : undefined}>{isUpgrade ? upgrade.intro : copy.description}</p>
       <button className="confirmation-close" type="button" aria-label={copy.close} title={copy.close} onClick={dismiss} disabled={busy}><Image src="/portal/subscription-confirmation/close.svg" width={20} height={20} alt="" /></button>
     </header>
     {isUpgrade && upgradeSource ? <>
@@ -107,7 +109,7 @@ function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeadin
         <div className="upgrade-source"><h2>{upgrade.source}</h2><strong>{getMessages(locale).pricingDesign.category}</strong><span>{sourceCategory}</span></div>
         <Image className="upgrade-arrow" src="/portal/subscription-confirmation/upgrade.svg" width={40} height={40} alt="" />
         <div className="upgrade-target"><h2>{upgrade.target}</h2><strong>{planHeading}</strong><p>{upgrade.points.replace("{points}", points).replace("{added}", Math.max(0, (plan.aiPoints ?? 0) - (source?.sourceAiPoints ?? 0)).toLocaleString(locale))}</p></div>
-      </div><div className="upgrade-validity"><h2>{upgrade.validDate}</h2><p>{upgrade.retainDate}</p><p>{upgrade.validUntil.replace("{date}", dateLabel(source?.validUntil || upgradeSource.validTo))}</p></div></section>
+      </div><div className="upgrade-validity"><h2>{upgrade.validDate}</h2><p>{upgrade.retainDate}</p><p>{quote.upgradeCredit ? upgrade.newTerm.replace("{months}", String(plan.termMonths)) : upgrade.validUntil.replace("{date}", dateLabel(source?.validUntil || upgradeSource.validTo))}</p></div></section>
       <section className="upgrade-price" aria-labelledby="upgrade-price-heading"><h2 id="upgrade-price-heading">{upgrade.price}</h2><dl>
         <div><dt>{remainingDays != null ? upgrade.remainingDays.replace("{days}", String(remainingDays)) : quote.upgradeProration ? upgrade.remainingPrice : upgrade.targetPrice}</dt><dd>+ {money(quote.upgradeProration?.debitMinor ?? plan.amountMinor)}</dd><Image className="upgrade-price-divider" src="/portal/subscription-confirmation/divider.svg" width={656} height={1} alt="" /></div>
         <div><dt>{remainingDays != null ? upgrade.creditDays.replace("{category}", sourceCategory).replace("{days}", String(remainingDays)) : upgrade.credit}</dt><dd>− {money(quote.upgradeProration?.creditMinor ?? quote.creditMinor ?? 0)}</dd><Image className="upgrade-price-divider" src="/portal/subscription-confirmation/divider-credit.svg" width={656} height={1} alt="" /></div>

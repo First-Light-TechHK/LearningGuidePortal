@@ -1,9 +1,32 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { courseCategoryPlan, courseDurationParts, courseLessonDuration } from "../../lib/courseDetailPresentation";
+import { courseCategoryPlan, courseDurationParts, courseLessonDuration, coursePrimaryLessonId } from "../../lib/courseDetailPresentation";
+import type { CourseSyllabusItem } from "../../lib/coursePage";
 import type { ProductPlan } from "../../services/productStore";
 import en from "../../messages/en-GB.json";
 import zh from "../../messages/zh-CN.json";
+
+test("curriculum highlights the current unfinished Lesson or the first available unfinished Lesson", () => {
+  const syllabus: CourseSyllabusItem[] = Array.from({ length: 5 }, (_, index) => ({
+    lessonId: String(index + 1), title: `Lesson ${index + 1}`, access: "entitled", openable: true,
+  }));
+  const page = { syllabus, actionLessonId: "1" };
+  assert.equal(coursePrimaryLessonId(page), "1");
+  syllabus[0].completed = true;
+  assert.equal(coursePrimaryLessonId(page), "2");
+  syllabus[2].completed = syllabus[4].completed = true;
+  page.actionLessonId = "5";
+  assert.equal(coursePrimaryLessonId(page), "2", "completed 1/3/5 leaves Lesson 2 as the next Start");
+  syllabus[3].continuable = true;
+  assert.equal(coursePrimaryLessonId(page), "4", "an unfinished checkpoint takes priority over a new Lesson");
+  page.actionLessonId = "2";
+  assert.equal(coursePrimaryLessonId(page), "2", "the current unfinished Lesson keeps its highlight");
+  for (const lesson of syllabus) lesson.completed = true;
+  assert.equal(coursePrimaryLessonId(page), "1", "all-complete keeps the first Review prominent");
+  for (const lesson of syllabus) lesson.access = "locked";
+  assert.equal(coursePrimaryLessonId(page), null);
+  assert.equal(coursePrimaryLessonId({ syllabus: [], actionLessonId: null }), null);
+});
 
 test("course detail shows real video duration or the lesson's configured minutes", () => {
   assert.equal(courseLessonDuration({ durationMinutes: 33, videoDurationSeconds: 1941 }), "32:21");

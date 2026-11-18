@@ -21,8 +21,10 @@ const STYLES_CSS = readFileSync(join(PROJECT_ROOT, "app", "styles.css"), "utf-8"
 test("Ask AI Tutor normalizes indented prose and moves Sources under the answer without changing fenced code", () => {
   const input = "![图](/api/user/courses/modeling-life/images/22222222-2222-4222-8222-222222222222.png)\n\n    **标量**是一个数。[1]\n    - 正数方向不变\n\n    Sources\n    [1] Lesson 1\n\n```text\n    **code**\n```";
   const { markdown, sources } = tutorAnswerParts(input);
-  assert.match(markdown, /\n\n\*\*标量\*\*是一个数/);
-  assert.match(markdown, /\n\n- 正数方向不变/);
+  // Indentation stays in the text but means nothing to the parser (remarkTutorNoIndentedCode);
+  // the list still gets its own block.
+  assert.match(markdown, /\n\n[ \t]*\*\*标量\*\*是一个数/);
+  assert.match(markdown, /\n\n[ \t]*- 正数方向不变/);
   // The same source list the Study Group room shows, not a quote inside the prose.
   assert.deepEqual(sources, ["[1] Lesson 1"]);
   assert.doesNotMatch(markdown, /Sources/);
@@ -67,7 +69,7 @@ function startServer() {
       request.on("end", () => {
         postBodies.push(JSON.parse(body));
         // 助手回复：block LaTeX（多行 $$）+ 列表 + 行内公式
-        const answer = "Here is the formula:\n\n$$\nE = mc^2\n$$\n\nKey points:\n1. Energy\n2. Mass\n3. Speed of light $c$\n";
+        const answer = "Here is the formula:\n\n$$\nE = mc^2\n$$\n\nKey points:\n1. Energy\n2. Mass\n3. Speed of light $c$\n\n| Symbol | Meaning |\n| --- | --- |\n| E | Energy |\n\n![diagram](/api/user/courses/course/images/22222222-2222-4222-8222-222222222222.png)\n\n[Source: Lesson 1]";
         response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "X-Conversation-Id": "conversation-md" });
         response.end(answer);
       });
@@ -124,6 +126,9 @@ test("welcome, assistant and user bubbles render LaTeX and markdown", async () =
     assert.ok(await page.locator(".tutor-message.assistant .katex-display").count() >= 1, "assistant bubble should render block LaTeX");
     // assistant 气泡应有列表
     assert.ok(await page.locator(".tutor-message.assistant ol").count() >= 1, "assistant bubble should render ordered list");
+    assert.equal(await page.locator(".tutor-message.assistant table tr").count(), 2, "assistant bubble should keep the table after the list");
+    assert.match(await page.locator(".tutor-message.assistant img").getAttribute("src") || "", /\/api\/ai-tutor\/images\/22222222-2222-4222-8222-222222222222\.png\?courseId=course/);
+    assert.deepEqual(await page.locator(".tutor-message.assistant .tutor-answer-sources p").allTextContents(), ["Sources", "Lesson 1"]);
     // 与学习小组同一个渲染器和同一套 .tutor-answer 样式
     assert.ok(await page.locator(".tutor-message.assistant .tutor-answer").count() >= 1, "assistant bubble should use the shared TutorAnswer");
 

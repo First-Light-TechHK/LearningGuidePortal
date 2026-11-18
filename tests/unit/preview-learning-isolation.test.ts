@@ -47,7 +47,7 @@ test("historical preview rows do not become progress after purchase and mixed ge
   assert.deepEqual(after.studyRecords, before.studyRecords, "a preview-only aggregate is not promoted by mode selection");
   await store.recordStudyEvent({ ...event(user.id, "actual-learning"), seconds: 0 });
   let view = await store.getLearningOverview(user.id);
-  assert.equal(view.courses[0].progress, 50); assert.equal(view.courses[0].totalSeconds, 0);
+  assert.equal(view.courses[0].progress, 0); assert.equal(view.courses[0].totalSeconds, 0);
   data = await readProductData();
   assert.equal(data.studyRecords.filter((item: { userId: string }) => item.userId === user.id).length, 1);
   assert.equal(data.studyEvents.some((item: { id: string }) => item.id === "legacy-preview-event"), true);
@@ -57,7 +57,7 @@ test("historical preview rows do not become progress after purchase and mixed ge
   const actual = data.studyEvents.find((item: { clientEventId: string }) => item.clientEventId === "actual-learning"); delete actual.accessContext;
   await writeProductData(data);
   view = await store.getLearningOverview(user.id);
-  assert.equal(view.courses[0].progress, 50); assert.equal(view.courses[0].totalSeconds, 0);
+  assert.equal(view.courses[0].progress, 0); assert.equal(view.courses[0].totalSeconds, 0);
   assert.equal((await store.getCoursePage(COURSE_ID, user.id)).actionLessonId, PREVIEW_LP);
 });
 

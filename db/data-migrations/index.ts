@@ -1,3 +1,4 @@
+import * as lessonBookmarks from "./020_lesson_bookmarks";
 import type { DataMigration } from "./types";
 import * as addStoicism from "./001_add_stoicism";
 import * as gitDevRdsProbe from "./002_git_dev_rds_probe";
@@ -23,5 +24,5 @@ function supersededMediaImport(migration: DataMigration): DataMigration {
   return { ...migration, touches: ["courses"], apply: () => [{ action: "skip", kind: "course", id: "modeling-life", reason: "superseded-by-008_upgrade_modeling_life" }] };
 }
 
-export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, fixModelingLifeMediaUrls, logicalModelingLifeMedia, shortenDevScienceSubscription, addModelingLifeLesson2Assessments, addModelingLifeLesson1TextExhibits, fixModelingLifeVideoStarts, addModelingLifeLesson2Readings, addModelingLifeLesson2Exhibits];
+export const dataMigrations: DataMigration[] = [addStoicism, gitDevRdsProbe, addQuintusHoratiusFlaccus, migrateMvpMediaToAws, backfillLessonSummaries, supersededMediaImport(addModelingLifeCourse), supersededMediaImport(repairModelingLifeMedia), upgradeModelingLife, fixModelingLifeExhibits, fixModelingLifeMediaUrls, logicalModelingLifeMedia, shortenDevScienceSubscription, addModelingLifeLesson2Assessments, addModelingLifeLesson1TextExhibits, fixModelingLifeVideoStarts, addModelingLifeLesson2Readings, addModelingLifeLesson2Exhibits, lessonBookmarks];
 export { type DataChange, type DataMigration, type DataMigrationContext, type DataMigrationDomain } from "./types";

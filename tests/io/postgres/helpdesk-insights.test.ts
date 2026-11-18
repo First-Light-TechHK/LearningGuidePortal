@@ -11,6 +11,7 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, test } from "node:test";
 import { parseFaqRelease, parseInsightsQuery, parseSuggestTurn, type AdminSuggestReply, type AdminSuggestRequest, type FaqRelease } from "../../../contracts/helpdesk";
@@ -89,7 +90,7 @@ test("the runtime bootstrap creates the 024 objects and the artifact re-applies 
 });
 
 async function coldStartBootstrap() {
-  const db = path.join(process.cwd(), "services", "persistence", "db.ts");
+  const db = pathToFileURL(path.join(process.cwd(), "services", "persistence", "db.ts")).href;
   const script = `const loaded = await import(${JSON.stringify(db)}); const { ensureSchema, getPool } = loaded.ensureSchema ? loaded : loaded.default; await ensureSchema(); await getPool().end();`;
   await promisify(execFile)(process.execPath, ["--import", "tsx", "--require", path.join(process.cwd(), "scripts", "register-tsconfig-paths.cjs"), "--input-type=module", "-e", script], { env: process.env, timeout: 60_000 });
 }

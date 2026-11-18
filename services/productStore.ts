@@ -1,3 +1,5 @@
+import { lessonBookmarkInput, LessonBookmarkError, type LessonBookmarks } from "@/contracts/lesson-bookmark";
+import { lessonBookmarkContext, resolveBookmarkLp } from "./lessonBookmarkPolicy";
 import { PaymentError, subscriptionPrices, type StripePriceSnapshot, type VerifiedStripeEvent, type PlanPurchaseAvailability } from "@/contracts/payment";
 import type { PaymentReview, OrderAction } from "@/contracts/order-management";
 import { entitledStudyHistory } from "@/lib/entitledStudyHistory";
@@ -5,11 +7,11 @@ import { ProfileError } from "@/contracts/profile";
 import { SubscriptionManagementError, type SubscriptionChange, type SubscriptionRenewalChange } from "@/contracts/subscription-management";
 import { buildSubscriptionSelection, subscriptionCoverage } from "./subscriptionSelection";
 import { withPlanAiPoints } from "./planAiPoints";
-import { highestProgressLesson } from "./courseProgressAction";
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { courseModePosition } from "@/lib/courseModePosition";
 import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
-import type { StripeUpgradeProration } from "@/contracts/stripe-upgrade";
+import type { StripeUpgradeProration, StripeUpgradeCredit } from "@/contracts/stripe-upgrade";
+import { resolveUpgradeCredit } from "./stripeUpgradeCreditPrice";
 import { previewStripeUpgrade } from "./stripeUpgradeProration";
 import { resolveLegacyUpgradeSourcePrice } from "./stripeUpgradeSource";
 import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
@@ -32,7 +34,6 @@ import { isProductionEnvironment, paymentMode } from "./runtimeConfig";
 import { defaultPortalContent, withSharedBannerImages, type PortalContent, type PortalTranslation } from "@/lib/portalContent";
 import {
   accessStateFromSubscriptions,
-  courseProgressFromUniqueLearningPoints,
   overviewEmptyState,
   resolveOverviewCard,
   uniqueOpenedLearningPointIds,
@@ -48,7 +49,7 @@ import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backo
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 import { applyDataMigrations } from "./dataMigrations";
 import { isValidAccountName, normaliseName, validateAccountName } from "@/lib/nameValidation";
-import { CourseLearningModeError, isCourseLearningMode, type CourseLearningMode, type CourseLearningModeResult } from "@/contracts/course-learning-mode";
+import { CourseLearningModeError, isCourseLearningMode, isCourseLearningModeContext, type CourseLearningMode, type CourseLearningModeContext, type CourseLearningModePreferences, type CourseLearningModeResult } from "@/contracts/course-learning-mode";
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -59,6 +60,8 @@ const TRIAL_DAYS = 3;
 
 export type Locale = "en-GB" | "zh-CN";
 export type ProductUser = {
+  courseLearningModePreferences?: Record<string, CourseLearningModePreferences>;
+  /** Historical unscoped choices are retained, but cannot establish a formal-learning preference. */
   courseLearningModes?: Record<string, CourseLearningMode>;
   id: string;
   email: string | null;
@@ -133,6 +136,7 @@ export type ProductPlan = {
   trialEligible?: boolean;
 };
 export type ProductQuote = {
+  upgradeCredit?: StripeUpgradeCredit;
   upgradeProration?: StripeUpgradeProration;
   upgradePrice?: StripePriceSnapshot;
   price?: StripePriceSnapshot;
@@ -149,6 +153,12 @@ export type ProductQuote = {
   createdAt: string;
 };
 export type ProductOrder = {
+  refundedAmountMinor?: number;
+  stripeRefundChargeId?: string;
+  upgradeCredit?: StripeUpgradeCredit;
+  upgradeCancellation?: { state: "pending" | "completed"; attempts: number; nextAttemptAt: string; lastFailureAt?: string };
+  listAmountMinor?: number;
+  taxAmountMinor?: number;
   paymentReview?: PaymentReview;
   cancellation?: { actorId: string; actorRole: "learner" | "operator"; createdAt: string };
   upgradeProration?: StripeUpgradeProration;
@@ -182,6 +192,7 @@ export type ProductOrder = {
 };
 export type ProductOrderActivity = { id: string; orderId: string; operatorId: string; actorRole?: "learner" | "operator"; deduplicationKey?: string; action: "refund" | "resynchronise" | "check_payment" | "resume_payment" | "cancel_payment"; result: "succeeded" | "failed" | "processing"; reason: string | null; providerReference: string | null; createdAt: string };
 export type ProductSubscription = {
+  supersededBy?: string;
   id: string;
   userId: string;
   planId: string;
@@ -202,6 +213,7 @@ export type ProductSubscription = {
   renewalChange?: SubscriptionRenewalChange;
 };
 export type ProductEntitlement = {
+  subscriptionId?: string;
   id: string;
   userId: string;
   courseId: string;
@@ -213,6 +225,7 @@ export type ProductEntitlement = {
   device?: "pc" | "mobile";
 };
 export type ProductStudyRecord = {
+  lessonBookmarks?: LessonBookmarks;
   accessContext?: "entitled" | "preview";
   selectedMode?: CourseLearningMode;
   highestProgress?: HighestCourseProgress;
@@ -291,6 +304,7 @@ export type ProductPaymentSettings = {
 };
 
 export type ProductData = {
+  stripeResetReferences?: { sessions: string[]; subscriptions: string[]; invoices: string[] };
   catalogue?: CatalogueEntry[];
   catalogueMigrations?: string[];
   dataMigrations?: string[];
@@ -466,9 +480,9 @@ function entitlementCoversCourse(entitlement: Pick<ProductEntitlement, "courseId
   return (entitlement.scopeId || entitlement.courseId) === course.id;
 }
 
-function entitlementForPlan(userId: string, plan: ProductPlan, source: ProductEntitlement["source"], validTo: string): ProductEntitlement {
+function entitlementForPlan(userId: string, plan: ProductPlan, source: ProductEntitlement["source"], validTo: string, subscriptionId: string): ProductEntitlement {
   const scope = planScope(plan);
-  return { id: id("entitlement"), userId, courseId: plan.courseId, state: "active", source, validTo, scope: scope.scope, scopeId: scope.scopeId, device: plan.device };
+  return { id: id("entitlement"), subscriptionId, userId, courseId: plan.courseId, state: "active", source, validTo, scope: scope.scope, scopeId: scope.scopeId, device: plan.device };
 }
 
 function studyHistoryFor(data: ProductData, userId: string, course: ProductCourse) {
@@ -510,7 +524,21 @@ function sameScope(left: { courseId: string; scope?: ProductEntitlement["scope"]
 }
 
 function entitlementMatchesSubscription(entitlement: ProductEntitlement, subscription: ProductSubscription) {
-  return entitlement.userId === subscription.userId && entitlement.source === subscription.source && sameScope(entitlement, subscription);
+  return entitlement.subscriptionId === subscription.id && entitlement.userId === subscription.userId && entitlement.source === subscription.source && sameScope(entitlement, subscription);
+}
+
+// Only unambiguous historical evidence may associate an old access grant.
+// This projection is persisted by the next aggregate transaction, not by a read.
+function bindLegacyEntitlements(data: ProductData) {
+  for (const entitlement of data.entitlements) {
+    if (entitlement.subscriptionId) continue;
+    const candidates = data.subscriptions.filter(subscription => subscription.userId === entitlement.userId
+      && subscription.source === entitlement.source && sameScope(entitlement, subscription)
+      && (!entitlement.device || !subscription.device || entitlement.device === subscription.device));
+    const period = candidates.filter(subscription => subscription.validTo === entitlement.validTo);
+    const matches = period.length ? period : candidates;
+    if (matches.length === 1) entitlement.subscriptionId = matches[0].id;
+  }
 }
 
 function alreadySubscribedToPlan(data: ProductData, userId: string, plan: ProductPlan) {
@@ -535,7 +563,7 @@ function alreadySubscribedToPlan(data: ProductData, userId: string, plan: Produc
 
 function assertPlanPurchaseAllowed(data: ProductData, userId: string, plan: ProductPlan) {
   if (alreadySubscribedToPlan(data, userId, plan)) throw new PaymentError("already_subscribed");
-  const pendingUpgrade = data.orders.find(order => order.userId === userId && order.upgradeProration && order.status === "pending");
+  const pendingUpgrade = data.orders.find(order => order.userId === userId && (order.upgradeProration || order.upgradeCredit) && order.status === "pending");
   if (["category", "everything"].includes(planScope(plan).scope) && pendingUpgrade) throw new PaymentError("upgrade_in_progress", 409, undefined, pendingUpgrade.id);
   if (planScope(plan).scope === "everything" && subscriptionCoverage(data.subscriptions, data.plans, userId).categoryIds.length >= 2) throw new PaymentError("upgrade_unavailable");
 }
@@ -596,6 +624,7 @@ export async function readProductAggregate() {
 export async function ensureProductData() {
   const current = await readProductAggregate();
   await applyDataMigrations(current);
+  bindLegacyEntitlements(current);
   return current;
 }
 
@@ -610,13 +639,22 @@ export async function persistCatalogueMigrations() {
 export async function getCourseLearningMode(userId: string, courseId: string): Promise<CourseLearningMode | null> {
   const data = await ensureProductData();
   const user = data.users.find(item => item.id === userId && item.status === "active");
-  const modes = user?.courseLearningModes;
-  const mode = modes && Object.hasOwn(modes, courseId) ? modes[courseId] : null;
+  const course = data.courses.find(item => item.id === courseId && item.status === "published");
+  if (!user || !course) return null;
+  const entitled = Boolean(activeEntitlement(data, userId, course.id));
+  const preferences = user.courseLearningModePreferences;
+  const scoped = preferences && Object.hasOwn(preferences, courseId) ? preferences[courseId] : undefined;
+  // Only verified formal Study history can recover an older formal preference.
+  // The legacy shared User field cannot tell a preview choice from a paid one.
+  const record = entitled ? studyHistoryFor(data, userId, course).record : undefined;
+  const mode = scoped?.[entitled ? "entitled" : "preview"] || record?.selectedMode || record?.currentMode;
   return isCourseLearningMode(mode) ? mode : null;
 }
 
-export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string): Promise<CourseLearningModeResult> {
+export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string, expectedContext?: CourseLearningModeContext, intent?: "entry"): Promise<CourseLearningModeResult> {
   if (!isCourseLearningMode(mode)) throw new CourseLearningModeError("invalid");
+  if (intent !== undefined && (intent !== "entry" || !lessonId)) throw new CourseLearningModeError("invalid");
+  if (expectedContext !== undefined && !isCourseLearningModeContext(expectedContext)) throw new CourseLearningModeError("invalid");
   if (lessonId !== undefined && (typeof lessonId !== "string" || !lessonId.trim() || lessonId.length > 200)) throw new CourseLearningModeError("invalid");
   return editData(data => {
     const user = data.users.find(item => item.id === userId && item.status === "active");
@@ -624,6 +662,8 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
     const course = data.courses.find(item => item.id === courseId && item.status === "published");
     if (!course) throw new CourseLearningModeError("notFound");
     const entitled = Boolean(activeEntitlement(data, userId, course.id));
+    const accessContext = entitled ? "entitled" : "preview";
+    if (expectedContext !== undefined && expectedContext !== accessContext) throw new CourseLearningModeError("access_changed");
     const history = studyHistoryFor(data, userId, course);
     const record = entitled ? history.record : undefined;
     let position: CourseLearningModeResult["position"];
@@ -638,9 +678,13 @@ export async function saveCourseLearningMode(userId: string, courseId: string, m
         const content = preview.contents?.find(content => content.id === point.contentId);
         return Boolean(content && (content.startSeconds || 0) < (preview.preview?.videoLimitSeconds ?? 60));
       });
-      position = courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
+      position = intent === "entry" ? accessiblePoints.find(point => point.lessonId === lessonId) || accessiblePoints[0] || null
+        : courseModePosition({ course, mode, userId, record, events: entitled ? history.events : [], fallbackLessonId: lessonId, accessiblePoints });
+      if (intent === "entry" && !position) throw new CourseLearningModeError("invalid");
     }
-    user.courseLearningModes = { ...user.courseLearningModes, [course.id]: mode };
+    const previous = user.courseLearningModePreferences;
+    const scoped = previous && Object.hasOwn(previous, course.id) ? previous[course.id] : {};
+    user.courseLearningModePreferences = { ...previous, [course.id]: { ...scoped, [accessContext]: mode } };
     if (record) {
       const index = data.studyRecords.findIndex(item => item.id === record.id);
       if (index >= 0) data.studyRecords[index] = record;
@@ -867,6 +911,12 @@ export async function getOrCreateSocialUser(input: SocialUserInput) {
       // Google's verified identity proves control of the same address. Disabled
       // and WeChat accounts still require the explicit conflict path.
       if (input.provider === "google" && (emailUser.status === "active" || emailUser.status === "pending") && (emailUser.status === "pending" || emailUser.emailVerifiedAt)) {
+        if (emailUser.status === "pending" && !emailUser.emailVerifiedAt) {
+          emailUser.passwordHash = null;
+          data.sessions = data.sessions.filter(session => session.userId !== emailUser.id);
+          data.verificationTokens = data.verificationTokens.filter(token => token.userId !== emailUser.id);
+          data.passwordResetTokens = data.passwordResetTokens.filter(token => token.userId !== emailUser.id);
+        }
         emailUser.status = "active";
         emailUser.emailVerifiedAt ||= now();
         data.accounts.push({ id: id("account"), userId: emailUser.id, provider: input.provider, providerSubject: input.providerSubject, createdAt: now() });
@@ -1182,6 +1232,7 @@ export async function confirmEmailBinding(rawToken: string, options: { confirmed
       const history = [data.quotes, data.orders, data.subscriptions, data.entitlements, data.studyRecords, data.studyEvents, data.conversations];
       if (history.some(rows => rows.some(row => row.userId === user.id))
         || Object.keys(user.courseLearningModes || {}).length
+        || Object.keys(user.courseLearningModePreferences || {}).length
         || data.courses.some(course => course.authorIds?.includes(user.id))
         || data.authoringActivities?.some(row => row.actorId === user.id || row.targetUserId === user.id)
         || data.notifications.some(row => row.userId === user.id && row.title !== "Welcome to Learning Guide")
@@ -1272,12 +1323,15 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       completedLessonIds,
     });
     const record = history.record;
-    const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? highestProgressLesson(course, record, courseEvents) : null;
-    if (record?.knowledgePositions && record.currentMode) {
-      const position = knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]);
-      return { ...page, actionLessonId, progress:record.progress, openedLearningPointCount:position.current, totalLearningPoints:position.total };
-    }
-    return { ...page, progress: record ? Math.max(record.progress, page.progress || 0) : page.progress, actionLessonId };
+    const continuable = new Set(Object.entries(record?.lessonBookmarks || {}).filter(([lessonId, modes]) =>
+      !completedLessonIds.includes(lessonId) && Object.values(modes).some(bookmark => {
+        try { return bookmark.contentVersion === lessonBookmarkContext(course, lessonId, bookmark.mode).contentVersion; }
+        catch (error) { if (error instanceof LessonBookmarkError) return false; throw error; }
+      })).map(([lessonId]) => lessonId));
+    const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? record?.currentLessonId || course.sections.flatMap(section => section.lessons)[0]?.id || null : null;
+    const bookmarkRevision = Object.values(record?.lessonBookmarks || {}).reduce((sum, modes) => sum + Object.values(modes).reduce((total, bookmark) => total + bookmark.revision, 0), 0);
+    return { ...page, bookmarkRevision, syllabus: page.syllabus.map(lesson => lesson.access !== "entitled" ? lesson : completedLessonIds.includes(lesson.lessonId)
+      ? { ...lesson, completed: true } : continuable.has(lesson.lessonId) ? { ...lesson, continuable: true } : lesson), progress: 0, actionLessonId };
   });
 }
 
@@ -1406,7 +1460,7 @@ function grantTrialAccess(data: ProductData, userId: string, plan: ProductPlan) 
   const trialEnd = new Date(validFrom);
   trialEnd.setUTCDate(trialEnd.getUTCDate() + TRIAL_DAYS);
   const subscription = subscriptionForPlan(userId, plan, "trial", validFrom, trialEnd.toISOString());
-  const entitlement = entitlementForPlan(userId, plan, "trial", subscription.validTo);
+  const entitlement = entitlementForPlan(userId, plan, "trial", subscription.validTo, subscription.id);
   data.subscriptions.unshift(subscription);
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Trial activated", body: `${course.title} is available for ${TRIAL_DAYS} days.`, readAt: null, createdAt: now() });
@@ -1471,7 +1525,7 @@ function upgradeCalculation(data: ProductData, userId: string, subscriptionId: s
   return { source, sourcePlan, target, paidOrder, sourcePrice, sourceCheckoutOrder, creditMinor, amountMinor };
 }
 
-export async function createUpgradeQuote(userId: string, subscriptionId: string) {
+export async function createProrationUpgradeQuote(userId: string, subscriptionId: string) {
   const quoteData = await ensureProductData();
   const pendingUpgrade = quoteData.orders.find(order => order.userId === userId && order.status === "pending" && order.upgradeProration && order.sourceSubscriptionId === subscriptionId);
   if (pendingUpgrade) throw new PaymentError("upgrade_in_progress", 409, undefined, pendingUpgrade.id);
@@ -1517,16 +1571,45 @@ export async function createUpgradeQuote(userId: string, subscriptionId: string)
   });
 }
 
+export async function createUpgradeQuote(userId: string, subscriptionId: string) {
+  const preliminary = upgradeCalculation(await ensureProductData(), userId, subscriptionId);
+  if (paymentMode() !== "stripe") throw new PaymentError("payment_unavailable", 503, "upgrade_stripe_mode_required");
+  const source = preliminary.source;
+  if (!source.stripeSubscriptionId || !source.stripeCustomerId) throw new PaymentError("upgrade_unavailable");
+  const original = preliminary.sourceCheckoutOrder;
+  const sourcePriceId = preliminary.sourcePrice?.stripePriceId || (original?.stripeCheckoutSessionId ? await resolveLegacyUpgradeSourcePrice({
+    checkoutSessionId: original.stripeCheckoutSessionId, orderId: original.id, userId, planId: original.planId,
+    subscriptionId: source.stripeSubscriptionId, customerId: source.stripeCustomerId, amountMinor: original.amountMinor, currency: original.currency,
+  }) : undefined);
+  if (!sourcePriceId) throw new PaymentError("upgrade_unavailable");
+  const price = await resolveSubscriptionPrice(preliminary.target.id);
+  const upgradeCredit = await resolveUpgradeCredit({ sourceOrderId: preliminary.paidOrder.id, subscriptionId: source.stripeSubscriptionId,
+    customerId: source.stripeCustomerId, sourcePriceId, paidAmountMinor: preliminary.paidOrder.amountMinor, price });
+  return editData(data => {
+    const current = upgradeCalculation(data, userId, subscriptionId);
+    if (current.paidOrder.id !== upgradeCredit.sourceOrderId || current.source.stripeSubscriptionId !== upgradeCredit.sourceStripeSubscriptionId
+      || current.source.stripeCustomerId !== upgradeCredit.customerId || current.target.id !== preliminary.target.id) throw new PaymentError("quote_expired");
+    const blocking = data.orders.find(order => order.userId === userId && order.status === "pending" && order.kind === "upgrade");
+    if (blocking) throw new PaymentError("upgrade_in_progress", 409, undefined, blocking.id);
+    const quote: ProductQuote = { id: id("quote"), userId, planId: current.target.id, kind: "upgrade", sourceSubscriptionId: subscriptionId,
+      price, upgradeCredit, creditMinor: upgradeCredit.creditMinor, amountMinor: upgradeCredit.amountDueMinor, currency: "usd",
+      planSnapshot: { ...current.target, amountMinor: price.amountMinor, currency: "usd" }, createdAt: now(),
+      expiresAt: new Date(Math.min(Date.now() + QUOTE_MINUTES * 60000, upgradeCredit.sourcePeriodEnd * 1000)).toISOString() };
+    data.quotes.unshift(quote);
+    return { quote, plan: quote.planSnapshot!, sourcePlan: current.sourcePlan };
+  });
+}
+
 export async function getQuoteForUser(userId: string, quoteId: string) {
   const data = await ensureProductData();
   const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
   if (!quote) return null;
-  const resumable = quote.upgradeProration && data.orders.some(order => order.userId === userId && order.quoteId === quote.id && order.upgradeProration && ["pending", "paid"].includes(order.status));
+  const resumable = (quote.upgradeProration || quote.upgradeCredit) && data.orders.some(order => order.userId === userId && order.quoteId === quote.id && (order.upgradeProration || order.upgradeCredit) && ["pending", "paid"].includes(order.status));
   if (new Date(quote.expiresAt) <= new Date() && !resumable) return null;
   const plan = quote.planSnapshot || withPlanAiPoints(data.plans).find((item) => item.id === quote.planId);
   const source = quote.kind === "upgrade" ? data.subscriptions.find(item => item.id === quote.sourceSubscriptionId && item.userId === userId) : undefined;
   const sourcePlan = source ? withPlanAiPoints(data.plans).find(item => item.id === source.planId) : undefined;
-  const upgradeOrder = quote.upgradeProration ? data.orders.find(order => order.userId === userId && order.quoteId === quote.id && order.paymentMode === "stripe" && order.upgradeProration) : undefined;
+  const upgradeOrder = (quote.upgradeProration || quote.upgradeCredit) ? data.orders.find(order => order.userId === userId && order.quoteId === quote.id && order.paymentMode === "stripe" && (order.upgradeProration || order.upgradeCredit)) : undefined;
   return plan ? { quote, plan, sourceSubscription: source, sourcePlan, upgradeOrder } : null;
 }
 
@@ -1564,7 +1647,7 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     const subscription = subscriptionForPlan(userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: null });
     order.servicePeriodStart = subscription.validFrom;
     order.servicePeriodEnd = subscription.validTo;
-    const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
+    const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo, subscription.id);
     data.subscriptions.unshift(subscription);
     data.subscriptions.forEach((item) => { if (item.userId === userId && item.source === "trial" && item.state === "active" && item.planId === plan.id) item.state = "expired"; });
     data.entitlements.forEach((item) => {
@@ -1601,7 +1684,7 @@ function fulfilUpgrade(data: ProductData, userId: string, order: ProductOrder, t
   const subscription = subscriptionForPlan(userId, targetPlan, "purchase", validFrom, validTo, { stripeSubscriptionId: order.stripeSubscriptionId || null, stripeCustomerId: source.stripeCustomerId || null });
   order.servicePeriodStart = subscription.validFrom;
   order.servicePeriodEnd = subscription.validTo;
-  const entitlement = entitlementForPlan(userId, targetPlan, "purchase", subscription.validTo);
+  const entitlement = entitlementForPlan(userId, targetPlan, "purchase", subscription.validTo, subscription.id);
   data.subscriptions.unshift(subscription);
   data.entitlements.unshift(entitlement);
   data.notifications.unshift({ id: id("notification"), userId, title: "Subscription upgraded", body: "Your PC Everything access is now available.", readAt: null, createdAt: now() });
@@ -1754,14 +1837,14 @@ export async function createPendingStripeUpgradeOrderFromQuote(userId: string, q
     if (!plan) throw new Error("Plan not found.");
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe" && item.kind === "upgrade" && ["pending", "paid"].includes(item.status));
     if (existing?.status === "paid") return { order: existing, plan };
-    if (new Date(quote.expiresAt) <= new Date() && !existing?.upgradeProration) throw new PaymentError("quote_expired");
+    if (new Date(quote.expiresAt) <= new Date() && !existing?.upgradeProration && !existing?.upgradeCredit) throw new PaymentError("quote_expired");
     upgradeCalculation(data, userId, quote.sourceSubscriptionId || "", Boolean(existing?.upgradeProration));
     if (existing) return { order: existing, plan };
     const blocking = data.orders.find(item => item.userId === userId && item.status === "pending"
-      && (item.sourceSubscriptionId === quote.sourceSubscriptionId && item.kind === "upgrade" && item.upgradeProration
-        || item.kind === "purchase" && (item.planSnapshot || data.plans.find(plan => plan.id === item.planId))?.scope === "category"));
-    if (quote.upgradeProration && blocking) throw new PaymentError("upgrade_in_progress", 409, undefined, blocking.id);
-    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "upgrade", price: quote.price, upgradePrice: quote.upgradePrice, upgradeProration: quote.upgradeProration, planSnapshot: quote.planSnapshot, sourceSubscriptionId: quote.sourceSubscriptionId || null, creditMinor: quote.creditMinor || 0, stripeCheckoutSessionId: null, stripeSubscriptionId: quote.upgradeProration?.subscriptionId || null, stripePaymentIntentId: null, createdAt: now() };
+      && (item.sourceSubscriptionId === quote.sourceSubscriptionId && item.kind === "upgrade" && (item.upgradeProration || item.upgradeCredit)
+        || item.kind === "purchase" && ["category", "everything"].includes((item.planSnapshot || data.plans.find(plan => plan.id === item.planId))?.scope || "")));
+    if ((quote.upgradeProration || quote.upgradeCredit) && blocking) throw new PaymentError("upgrade_in_progress", 409, undefined, blocking.id);
+    const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "upgrade", price: quote.price, upgradePrice: quote.upgradePrice, upgradeProration: quote.upgradeProration, upgradeCredit: quote.upgradeCredit, planSnapshot: quote.planSnapshot, sourceSubscriptionId: quote.sourceSubscriptionId || null, creditMinor: quote.creditMinor || 0, stripeCheckoutSessionId: null, stripeSubscriptionId: quote.upgradeProration?.subscriptionId || null, stripePaymentIntentId: null, createdAt: now() };
     data.orders.unshift(order);
     return { order, plan };
   });
@@ -1801,7 +1884,7 @@ export async function activateStripeTrial(input: { eventId?: string; eventType?:
     order.stripeCheckoutSessionId = input.sessionId;
     order.stripeSubscriptionId = input.subscriptionId;
     const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: input.subscriptionId, stripeCustomerId: input.customerId || null, graceEndsAt: null });
-    const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
+    const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo, subscription.id);
     data.subscriptions.unshift(subscription);
     data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
@@ -1822,7 +1905,7 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
     const validFrom = now();
     const subscription = subscriptionForPlan(trial.userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: input.subscriptionId, stripeCustomerId: trial.stripeCustomerId || null, graceEndsAt: null });
     const order: ProductOrder = { id: id("order"), userId: trial.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: subscription.validFrom, servicePeriodEnd: subscription.validTo, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
-    const entitlement = entitlementForPlan(trial.userId, plan, "purchase", subscription.validTo);
+    const entitlement = entitlementForPlan(trial.userId, plan, "purchase", subscription.validTo, subscription.id);
     data.subscriptions.unshift(subscription);
     data.entitlements = data.entitlements.filter((item) => !(item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
@@ -1842,15 +1925,18 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     if (!plan) throw new Error("Plan not found.");
     const start = input.currentPeriodStart || now();
     const end = input.currentPeriodEnd || addMonths(start, plan.termMonths);
-    subscription.state = "active";
-    subscription.cancelAtPeriodEnd = false;
-    subscription.validFrom = start;
-    subscription.validTo = end;
-    subscription.graceEndsAt = null;
+    const refunded = data.orders.some(order => order.stripeSubscriptionId === input.subscriptionId && order.status === "refunded");
+    if (!subscription.supersededBy && !refunded) {
+      subscription.state = "active";
+      subscription.cancelAtPeriodEnd = false;
+      subscription.validFrom = start;
+      subscription.validTo = end;
+      subscription.graceEndsAt = null;
+    }
     // D3: a paid renewal revives the entitlement even after a sweep expired it,
     // mirroring the invoice branch of applyVerifiedStripeEvent.
     const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription));
-    if (entitlement) {
+    if (entitlement && !subscription.supersededBy && !refunded) {
       entitlement.state = "active";
       entitlement.validTo = end;
     }
@@ -1947,7 +2033,7 @@ function grantPurchaseAccess(data: ProductData, userId: string, plan: ProductPla
   const subscription = subscriptionForPlan(userId, plan, "purchase", validFrom, addMonths(validFrom, plan.termMonths), { stripeSubscriptionId: stripeSubscriptionId || null, stripeCustomerId: stripeCustomerId || null });
   order.servicePeriodStart = subscription.validFrom;
   order.servicePeriodEnd = subscription.validTo;
-  const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo);
+  const entitlement = entitlementForPlan(userId, plan, "purchase", subscription.validTo, subscription.id);
   data.subscriptions.unshift(subscription);
   const trial = data.subscriptions.find((item) => item.userId === userId && item.planId === plan.id && item.source === "trial" && item.state === "active");
   if (trial) trial.state = "expired";
@@ -2118,16 +2204,14 @@ export async function getLearningOverview(userId: string) {
       const lessons = course?.sections.flatMap((section) => section.lessons) || [];
       const courseEvents = course ? studyHistoryFor(data, userId, course).events : [];
       const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
-      const preferredMode = record?.selectedMode || record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModes?.[courseId] || "text";
+      const preferredMode = record?.selectedMode || record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModePreferences?.[courseId]?.entitled || "text";
       const modes = course ? availableCourseLearningModes(course) : [];
       const mode = modes.includes(preferredMode) ? preferredMode : modes[0] || "text";
       const pointProgress = course && record?.knowledgePositions ? knowledgeProgress(course, mode, record.knowledgePositions[mode]) : null;
       const points = course ? courseKnowledgePoints(course, mode) : [];
       const position = pointProgress?.lessonId ? pointProgress : points.find(point => point.lessonId === record?.currentLessonId) || points[0];
       const currentLessonId = position?.lessonId || record?.currentLessonId || null;
-      const legacyProgress = courseProgressFromUniqueLearningPoints(openedLessonIds.length, lessons.length);
-      const computed = pointProgress ? { progress: record?.progress || 0, progressFailed: !pointProgress.total, completed: Boolean(record && record.progress >= 100) }
-        : { ...legacyProgress, progress: legacyProgress.progress === null ? null : Math.max(record?.progress || 0, legacyProgress.progress), completed: Boolean(record && record.progress >= 100) || legacyProgress.completed };
+      const computed = { progress: 0, progressFailed: false, completed: false };
       const completedLessonIds = courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId);
       const previewLesson = course ? publicFirstLesson(course) : null;
       const previewLessons = previewLesson ? [previewLesson] : [];
@@ -2166,10 +2250,10 @@ export async function getLearningOverview(userId: string) {
         progressFailed: computed.progressFailed,
         completedAt: computed.completed ? record?.completedAt || now() : null,
         completedLessonIds: [...new Set(completedLessonIds)],
-        legacyCompletedLessonIds: [...new Set(courseEvents.filter(event => event.event === "complete" && !event.contentId).map(event => event.lessonId))],
-        completedContentIds: [...new Set(courseEvents.filter(event => event.event === "complete").flatMap(event => event.completeLesson && event.learningMode && course
-          ? courseKnowledgePoints(course, event.learningMode).filter(point => point.lessonId === event.lessonId && point.contentId).map(point => point.contentId!)
-          : event.contentId ? [event.contentId] : []))],
+        legacyCompletedLessonIds: [...new Set(completedLessonIds)],
+        // Compatibility point projections inherit the Lesson's shared completion.
+        completedContentIds: course ? [...new Set((["text", "video"] as const).flatMap(mode =>
+          courseKnowledgePoints(course, mode).filter(point => completedLessonIds.includes(point.lessonId) && point.contentId).map(point => point.contentId!)))] : [],
         nextPreviewLessonId: previewLessons.find((lesson) => !openedLessonIds.includes(lesson.id))?.id || null,
         previewAvailable: previewLessons.length > 0,
         courseTitle: course?.title || courseId,
@@ -2263,24 +2347,26 @@ export async function recordOrderActivity(input: Omit<ProductOrderActivity, "id"
   return editData((data) => addOrderActivity(data, input));
 }
 
-export async function refundOrder(orderId: string, operatorId: string, providerReference: string | null = null, reason: string | null = null) {
-  return editData((data) => {
+function refundOrderInData(data: ProductData, orderId: string, operatorId: string, providerReference: string | null, reason: string | null) {
     const order = data.orders.find((item) => item.id === orderId);
     if (!order) throw new Error("Order not found.");
     if (order.status === "refunded") return order;
     if (order.status !== "paid") throw new Error("Only a paid order can be refunded.");
     order.status = "refunded";
-    const subscription = data.subscriptions.find((item) => item.userId === order.userId && item.planId === order.planId && item.source === "purchase" && item.state !== "expired");
-    if (subscription) subscription.state = "expired";
-    const plan = data.plans.find((item) => item.id === order.planId);
-    if (plan) {
-      const entitlement = data.entitlements.find((item) => item.userId === order.userId && item.source === "purchase" && item.state === "active" && entitlementOverlapsPlan(data, item, plan));
-      if (entitlement) entitlement.state = "revoked";
+    const candidates = data.subscriptions.filter(item => item.userId === order.userId && item.planId === order.planId && item.source === "purchase"
+      && (order.stripeSubscriptionId ? item.stripeSubscriptionId === order.stripeSubscriptionId
+        : !item.stripeSubscriptionId && item.validFrom === order.servicePeriodStart && item.validTo === order.servicePeriodEnd));
+    for (const subscription of candidates) {
+      subscription.state = "expired";
+      data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription)).forEach(item => { item.state = "revoked"; });
     }
     data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Order refunded", body: "The demo order was refunded and course access was removed.", readAt: null, createdAt: now() });
     addOrderActivity(data, { orderId, operatorId, action: "refund", result: "succeeded", reason, providerReference });
     return order;
-  });
+}
+
+export async function refundOrder(orderId: string, operatorId: string, providerReference: string | null = null, reason: string | null = null) {
+  return editData(data => refundOrderInData(data, orderId, operatorId, providerReference, reason));
 }
 
 export async function refundDemoOrder(orderId: string, operatorId = "operator", reason: string | null = null) {
@@ -2315,7 +2401,7 @@ export async function applyStripeOrderState(input: { orderId: string; operatorId
         trialEnd.setUTCDate(trialEnd.getUTCDate() + TRIAL_DAYS);
         order.status = "paid";
         const subscription = subscriptionForPlan(order.userId, plan, "trial", validFrom, trialEnd.toISOString(), { stripeSubscriptionId: order.stripeSubscriptionId || input.subscriptionId || null, stripeCustomerId: input.customerId || null, graceEndsAt: null });
-        const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo);
+        const entitlement = entitlementForPlan(order.userId, plan, "trial", subscription.validTo, subscription.id);
         data.subscriptions.unshift(subscription);
         data.entitlements = data.entitlements.filter((item) => !(item.userId === order.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
         data.entitlements.unshift(entitlement);
@@ -2389,19 +2475,10 @@ export async function recordStudyEvent(input: StudyProgressInput & { userId: str
     }
     record.totalSeconds += seconds;
     record.totalSeconds = Math.min(totalCourseSeconds, record.totalSeconds);
-    const lessons = course.sections.flatMap((section) => section.lessons);
-    const openedIds = uniqueOpenedLearningPointIds([...history.events, event]);
-    const pointProgress = record.knowledgePositions && record.currentMode ? knowledgeProgress(course, record.currentMode, record.knowledgePositions[record.currentMode]) : null;
-    const computed = pointProgress ? { progress: pointProgress.progress, completed: pointProgress.total > 0 && pointProgress.current === pointProgress.total }
-      : courseProgressFromUniqueLearningPoints(openedIds.length, lessons.length);
-    // Only a greater outline percentage updates progress. Cursor and study
-    // telemetry remain independent, so revisiting earlier points is safe.
-    if ((computed.progress ?? 0) > record.progress) {
-      record.progress = computed.progress!;
-      record.highestProgress = { progress: record.progress, mode: pointProgress ? record.currentMode! : null,
-        lessonId: pointProgress?.lessonId || input.lessonId, contentId: pointProgress ? pointProgress.contentId : input.contentId || null };
-    }
-    record.completedAt = record.completedAt || (computed.completed ? now() : null);
+    // Course percentages are retired; retain only resume position and Lesson events.
+    record.progress = 0;
+    record.completedAt = null;
+    delete record.highestProgress;
     record.updatedAt = now();
     return record;
   });
@@ -2739,7 +2816,49 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
     const order = event.orderId ? data.orders.find(item => item.id === event.orderId && item.paymentMode === "stripe") : undefined;
     let subscription = data.subscriptions.find(item => item.stripeSubscriptionId === event.subscriptionId && item.state !== "expired")
       || data.subscriptions.find(item => item.stripeSubscriptionId === event.subscriptionId);
-    if (event.action === "upgrade_invoice") {
+    if (event.action === "refund") {
+      if (!order || !event.chargeId || !event.paymentIntentId || order.stripePaymentIntentId !== event.paymentIntentId
+        || event.currency !== order.currency || event.amountMinor !== order.amountMinor
+        || !Number.isSafeInteger(event.refundedAmountMinor) || event.refundedAmountMinor! < 0 || event.refundedAmountMinor! > order.amountMinor
+        || order.stripeRefundChargeId && order.stripeRefundChargeId !== event.chargeId) throw new Error("Refund identity mismatch.");
+      order.stripeRefundChargeId = event.chargeId;
+      order.refundedAmountMinor = Math.max(order.refundedAmountMinor || 0, event.refundedAmountMinor!);
+      if (order.refundedAmountMinor === order.amountMinor && order.amountMinor > 0) refundOrderInData(data, order.id, "stripe", event.chargeId, "provider_refund");
+      data.stripeEvents.push({ id: event.id, type: event.type, processedAt: now() });
+      return { duplicate: false };
+    } else if (event.action === "credit_upgrade") {
+      const credit = order?.upgradeCredit;
+      const source = data.subscriptions.find(item => item.id === order?.sourceSubscriptionId && item.userId === order?.userId);
+      if (!order || !credit || !source || source.stripeSubscriptionId !== credit.sourceStripeSubscriptionId
+        || event.customerId !== credit.customerId || !event.subscriptionId || event.subscriptionId === credit.sourceStripeSubscriptionId
+        || !event.invoiceId || !event.sessionId || !event.periodStart || !event.periodEnd || event.subscriptionStatus !== "active"
+        || event.currency !== "usd" || event.amountMinor !== credit.amountDueMinor + (event.taxAmountMinor || 0)
+        || order.stripeCheckoutSessionId && order.stripeCheckoutSessionId !== event.sessionId
+        || order.stripeInvoiceId && order.stripeInvoiceId !== event.invoiceId
+        || data.orders.some(item => item.id !== order.id && (item.stripeInvoiceId === event.invoiceId
+          || item.sourceSubscriptionId === source.id && item.upgradeCredit && item.status === "paid"))) throw new Error("Upgrade identity mismatch.");
+      if (order.status === "refunded") throw new Error("Refunded order cannot be fulfilled.");
+      if (order.status !== "paid") {
+        const plan = order.planSnapshot || data.plans.find(item => item.id === order.planId);
+        if (!plan || plan.scope !== "everything") throw new Error("Upgrade plan mismatch.");
+        const target = subscriptionForPlan(order.userId, plan, "purchase", event.periodStart, event.periodEnd,
+          { stripeSubscriptionId: event.subscriptionId, stripeCustomerId: event.customerId });
+        source.state = "expired";
+        source.supersededBy = target.id;
+        source.cancelAtPeriodEnd = true;
+        data.entitlements.filter(item => entitlementMatchesSubscription(item, source)).forEach(item => { item.state = "revoked"; });
+        data.subscriptions.unshift(target);
+        data.entitlements.push(entitlementForPlan(order.userId, plan, "purchase", event.periodEnd, target.id));
+        Object.assign(order, { status: "paid", stripeCheckoutSessionId: event.sessionId, stripeSubscriptionId: event.subscriptionId,
+          stripeInvoiceId: event.invoiceId, stripePaymentIntentId: event.paymentIntentId || null, amountMinor: event.amountMinor,
+          listAmountMinor: credit.listAmountMinor, taxAmountMinor: event.taxAmountMinor || 0,
+          servicePeriodStart: event.periodStart, servicePeriodEnd: event.periodEnd, lastStripeStatus: "paid", lastSyncedAt: now(),
+          upgradeCancellation: { state: "pending", attempts: 0, nextAttemptAt: now() } });
+        data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Subscription upgraded", body: "Your new Everything subscription is active.", readAt: null, createdAt: now() });
+      }
+      data.stripeEvents.push({ id: event.id, type: event.type, processedAt: now() });
+      return { duplicate: false };
+    } else if (event.action === "upgrade_invoice") {
       const snapshot = order?.upgradeProration;
       if (!order || !snapshot || !event.invoiceId || event.subscriptionId !== snapshot.subscriptionId || event.customerId !== snapshot.customerId
         || event.amountMinor !== order.amountMinor || event.currency !== order.currency || event.periodStart !== new Date(snapshot.periodStart * 1000).toISOString()
@@ -2770,7 +2889,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           order.status = "paid";
           subscription = subscriptionForPlan(order.userId, plan, event.trial ? "trial" : "purchase", event.periodStart, event.periodEnd, { stripeSubscriptionId: event.subscriptionId, stripeCustomerId: event.customerId });
           data.subscriptions.unshift(subscription);
-          data.entitlements.push(entitlementForPlan(order.userId, plan, subscription.source, event.periodEnd));
+          data.entitlements.push(entitlementForPlan(order.userId, plan, subscription.source, event.periodEnd, subscription.id));
           data.notifications.unshift({ id: id("notification"), userId: order.userId, title: event.trial ? "Trial activated" : "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
         }
         order.stripeCheckoutSessionId = event.sessionId;
@@ -2806,18 +2925,18 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           // ORDER-02: a refund for this Stripe subscription is final — a later invoice records the money but must never revive access.
           const refundedForSubscription = data.orders.some(item => item.stripeSubscriptionId === event.subscriptionId && item.status === "refunded");
           // Older invoices cannot move the current paid period backwards.
-          if (!refundedForSubscription && paid.status !== "refunded" && new Date(event.periodEnd) >= new Date(subscription.validTo) && !["canceled", "unpaid", "incomplete_expired", "paused"].includes(event.subscriptionStatus || "")) {
+          if (!refundedForSubscription && paid.status !== "refunded" && !subscription.supersededBy && new Date(event.periodEnd) >= new Date(subscription.validTo) && !["canceled", "unpaid", "incomplete_expired", "paused"].includes(event.subscriptionStatus || "")) {
             subscription.validFrom = event.periodStart;
             subscription.validTo = event.periodEnd;
             subscription.state = subscription.cancelAtPeriodEnd ? "cancel_at_period_end" : "active";
             subscription.graceEndsAt = null;
             let entitlement = data.entitlements.find(item => entitlementMatchesSubscription(item, subscription!));
-            if (!entitlement) { entitlement = entitlementForPlan(subscription.userId, plan, "purchase", event.periodEnd); data.entitlements.push(entitlement); }
+            if (!entitlement) { entitlement = entitlementForPlan(subscription.userId, plan, "purchase", event.periodEnd, subscription.id); data.entitlements.push(entitlement); }
             entitlement.state = "active";
             entitlement.validTo = event.periodEnd;
           }
         }
-      } else if (event.status === "open" && event.periodEnd && new Date(event.periodEnd) > new Date(subscription.validTo)) {
+      } else if (!subscription.supersededBy && event.status === "open" && event.periodEnd && new Date(event.periodEnd) > new Date(subscription.validTo)) {
         // Stable grace boundary; retries must never extend access again.
         const end = new Date(new Date(event.periodStart || subscription.validTo).getTime() + TRIAL_DAYS * 86400000).toISOString();
         subscription.state = "grace";
@@ -2826,7 +2945,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
         data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.validTo = end; });
       }
     }
-    if ((event.action === "subscription" || event.subscriptionStatus) && subscription) {
+    if ((event.action === "subscription" || event.subscriptionStatus) && subscription && !subscription.supersededBy) {
       const remoteStatus = event.subscriptionStatus || event.status;
       subscription.cancelAtPeriodEnd = Boolean(event.cancelAtPeriodEnd);
       if (["canceled", "unpaid", "incomplete_expired", "paused"].includes(remoteStatus || "")) {
@@ -2889,4 +3008,84 @@ export async function isLegacyStripeSubscription(subscriptionId: string) {
 export async function isSnapshotStripeCheckout(sessionId: string) {
  const data = await ensureProductData();
  return data.orders.some(order => order.stripeCheckoutSessionId === sessionId && Boolean(order.price));
+}
+
+
+/** Read only: entering a Lesson cannot manufacture a watched/read position. */
+export async function getLessonBookmarks(userId: string, courseId: string) {
+  const data = await ensureProductData();
+  const course = data.courses.find(item => item.id === courseId && item.status === "published");
+  if (!course || !activeEntitlement(data, userId, courseId)) throw new LessonBookmarkError("forbidden", 403);
+  const record = data.studyRecords.find(item => item.userId === userId && item.courseId === courseId);
+  const versions: Record<string, Partial<Record<"video" | "text", string>>> = {};
+  for (const lesson of course.sections.flatMap(section => section.lessons)) {
+    versions[lesson.id] = {};
+    for (const mode of ["video", "text"] as const) {
+      try { versions[lesson.id][mode] = lessonBookmarkContext(course, lesson.id, mode).contentVersion; }
+      catch (error) { if (!(error instanceof LessonBookmarkError)) throw error; }
+    }
+  }
+  return { bookmarks: record?.lessonBookmarks || {}, versions };
+}
+
+/** Transactional optimistic concurrency: late tabs cannot overwrite newer positions. */
+export async function saveLessonBookmark(userId: string, body: unknown) {
+  const parsed = lessonBookmarkInput.safeParse(body);
+  if (!parsed.success) throw new LessonBookmarkError("invalid_request", 400);
+  const input = parsed.data;
+  return editData(data => {
+    const course = data.courses.find(item => item.id === input.courseId && item.status === "published");
+    if (!course || !activeEntitlement(data, userId, input.courseId)) throw new LessonBookmarkError("forbidden", 403);
+    const lpNumber = resolveBookmarkLp(course, input);
+    const rawIndex = data.studyRecords.findIndex(item => item.userId === userId && item.courseId === input.courseId);
+    const raw = rawIndex >= 0 ? data.studyRecords[rawIndex] : undefined;
+    let record = studyHistoryFor(data, userId, course).record;
+    if (record && raw?.lessonBookmarks) record.lessonBookmarks = raw.lessonBookmarks;
+    const previous = raw?.lessonBookmarks?.[input.lessonId]?.[input.mode];
+    if (previous?.clientEventId === input.clientEventId) {
+      if (previous.contentId !== input.contentId || previous.contentVersion !== input.contentVersion || previous.positionMs !== input.positionMs || previous.paragraphId !== input.paragraphId) throw new LessonBookmarkError("event_conflict", 409);
+      return previous;
+    }
+    const lessonRevision = Object.values(raw?.lessonBookmarks?.[input.lessonId] || {}).reduce((total, item) => total + item.revision, 0);
+    if (lessonRevision !== input.expectedLessonRevision || (previous?.revision || 0) !== input.expectedRevision) throw new LessonBookmarkError("stale_bookmark", 409);
+    const timestamp = new Date(Math.max(Date.now(), ...Object.values(raw?.lessonBookmarks?.[input.lessonId] || {}).map(item => Date.parse(item.updatedAt) + 1))).toISOString();
+    if (!record) {
+      record = { id: raw?.id || id("study"), lessonBookmarks: raw?.lessonBookmarks, userId, courseId: input.courseId, startedAt: timestamp, updatedAt: timestamp, currentLessonId: input.lessonId,
+        totalSeconds: 0, progress: 0, completedAt: null, accessContext: "entitled" };
+
+    }
+    if (rawIndex >= 0) data.studyRecords[rawIndex] = record; else data.studyRecords.unshift(record);
+    const { courseId: _course, lessonId: _lesson, expectedRevision: _revision, expectedLessonRevision: _lessonRevision, ...position } = input;
+    const bookmark = { ...position, revision: (previous?.revision || 0) + 1, updatedAt: timestamp, lpNumber };
+    record.lessonBookmarks = { ...record.lessonBookmarks, [input.lessonId]: { ...record.lessonBookmarks?.[input.lessonId], [input.mode]: bookmark } };
+    record.currentLessonId = input.lessonId;
+    record.currentMode = input.mode;
+    const user = data.users.find(item => item.id === userId);
+    if (user) user.courseLearningModePreferences = { ...user.courseLearningModePreferences, [input.courseId]: {
+      ...user.courseLearningModePreferences?.[input.courseId], entitled: input.mode,
+    } };
+    record.knowledgePositions = { ...record.knowledgePositions, [input.mode]: { lessonId: input.lessonId, contentId: input.contentId } };
+    record.updatedAt = timestamp;
+    return bookmark;
+  });
+}
+
+export async function pendingUpgradeCancellations() {
+  const data = await ensureProductData();
+  return data.orders.filter(order => order.upgradeCredit && ["paid", "refunded"].includes(order.status) && order.upgradeCancellation?.state === "pending"
+    && Date.parse(order.upgradeCancellation.nextAttemptAt) <= Date.now());
+}
+
+export async function recordUpgradeCancellation(orderId: string, completed: boolean) {
+  return editData(data => {
+    const order = data.orders.find(item => item.id === orderId && item.upgradeCredit && ["paid", "refunded"].includes(item.status));
+    const task = order?.upgradeCancellation;
+    if (!task || task.state === "completed") return;
+    task.attempts += 1;
+    if (completed) task.state = "completed";
+    else {
+      task.lastFailureAt = now();
+      task.nextAttemptAt = new Date(Date.now() + Math.min(3600000, 30000 * 2 ** Math.min(task.attempts - 1, 7))).toISOString();
+    }
+  });
 }

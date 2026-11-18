@@ -1,9 +1,10 @@
 import { processLegacyStripeEvent } from "./stripeLegacyWebhookService";
 import type Stripe from "stripe";
-import { applyVerifiedStripeEvent, isLegacyStripeSubscription, isSnapshotStripeCheckout } from "./productStore";
+import { applyVerifiedStripeEvent, isLegacyStripeSubscription, isSnapshotStripeCheckout, readProductData } from "./productStore";
 import { getStripe } from "./stripeClient";
 import { reconcileStripeUpgradeInvoice } from "./stripeUpgradePayment";
 import { reconcileStripeCheckout } from "./stripeCheckoutPayment";
+import { reconcileStripeRefund } from "./stripeRefundPayment";
 
 const identifier = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id;
 const iso = (value: number | null | undefined) => value ? new Date(value * 1000).toISOString() : undefined;
@@ -14,7 +15,17 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
   const event = stripe.webhooks.constructEvent(rawBody, signature, secret);
   if (process.env.STRIPE_SANDBOX === "1" && event.livemode) throw new Error("Live events are not allowed in this sandbox.");
+  // Reset Sandbox objects remain quarantined when old events are delivered after local cleanup.
+  if (!event.livemode && process.env.APP_ENV === "DEV" && process.env.STORAGE_BACKEND === "local" && process.env.STRIPE_SANDBOX === "1") {
+    const references = (await readProductData()).stripeResetReferences;
+    if (references) {
+      const resetIds = new Set([...references.sessions, ...references.subscriptions, ...references.invoices]);
+      const item = event.data.object as unknown as { id: string; subscription?: string | { id: string }; parent?: { subscription_details?: { subscription?: string | { id: string } } } };
+      if ([item.id, identifier(item.subscription), identifier(item.parent?.subscription_details?.subscription)].some(id => id && resetIds.has(id))) return { ignored: true, reset: true };
+    }
+  }
   const object = event.data.object as unknown as { metadata?: Record<string, string> };
+  if (["charge.refunded", "charge.refund.updated", "refund.created", "refund.updated", "refund.failed"].includes(event.type)) return reconcileStripeRefund(event);
   if (event.type.startsWith("checkout.session.") && object.metadata?.app !== "learning_guide" && !await isSnapshotStripeCheckout((event.data.object as Stripe.Checkout.Session).id)) return processLegacyStripeEvent(event);
   if (["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired"].includes(event.type)) return reconcileStripeCheckout(event, (event.data.object as Stripe.Checkout.Session).id);
   if (["invoice.paid", "invoice.payment_failed", "invoice.voided"].includes(event.type)) {

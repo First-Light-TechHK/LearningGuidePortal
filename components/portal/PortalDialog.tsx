@@ -21,6 +21,6 @@ export function PortalDialog({ children, className, labelledBy, describedBy, onC
     document.body.style.overflow = "hidden";
     return () => { node?.close(); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
   }, [target]);
-  const content = <dialog ref={dialog} className={className || styles.dialog} aria-labelledby={labelledBy} aria-describedby={describedBy} aria-busy={busy} onKeyDown={keepFocusInDialog} onMouseDown={event => { if (closeOnBackdrop && event.target === event.currentTarget && !busy) onClose(); }} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>{children}</dialog>;
+  const content = <dialog ref={dialog} className={className || styles.dialog} aria-labelledby={labelledBy} aria-describedby={describedBy} aria-busy={busy} onKeyDown={keepFocusInDialog} onMouseDown={event => { if (closeOnBackdrop && event.target === event.currentTarget && !busy) onClose(); }} onCancel={event => { event.preventDefault(); event.stopPropagation(); if (event.target === event.currentTarget && !busy) onClose(); }}>{children}</dialog>;
   return portal || !className ? (target ? createPortal(content, target) : null) : content;
 }

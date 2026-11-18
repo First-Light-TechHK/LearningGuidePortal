@@ -48,7 +48,7 @@ async function main() {
       assert.equal(await start().count(),2);
       for(const entry of await start().all()) assert.equal(await entry.textContent(),copy.courseDetailDesign.start);
       assert.equal(await preview().count(),0);
-      assert.equal(await page.locator('[data-course-plan-status="included"]').count(),1);
+      assert.equal(await page.locator('[data-course-plan-status]').count(),0);
       await page.screenshot({path:path.join(output,`${locale}-login-return.png`),fullPage:true});
 
       // Restore an anonymous client-router snapshot after Session changes elsewhere.
@@ -58,7 +58,7 @@ async function main() {
       const login=await context.request.post(`${origin}/api/auth/login`,{data:{email,password}});assert.equal(login.status(),200);
       await page.goBack();await start().first().waitFor();assert.equal(await start().count(),2);
       assert.equal(page.url(),target);assert.equal(await preview().count(),0);
-      assert.equal(await page.locator('[data-course-plan-status="included"]').count(),1);
+      assert.equal(await page.locator('[data-course-plan-status]').count(),0);
       await page.screenshot({path:path.join(output,`${locale}-restored-start.png`),fullPage:true});
 
       // The reverse transition must also discard cached access presentation.

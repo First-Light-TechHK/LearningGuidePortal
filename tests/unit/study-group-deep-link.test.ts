@@ -281,12 +281,12 @@ test("the session page asks the entry check first; the room no longer waits or s
   assert.match(entry, /if \(entry\?\.next === "enter"\) return <StudySessionRoom locale=\{locale\} sessionId=\{sessionId\} onNotLive=/);
   assert.match(entry, /href=\{courseAccessHref\(locale, course\.id\)\} target="_blank" rel="noopener noreferrer"/);
   assert.match(entry, /document\.addEventListener\("visibilitychange", wake\)/);
-  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8");
+  const room = readFileSync(new URL("../../components/portal/StudySessionRoom.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.equal(room.includes("startSession"), false);
   assert.equal(room.includes("/start`"), false);
   assert.equal(room.includes("copy.waiting"), false);
   assert.match(room, /if \(session\.state !== "live"\) \{\n      setEntryDone\(true\);/);
-  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(app, /const entering = signedIn \? sessionToEnterFromQuery\(window\.location\.search\) : null;/);
   assert.match(app, /dropEnterFromAddress\(\);\n      void followEntry\(entering\);/);
   assert.match(app, /if \(entry\.data\.next !== "wait"\) return;/);
@@ -315,7 +315,7 @@ test("the deep-link copy exists in both languages with the same keys", () => {
   // A moved Start Time's notice in the strip says View, not Enter now (FAQ grounding check 2026-11-02).
   assert.equal(en.studyGroupsPage.deepLink.viewSession, "View");
   assert.equal(zh.studyGroupsPage.deepLink.viewSession, "查看");
-  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../../components/portal/StudyGroupsApp.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(app, /\{item\.kind === "rescheduled" \? copy\.deepLink\.viewSession : copy\.deepLink\.enterNow\}/);
 });
 

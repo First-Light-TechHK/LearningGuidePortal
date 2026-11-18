@@ -84,7 +84,13 @@ export type AssistTurnColumns = {
   texts: AssistTexts | null;
 };
 
-export type AssistTexts = { opening: string | null; closing: string | null; reply: string | null; explanation: string | null; nodeType: FaqNodeType | null };
+/**
+ * What a v5 turn showed beside the card. v8: more = the further cards of a several-asks answer as shown (the FAQ text
+ * verbatim and the excerpt's block ids, [] = the whole answer), in the order the user asked; missed = asks with no card.
+ * Both are left out when there are none (and on every row written before v8).
+ */
+export type AssistTexts = { opening: string | null; closing: string | null; reply: string | null; explanation: string | null; nodeType: FaqNodeType | null; more?: AssistMoreCard[]; missed?: number };
+export type AssistMoreCard = { faqId: string; question: string; answer: string; blocks: string[] };
 
 /**
  * v5: a click answered from the cached release (never sent to Admin): its feedback stays in Portal, so the

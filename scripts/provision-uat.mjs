@@ -80,7 +80,7 @@ if (!original.SMTP_HOST || !original.SMTP_USER || !original.SMTP_PASS) throw new
 if (!original.STRIPE_SECRET_KEY.startsWith('sk_test_')) throw new Error('UAT refuses live Stripe keys');
 const stripe = new Stripe(original.STRIPE_SECRET_KEY);
 const url = `${origin}/api/payment/webhook`;
-const events = ['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired','invoice.paid','invoice.payment_failed','customer.subscription.updated','customer.subscription.deleted'];
+const events = ['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.async_payment_failed','checkout.session.expired','invoice.paid','invoice.payment_failed','customer.subscription.updated','customer.subscription.deleted','charge.refunded','charge.refund.updated','refund.created','refund.updated','refund.failed'];
 let webhook = (await stripe.webhookEndpoints.list({ limit: 100 })).data.find(x => x.url === url);
 if (!webhook) {
   webhook = await stripe.webhookEndpoints.create({ url, enabled_events: events, description: 'Learning Guide isolated UAT; sandbox only' });

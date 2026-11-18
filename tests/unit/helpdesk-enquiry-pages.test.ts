@@ -409,7 +409,7 @@ test("AccountNav: Contact support links to the signed-in support form in both la
     const nav = page.getByRole("navigation", { name: account.menu });
     const contact = nav.getByRole("link", { name: account.contactAction, exact: true });
     assert.equal(await contact.getAttribute("href"), `/${locale}/account/my-learning/support`);
-    assert.equal(await nav.locator(".account-nav-support strong").textContent(), account.contact);
+    assert.equal(await nav.getByRole("img",{name:account.contact,exact:true}).getAttribute("aria-label"), account.contact);
     assert.equal(await nav.locator(".account-nav-support p").textContent(), account.supportDescription);
     assert.equal(await nav.locator("[aria-current=page]").getAttribute("href"), `/${locale}/account/my-learning`);
     await page.close();

@@ -781,7 +781,18 @@ export type SuggestTurn = {
   kind: SuggestKind; intent: SuggestIntent | null; confidence: ConfidenceLevel | null; nodeId: string | null; blocks: string[];
   opening: string | null; closing: string | null; reply: string | null; explanation: string | null; covered: boolean | null;
   guard: SuggestGuard | null; releaseVersion: number | null;
+  /** v8: one message that asked several things: the further cards, in the order the user asked (answer only; left out when none). */
+  more?: SuggestMoreCard[];
+  /** v8: how many of those asks found no card (answer only; left out when none): Portal says so and offers a person. */
+  missed?: number;
 };
+/**
+ * v8 (contract 2026-11-06): a further card of a several-asks answer, as Admin sends it. The card text is the published
+ * FAQ verbatim, like the suggestion's; blocks follow the suggestion's excerpt rule ([] = the whole answer).
+ */
+export type SuggestMoreCard = { faqId: string; question: string; answer: string; blocks: string[] };
+/** At most this many further cards (so at most 3 in one reply) and missed asks. */
+export const SUGGEST_MORE_MAX = 2;
 /**
  * v7 learner state (owner 2026-10-30: the schedule, which courses were taken and for how long, which not yet, the course
  * status, the entitlements and the registration time, as JSON for the agent, to narrow the cards). Worked out by code
@@ -851,12 +862,34 @@ export function parseSuggestTurn(value: unknown): SuggestTurn | null {
     const result = pick(GUARD_RESULTS, raw.result);
     if (result) guard = { result, reason: pick(GUARD_REASONS, raw.reason), fallback: Array.isArray(raw.fallback) ? raw.fallback.filter((field): field is GuardedField => pick(GUARDED_FIELDS, field) !== null) : [] };
   }
-  const blocks = Array.isArray(item.blocks) ? item.blocks.filter((id): id is string => typeof id === "string" && BLOCK_ID.test(id)) : [];
+  const blockIds = (raw: unknown) => [...new Set(Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string" && BLOCK_ID.test(id)) : [])];
+  const nodeId = isUuid(item.nodeId) ? item.nodeId.toLowerCase() : null;
+  const more = kind === "answer" && nodeId ? moreCards(item.more, nodeId, blockIds) : [];
+  const missed = kind === "answer" && nodeId ? positiveInt(item.missed) : null;
   return {
-    kind, intent: pick(SUGGEST_INTENTS, item.intent), confidence: pick(CONFIDENCE_LEVELS, item.confidence), nodeId: isUuid(item.nodeId) ? item.nodeId.toLowerCase() : null,
-    blocks: [...new Set(blocks)], opening: shortText(item.opening), closing: shortText(item.closing), reply: shortText(item.reply), explanation: shortText(item.explanation),
-    covered: typeof item.covered === "boolean" ? item.covered : null, guard, releaseVersion: positiveInt(item.releaseVersion)
+    kind, intent: pick(SUGGEST_INTENTS, item.intent), confidence: pick(CONFIDENCE_LEVELS, item.confidence), nodeId,
+    blocks: blockIds(item.blocks), opening: shortText(item.opening), closing: shortText(item.closing), reply: shortText(item.reply), explanation: shortText(item.explanation),
+    covered: typeof item.covered === "boolean" ? item.covered : null, guard, releaseVersion: positiveInt(item.releaseVersion),
+    ...(more.length ? { more } : {}), ...(missed !== null ? { missed: Math.min(missed, SUGGEST_MORE_MAX) } : {})
   };
+}
+
+/** v8: the further cards, read tolerantly: a malformed card, the suggestion's own card or a repeat is dropped; at most SUGGEST_MORE_MAX. */
+function moreCards(value: unknown, firstId: string, blockIds: (raw: unknown) => string[]): SuggestMoreCard[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set([firstId]);
+  const cards: SuggestMoreCard[] = [];
+  for (const entry of value) {
+    if (cards.length >= SUGGEST_MORE_MAX) break;
+    if (!entry || typeof entry !== "object") continue;
+    const card = entry as Record<string, unknown>;
+    if (!isUuid(card.faqId) || !shortText(card.question) || !shortText(card.answer)) continue;
+    const faqId = card.faqId.toLowerCase();
+    if (seen.has(faqId)) continue;
+    seen.add(faqId);
+    cards.push({ faqId, question: String(card.question), answer: String(card.answer), blocks: blockIds(card.blocks) });
+  }
+  return cards;
 }
 
 /**
@@ -939,7 +972,13 @@ export type AssistantTurn = {
   uncovered?: "not_covered" | "unavailable" | null;
   excerpt: FaqBlock[] | null; next: { kind: FaqEdgeKind; steps: AssistantNextStep[] } | null; source: { faqId: string; question: string } | null;
   releaseVersion: number | null; sessionId: string; turnIndex: number; unsolved: boolean; countsAsQuestion: boolean;
+  /** v8: one message that asked several things: the further cards after reply, in the order the user asked (left out when none). */
+  more?: AssistantMoreCard[];
+  /** v8: how many of the asks found no card (left out when none): the chat says so and offers a person. */
+  missed?: number;
 };
+/** v8: a further card of a several-asks answer: the FAQ verbatim; excerpt as on the first card (null = the whole answer). */
+export type AssistantMoreCard = { faqId: string; question: string; answer: string; excerpt: FaqBlock[] | null };
 /** POST /api/helpdesk/assistant and /assistant/click (v5): the v3 answer plus turn (additive). */
 export type AssistantTurnResponse = AssistantResponse & { turn: AssistantTurn };
 /** A situation chip (Part A §3): an entry FAQ / node whose question is the chip text; reason signal = it matched the learner's situation. */

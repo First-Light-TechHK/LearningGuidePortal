@@ -277,6 +277,8 @@ const TURN_KINDS = ["answer", "smalltalk", "clarify", "no_match"] as const;
 const TURN_INTENTS = ["question", "own_account", "someone_else", "exception", "private_data", "instructions", "off_topic", "greeting", "farewell", "vague", "clarify"] as const;
 const TURN_VIAS = ["typed", "follow_up", "option", "starter", "signal", "alternative"] as const;
 const BLOCK_ID = /^b[1-9]\d{0,3}$/;
+/** v8: at most this many further cards and missed asks on one answer (SUGGEST_MORE_MAX in contracts/helpdesk.ts, which the browser bundle cannot import). */
+export const MORE_MAX = 2;
 const oneOf = <T extends string>(values: readonly T[], value: unknown): T | null => ((values as readonly unknown[]).includes(value) ? value as T : null);
 const textOrNull = (value: unknown): string | null => (isText(value) && value !== "" ? value : null);
 
@@ -291,12 +293,13 @@ export function storedTurn(value: unknown): AssistantTurn | null {
   const via = oneOf(TURN_VIAS, turn.via);
   if (!kind || !via || !isText(turn.sessionId) || !UUID.test(turn.sessionId) || typeof turn.turnIndex !== "number" || !Number.isInteger(turn.turnIndex) || turn.turnIndex < 1) return null;
   const id = (raw: unknown) => (isText(raw) && UUID.test(raw) ? raw : null);
-  const excerpt = Array.isArray(turn.excerpt)
-    ? turn.excerpt.flatMap((item: unknown) => {
+  const blocksOf = (raw: unknown) => (Array.isArray(raw)
+    ? raw.flatMap((item: unknown) => {
       const block = item && typeof item === "object" ? item as Record<string, unknown> : {};
       return isText(block.id) && BLOCK_ID.test(block.id) && isText(block.text) && block.text ? [{ id: block.id, text: block.text }] : [];
     })
-    : [];
+    : []);
+  const excerpt = blocksOf(turn.excerpt);
   const rawNext = turn.next && typeof turn.next === "object" ? turn.next as Record<string, unknown> : null;
   const nextKind = rawNext ? oneOf(["follow_up", "option"] as const, rawNext.kind) : null;
   const steps = rawNext && Array.isArray(rawNext.steps)
@@ -308,6 +311,19 @@ export function storedTurn(value: unknown): AssistantTurn | null {
     : [];
   const rawSource = turn.source && typeof turn.source === "object" ? turn.source as Record<string, unknown> : null;
   const sourceId = rawSource ? id(rawSource.faqId) : null;
+  // v8: the further cards of a several-asks answer (answer turns only; at most 2, each a different card).
+  const seen = new Set([id(turn.nodeId)]);
+  const more = kind === "answer" && Array.isArray(turn.more)
+    ? turn.more.flatMap((item: unknown) => {
+      const card = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const faqId = id(card.faqId);
+      if (!faqId || seen.has(faqId) || !isText(card.question) || !card.question || !isText(card.answer) || !card.answer) return [];
+      seen.add(faqId);
+      const cardExcerpt = blocksOf(card.excerpt);
+      return [{ faqId, question: card.question, answer: card.answer, excerpt: cardExcerpt.length ? cardExcerpt : null }];
+    }).slice(0, MORE_MAX)
+    : [];
+  const missed = kind === "answer" && typeof turn.missed === "number" && Number.isInteger(turn.missed) && turn.missed >= 1 ? Math.min(turn.missed, MORE_MAX) : null;
   return {
     kind, intent: oneOf(TURN_INTENTS, turn.intent), via, nodeId: id(turn.nodeId), nodeType: oneOf(["answer", "choice"] as const, turn.nodeType),
     opening: textOrNull(turn.opening), closing: textOrNull(turn.closing), reply: textOrNull(turn.reply), explanation: textOrNull(turn.explanation),
@@ -319,7 +335,8 @@ export function storedTurn(value: unknown): AssistantTurn | null {
     source: sourceId && rawSource && isText(rawSource.question) && rawSource.question ? { faqId: sourceId, question: rawSource.question } : null,
     releaseVersion: typeof turn.releaseVersion === "number" && Number.isInteger(turn.releaseVersion) && turn.releaseVersion >= 1 ? turn.releaseVersion : null,
     sessionId: turn.sessionId, turnIndex: turn.turnIndex,
-    unsolved: turn.unsolved === true, countsAsQuestion: turn.countsAsQuestion !== false
+    unsolved: turn.unsolved === true, countsAsQuestion: turn.countsAsQuestion !== false,
+    ...(more.length ? { more } : {}), ...(missed !== null ? { missed } : {})
   };
 }
 

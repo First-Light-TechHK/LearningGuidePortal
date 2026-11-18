@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { applyVerifiedStripeEvent, stripeOrderContext, assertStripeUpgradeAllowed, listPendingStripeCategoryCheckouts } from "./productStore";
 import { getStripe } from "./stripeClient";
+import { reconcileCreditUpgradeCheckout } from "./stripeCreditUpgradePayment";
 
 const identifier = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id;
 const iso = (value: number | null | undefined) => value ? new Date(value * 1000).toISOString() : undefined;
@@ -11,6 +12,7 @@ export async function reconcileStripeCheckout(event: { id: string; type: string 
   if (session.metadata?.app !== "learning_guide") return { ignored: true };
   const context = await stripeOrderContext(session.metadata.orderId);
   if (!context) throw new Error("Order is not available yet.");
+  if (context.order.upgradeCredit) return reconcileCreditUpgradeCheckout(event, sessionId);
   const { order } = context;
   if (session.metadata.userId !== order.userId || session.metadata.quoteId !== order.quoteId || session.metadata.planId !== order.planId
     || (order.stripeCheckoutSessionId && order.stripeCheckoutSessionId !== session.id)) throw new Error("Checkout identity mismatch.");

@@ -63,7 +63,30 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await page.keyboard.press("Escape");
     assert.equal(await page.getByText(copy.subscriptionDesign.points, { exact: true }).count(), 0);
     assert.equal(await page.getByRole("table").count(), 0);
-    await card("science").getByRole("button", { name: copy.subscriptionDesign.paymentHistory }).click();
+    const historyToggle=card("science").getByRole("button", { name: copy.subscriptionDesign.paymentHistory });
+    const history=page.locator('[id="payments-science"]');
+    assert.equal(await history.getAttribute("inert"),"");
+    assert.equal(await history.evaluate(element=>element.getBoundingClientRect().height),0);
+    await historyToggle.click();
+    await page.waitForFunction(()=>{
+      const element=document.getElementById("payments-science")!;
+      const height=element.getBoundingClientRect().height;
+      return height>0 && height<element.firstElementChild!.scrollHeight;
+    });
+    assert.equal(await history.getAttribute("aria-hidden"),"false");
+    await history.evaluate(element=>element.getAnimations().forEach(animation=>animation.finish()));
+    const expandedHeight=await history.evaluate(element=>element.getBoundingClientRect().height);
+    assert.ok(expandedHeight>0);
+    await historyToggle.click();
+    assert.equal(await history.getAttribute("inert"),"","links stop receiving focus as soon as closing starts");
+    await page.waitForFunction(height=>{
+      const current=document.getElementById("payments-science")!.getBoundingClientRect().height;
+      return current>0 && current<height;
+    },expandedHeight);
+    // Reverse an in-flight close, keeping this card independent of its neighbours.
+    await historyToggle.click();
+    await page.waitForFunction(()=>document.getElementById("payments-science")!.getBoundingClientRect().height===document.getElementById("payments-science")!.firstElementChild!.scrollHeight);
+    assert.equal(await historyToggle.getAttribute("aria-expanded"),"true");
     assert.deepEqual(await page.getByRole("columnheader").allTextContents(), [copy.subscriptionDesign.paymentDate, copy.learning.amount, copy.subscriptionDesign.status, copy.learning.validPeriod, copy.learning.receipt]);
     assert.equal(await card("science").locator('td[data-status="paid"]').count(), 2);
     assert.equal(await card("science").locator('td[data-status="failed"]').count(), 1);
@@ -72,21 +95,26 @@ test("Subscription products start collapsed, expand independently, preserve bill
       assert.equal(new URL(href, page.url()).searchParams.get("locale"), locale);
     }
     assert.equal(await card("science").locator("tbody tr").first().locator("td").nth(1).textContent(), "US$39.00");
-    // Helpdesk v4 Part A: every payment record shown (paid, failed, old) has "Contact support" for that order, in the existing link style.
-    const rows = card("science").locator("tbody tr");
-    assert.equal(await card("science").locator("a[data-contact-support]").count(), await rows.count());
-    for (const id of ["science-paid", "science-failed", "science-old"]) {
-      const link = card("science").getByRole("link", { name: copy.subscriptionDesign.contactSupportLabel.replace("{number}", id), exact: true });
-      assert.equal(await link.textContent(), copy.subscriptionDesign.contactSupport);
-      assert.equal(await link.getAttribute("href"), `/${locale}/account/my-learning/support?orderId=${id}`);
-      assert.equal(await link.evaluate(e => getComputedStyle(e).color), await card("science").locator('a[href*="/receipt"]').first().evaluate(e => getComputedStyle(e).color), "the receipt link's style");
-    }
+    assert.equal(await card("science").locator('a[href*="/support"]').count(), 0);
     assert.equal(await card("chinese").getByRole("table").count(), 0);
     assert.equal(await card("science").locator('div[data-colour="science"]').evaluate(e => e.getBoundingClientRect().width), 120);
     assert.equal(await card("science").evaluate(e => e.getBoundingClientRect().x), 384);
     await page.locator('img[src*="/subscriptions/design/"]').evaluateAll(async images => Promise.all(images.map(img => (img as HTMLImageElement).decode())));
-    for (const icon of await page.locator('img[src*="/subscriptions/design/"]:visible').all()) assert.equal(await icon.evaluate(e => e.getBoundingClientRect().width), 16);
+    for (const icon of await page.locator('img[src*="/subscriptions/design/"]:visible').all()) assert.equal(await icon.evaluate(e => (e as HTMLElement).offsetWidth), 16, "rotation preserves the icon's 16px layout size");
     await page.screenshot({ path: `${output}/${locale}-current-v4.png`, fullPage: true });
+    for (const width of [1440, 1366, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 1024 });
+      const geometry = await card("science").getByRole("table").evaluate(table => {
+        const wrapper = table.parentElement!;
+        return { available: wrapper.clientWidth, content: wrapper.scrollWidth,
+          clipped: Array.from(table.querySelectorAll("th,td")).some(cell => cell.scrollWidth > cell.clientWidth + 1) };
+      });
+      assert.ok(geometry.content <= geometry.available + 1, `${locale} ${width}px: history fits ${JSON.stringify(geometry)}`);
+      assert.equal(geometry.clipped, false, `${locale} ${width}px: cells keep their full content`);
+      await page.screenshot({ path: `${output}/${locale}-history-${width}.png`, fullPage: true });
+    }
+    await page.setViewportSize({ width: 1440, height: 1563 });
+
     await card("chinese").getByRole("button", { name: copy.learning.payNow , exact: true }).click();
     await page.getByRole("alert").waitFor(); assert.equal(await page.getByRole("alert").textContent(), "Fixture billing failure");
     const cancel = card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true });
@@ -123,6 +151,15 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
     assert.equal(requests.at(-1).action, "resume");
     for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false); await page.screenshot({ path: `${output}/${locale}-current-v4-${width}.png`, fullPage: true }); }
+    await page.emulateMedia({reducedMotion:"reduce"});
+    await historyToggle.click();
+    assert.equal(await history.evaluate(element=>element.getAnimations().length),0);
+    assert.equal(await history.evaluate(element=>element.getBoundingClientRect().height),0);
+    assert.equal(await card("science").getByRole("table").count(),0);
+    await historyToggle.click();
+    assert.equal(await history.evaluate(element=>element.getAnimations().length),0);
+    assert.ok(await history.evaluate(element=>element.getBoundingClientRect().height)>0);
+    await page.emulateMedia({reducedMotion:"no-preference"});
     // The upgraded product has the original Category payment, rather than a duplicate past card.
     const source = { ...chinese, state: "expired" }, everything = { ...make("everything", "Everything", "active", "2027-01-31"), stripeSubscriptionId: source.stripeSubscriptionId };
     const oldScience = make("old-science", "Science", "expired", "2026-06-30");
@@ -149,6 +186,22 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await mount("pending-upgrade", [science], [{ ...order(science, "pending-upgrade", "pending"), kind: "upgrade", quoteId: "quote-pending", upgradeProration: { subscriptionId: science.stripeSubscriptionId } }]);
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
     assert.equal(await page.locator(`a[href="/${locale}/account/my-learning/subscription?orderId=pending-upgrade#order-pending-upgrade"]`).count(), 1);
+    const longOrders = ["paid", "refunded", "failed", "pending", "canceled"].map((status, index) => ({
+      ...order(science, `long-${index}`, status, "2026-09-28"), amountMinor: 12345678,
+      servicePeriodStart: "2026-09-28", servicePeriodEnd: "2027-09-28",
+      kind: "upgrade", upgradeProration: { subscriptionId: science.stripeSubscriptionId }
+    }));
+    await mount("long-history", [science], longOrders);
+    await card("science").getByRole("button", { name: copy.subscriptionDesign.paymentHistory, exact: true }).click();
+    for (const width of [1440, 1366, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 1024 });
+      const table = card("science").getByRole("table");
+      assert.equal(await table.locator("tbody tr").count(), 5);
+      assert.equal(await table.evaluate(element => {
+        const wrapper = element.parentElement!;
+        return wrapper.scrollWidth > wrapper.clientWidth + 1 || Array.from(element.querySelectorAll("th,td")).some(cell => cell.scrollWidth > cell.clientWidth + 1);
+      }), false, `${locale} ${width}px: long amounts, statuses, dates and upgrade notes fit`);
+    }
     await mount("empty", [], []); await page.locator('a.portal-button[href$="/subscription"]').waitFor();
     assert.equal(await page.locator('[data-subscription-id]').count(), 0);
     await page.close();

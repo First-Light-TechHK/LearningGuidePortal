@@ -1,4 +1,5 @@
 {
+  "lessonBookmark": {"reload": "重新加载", "video": "视频 · 已观看至 {lp}", "text": "文字 · 已阅读至 {lp}", "saveError": "无法保存阅读位置。请重试，或重新加载以恢复到最近保存的位置。"},
   "orderManagement": {
     "title": "待处理订单",
     "history": "已关闭订单",
@@ -155,7 +156,7 @@
     "loading": "正在加载测试记录…",
     "saving": "正在保存…",
     "saved": "已自动保存",
-    "saveError": "保存失败，请重试。",
+    "saveError": "草稿保存失败，请重试。",
     "loadError": "测试记录加载失败。",
     "conflict": "其他页面已更新此测试，请保留答案并刷新页面。",
     "retry": "重试",
@@ -194,6 +195,59 @@
     "continue": "继续",
     "start": "开始"
   },
+  "assessmentFlow": {
+      "dirty": "有未保存的修改",
+      "clean": "暂无未保存的修改",
+      "submitting": "正在提交答案…",
+      "submissionError": "答案提交失败，请重试。",
+      "submissionUnknown": "暂时无法确认提交状态，请重试以查询状态。",
+      "evaluationError": "答案已提交，但 AI 评价未完成，请重试评价。",
+      "confirmTitle": "确认提交答案？",
+      "confirmText": "此次提交无法撤回。评价结束后，你可以完善答案并再次提交。",
+      "cancel": "继续编辑",
+      "confirm": "确认提交",
+      "revise": "完善答案",
+      "clear": "从头作答",
+      "clearTitle": "清空当前草稿？",
+      "clearText": "这将清空当前草稿，已提交的答案和反馈仍会保留。",
+      "clearConfirm": "清空草稿",
+      "draftError": "草稿保存失败，请重试。"
+  },
+  "assessmentEditor": {
+    "sourceMode": "源码模式",
+    "sourceRequired": "此答案包含暂不支持可视化编辑的格式，已保留源码模式以保护原有内容。",
+    "answerExceedsTheLengthLimit": "答案超过长度限制",
+    "undo": "撤销",
+    "redo": "重做",
+    "visualEditor": "可视化编辑",
+    "source": "源码",
+    "equationEditor": "公式编辑",
+    "unableToLoadTheEquationEditor": "公式编辑器加载失败，请关闭后重试。",
+    "insertEquation": "插入公式",
+    "chooseATemplateAndFillIn": "选择模板，填写空位。确认后应用到答案。",
+    "mathKeyboard": "数学键盘",
+    "separateLine": "独立一行",
+    "equationChangesHaveNotBeenApplied": "公式尚未应用到答案",
+    "cancel": "取消",
+    "theEquationCannotBeRenderedOr": "公式无法显示或答案超过长度限制，请调整。",
+    "apply": "应用"
+},
+  "applicationAssessment": {
+      "preview": "预览",
+      "edit": "编辑",
+      "formula": "插入公式",
+      "syntax": "LaTeX：\\(x^2\\) 或 $$...$$",
+      "empty": "你的答案预览将显示在这里。",
+      "sources": "来源",
+      "referenceUnavailable": "参考答案暂不可用。",
+      "noStrengths": "暂未从本次作答中确认具体掌握内容。",
+      "noImprovements": "暂未发现需要进一步改进的内容。",
+      "legacy": "此答案提交时尚未提供 AI 反馈。重新测试可获得评价。",
+      "needsReview": "此答案需要进一步复核。",
+      "strong": "理解扎实",
+      "developing": "逐步掌握",
+      "needs_review": "需要回顾"
+  },
   "applicationTest": {
     "title": "应用测试",
     "apply": "应用所学知识",
@@ -209,10 +263,10 @@
     "feedback": "AI Tutor 的反馈",
     "nextLesson": "下一课时",
     "tryKnowledge": "尝试知识测试",
-    "retake": "重新测试",
+    "retake": "完善答案",
     "yourResponse": "你的回答",
     "overall": "总体评价",
-    "strongResponse": "回答良好",
+    "strongResponse": "理解扎实",
     "latest": "最近一次作答",
     "strengths": "做得好的地方",
     "improvement": "可以改进的地方",
@@ -273,13 +327,11 @@
     "description": "选择测试来检验您的理解，或继续学习",
     "knowledge": "知识测试",
     "application": "应用测试",
-    "fluency": "熟练度测试",
     "questions": "题目",
     "openResponse": "开放式回答",
     "forLesson": "本课时",
     "courseAssessment": "课程级 AI 评估",
     "start": "开始测试",
-    "comingSoon": "即将推出",
     "continue": "继续",
     "unavailable": "本课时暂无可用测试。"
   },
@@ -312,8 +364,11 @@
     "error": "升级价格计算失败。"
   },
   "overviewV1": {
+    "continueLabel": "继续：",
+    "continueLesson": "第 {number} 课时 · {title}",
+    "completed": "已完成",
     "learning": "你的学习",
-    "description": "显示你已开始学习的所有课程",
+    "description": "你在订阅方案中已开始的课程",
     "lessons": "{count} 个课时",
     "video": "视频模式",
     "text": "文本模式",
@@ -323,6 +378,7 @@
       "european": "欧洲人文"
     },
     "actions": {
+      "start": "开始",
       "resume": "继续学习",
       "review": "回顾课程",
       "plans": "查看订阅方案"
@@ -458,6 +514,10 @@
     "more": "展开",
     "preview": "试看",
     "start": "开始",
+    "continue": "继续",
+    "review": "回顾",
+    "completed": "已完成",
+    "lastStudied": "上次学习",
     "provides": "本课程提供",
     "features": [
       "视频与文本双模式学习",
@@ -479,7 +539,8 @@
     "eyebrow": "Learning Guide Portal",
     "title": "通过引导式课程学习",
     "description": "先浏览课程和公开首课，再在课程范围内使用 AI Tutor 持续学习。",
-    "navigation": {"primaryLabel": "主导航", 
+    "navigation": {
+      "primaryLabel": "主导航",
       "courses": "课程",
       "studyGroups": "学习小组",
       "pricing": "订阅",
@@ -863,12 +924,7 @@
     "newPassword": "修改密码",
     "confirmPassword": "确认新密码",
     "save": "保存修改",
-    "saved": "设置已保存。",
-    "signInMethodsTitle": "登录方式",
-    "googleConnected": "已绑定",
-    "googleConnectedHint": "您可以随时使用 Google 登录。",
-    "googleConnect": "绑定 Google",
-    "googleConnectHint": "绑定 Google 账号后,无需密码即可登录。"
+    "saved": "设置已保存。"
   },
   "contactPage": {
     "title": "联系我们",
@@ -1357,7 +1413,8 @@
       "课程访问权限由服务返回的订阅和 entitlement 决定。只有课程启用时，公开首课才会开放。续费、取消和退款条件会在确认页和 Stripe 托管支付流程中显示。",
       "AI Tutor 用于学习支持，不应被当作专业、法律、医疗或财务建议。"
     ],
-    "cookiesLabel": "Cookie 偏好设置", "cookiesTitle": "Cookie 设置",
+    "cookiesLabel": "Cookie 偏好设置",
+    "cookiesTitle": "Cookie 设置",
     "cookiesIntro": "必要 Cookie 用于保持登录和安全功能。可选分析 Cookie 在你主动选择前保持关闭。",
     "acceptOptional": "允许可选 Cookie",
     "rejectOptional": "仅使用必要 Cookie",
@@ -1516,9 +1573,9 @@
     "details": "查看订阅详情",
     "owned": "已拥有",
     "upgrade": "升级至 Everything",
-    "upgradeDescription": "解锁另外 {count} 个分类，原到期日 {date} 保持不变。",
+    "upgradeDescription": "解锁另外 {count} 个分类，付款成功后 Everything 开始新的订阅周期。",
     "extraCategories": "+{count} 个分类",
-    "estimate": "Stripe 根据剩余 {days} 天计算升级费用，订阅周期保持不变。",
+    "estimate": "一次性抵扣 Category 完整套餐价格；如适用税费，以 Checkout 为准。",
     "upgradeAction": "升级 · {price}",
     "upgradeUnavailable": "此订阅当前无法升级，请前往订阅详情管理方案。",
     "allIncluded": "你将获得全部分类",
@@ -1737,6 +1794,11 @@
     ]
   },
   "upgradeConfirmation": {
+    "newCycle": "付款成功后开始新的订阅周期。",
+    "newTerm": "Everything 新周期为 {months} 个月，实际起止日期以 Stripe 确认为准。",
+    "fullCredit": "Category 完整套餐价格一次性抵扣",
+    "newConsentSchedule": "我理解升级将创建新的 Everything 订阅，付款成功后旧 Category 订阅停止续费。",
+    "newRenewalNote": "本次基础费用不含可能适用的税费。付款成功后 Everything 替代 {category}，后续按 {price} / {months} 个月续费，不再享受本次升级抵扣。",
     "title": "确认升级",
     "intro": "您将把所选的有效分类订阅升级为全站订阅。",
     "source": "原订阅方案",
@@ -1769,7 +1831,7 @@
     "previewDescription": "继续学习开放预览的课程内容。",
     "previewSaveError": "学习进度保存失败，请重试。",
     "progressUnavailable": "暂时无法加载学习进度。",
-    "welcome": "欢迎回来，{name}",
+    "welcome": "欢迎，{name}",
     "description": "课程按您首次开始学习的时间排列。",
     "yourLearning": "您的学习",
     "courseStates": "学习中和已完成的课程",
@@ -1892,7 +1954,9 @@
       "followUpsTitle": "你可能还想问：",
       "clarifySource": "根据「{question}」解释",
       "clarifyUnavailable": "这一点我没法在这里讲清楚，我帮你转给客服确认一下。",
-      "clarifyNotCovered": "这一点答案里没有写到，我帮你转给客服确认一下。"
+      "clarifyNotCovered": "这一点答案里没有写到，我帮你转给客服确认一下。",
+      "missedOne": "你问的另一件事我还没有现成的答案，可以转给人工客服帮你看。",
+      "missedMany": "你问的另外 {n} 件事我还没有现成的答案，可以转给人工客服帮你看。"
     },
     "assistant": {
       "title": "AI 客服助手",

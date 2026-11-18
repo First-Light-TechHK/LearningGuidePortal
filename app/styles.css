@@ -2436,9 +2436,3 @@ body { background: #fff; color: var(--lg-ink); }
 }
 
 /* Account settings — sign-in method linking */
-.settings-signin-methods { display: grid; gap: 12px; margin-top: 24px; }
-.settings-signin-methods h2 { margin: 0; color: #163a5f; font-size: 18px; }
-.settings-signin-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid #d6e1e9; border-radius: 8px; background: #fff; }
-.settings-signin-row > div { min-width: 0; }
-.settings-signin-row .settings-hint { margin: 4px 0 0; }
-.settings-linked-badge { flex-shrink: 0; padding: 5px 12px; border-radius: 999px; background: #e7f6ec; color: #0e7a3c; font-size: 12px; font-weight: 700; white-space: nowrap; }

@@ -56,7 +56,7 @@ function Exercise({ node, locale }: { node: LessonNode; locale: LessonLocale }) 
   </div>;
 }
 
-type VideoPresentation = { poster?: string; badge?: string; playLabel: string };
+type VideoPresentation = { poster?: string; badge?: string; playLabel: string; autoPlay?: boolean };
 type VideoNavigationRequest = { id: string; request: number };
 type VideoSeekTarget = { id: string; startSeconds: number; request?: number };
 
@@ -92,7 +92,7 @@ function ContentPlayer({ content, locale, trialGate, videoSeekTarget, videoPrese
   useEffect(() => {
     const media = video.current;
     if (!media) return;
-    let shouldResume = videoSeekTarget?.request !== undefined || (!media.paused && !media.ended);
+    let shouldResume = Boolean(videoPresentation?.autoPlay) || videoSeekTarget?.request !== undefined || (!media.paused && !media.ended);
     const start = videoSeekTarget?.startSeconds ?? 0;
     startApplied.current = false;
     seen.current = new Set(nodes.filter(node => node.triggerTime < start).map(node => node.id));
@@ -101,7 +101,16 @@ function ContentPlayer({ content, locale, trialGate, videoSeekTarget, videoPrese
     let disposed = false;
     const resumePlayback = () => {
       if (disposed || !shouldResume || activeRef.current || enforceVideoTrial()) return;
-      void media.play().then(() => {
+      const play = async () => {
+        try { await media.play(); }
+        catch (error) {
+          if (disposed || !videoPresentation?.autoPlay || !(error instanceof DOMException) || error.name !== "NotAllowedError") throw error;
+          // Browser autoplay policy may require muted playback after document navigation.
+          media.muted = true;
+          await media.play();
+        }
+      };
+      void play().then(() => {
         if (disposed) return;
         shouldResume = false;
         if (!media.paused && !media.ended) { onVideoStart?.(content.id); reportProgress(); }
@@ -167,7 +176,7 @@ function ContentPlayer({ content, locale, trialGate, videoSeekTarget, videoPrese
   return <section className="la-content-player"><h3>{content.title}</h3>
     {content.type === 'text' && <TextExhibitContent html={content.html || ''} locale={locale} exhibitMode={content.exhibitMode} nodes={content.nodes}/>}
     {content.type === 'pdf' && <CourseMediaPreview type="pdf" url={content.url} title={content.title} locale={locale}/>}
-    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} onFullscreenChange={setVideoFullscreen} dialogOverlay={activeDialog} fullscreenOverlay={exhibitPrompt ? <VideoExhibitBar presentation="fullscreen" node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => void open(exhibitPrompt)}/> : undefined} className="la-lesson-video" src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload={contentTrialGate ? "metadata" : "auto"} onLoadedMetadata={initialiseVideo} onDurationChange={() => reportProgress()} onTimeUpdate={() => { if (!enforceVideoTrial()) { reportProgress(true); tick(); } }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else { onVideoStart?.(content.id); reportProgress(true); tick(); } }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
+    {content.type === 'video' && (safeMediaUrl(content.url) ? <div className="la-video-stage"><ControlledVideo locale={locale} ref={video} onFullscreenChange={setVideoFullscreen} dialogOverlay={activeDialog} fullscreenOverlay={exhibitPrompt ? <VideoExhibitBar presentation="fullscreen" node={exhibitPrompt} locale={locale} onDismiss={() => setExhibitPrompt(null)} onView={() => void open(exhibitPrompt)}/> : undefined} className="la-lesson-video" data-bookmark-content-id={content.id} src={safeMediaUrl(content.url)} poster={videoPresentation?.poster ? safeMediaUrl(videoPresentation.poster) : undefined} playsInline preload={contentTrialGate ? "metadata" : "auto"} onLoadedMetadata={initialiseVideo} onDurationChange={() => reportProgress()} onTimeUpdate={() => { if (!enforceVideoTrial()) { reportProgress(true); tick(); } }} onPlay={() => { setStarted(true); if (enforceVideoTrial() || activeRef.current) video.current?.pause(); else { onVideoStart?.(content.id); reportProgress(true); tick(); } }} onSeeking={() => { seeking.current = true; }} onSeeked={() => {
       const now = video.current?.currentTime || 0;
       if (enforceVideoTrial()) { seeking.current = false; return; }
       // A forward seek skips earlier instances; seeking backwards rearms later ones.

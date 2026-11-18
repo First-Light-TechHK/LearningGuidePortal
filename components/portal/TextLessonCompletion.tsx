@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, LoaderCircle } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { AssessmentAvailability } from "@/contracts/lesson-resources";
 import type { Locale } from "@/lib/i18n/config";
@@ -11,7 +11,9 @@ import { createClientEventId } from "@/lib/clientEventId";
 import { LessonCompletedDialog } from "./LessonCompletedDialog";
 import styles from "./text-lesson-completion.module.css";
 
-export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, nextHref, variant = "row", learningMode = "text", assessmentAvailability, visible = true, endpoint = "/api/study/events" }: {
+export function TextLessonCompletion({ onCompleted, locale, courseId, lessonId, lessonNumber, lessonTitle, nextLesson, nextHref, variant = "row", learningMode = "text", assessmentAvailability, visible = true, initialCompleted = false, endpoint = "/api/study/events" }: {
+  initialCompleted?: boolean;
+  onCompleted?: () => void;
   assessmentAvailability?: AssessmentAvailability;
   nextLesson?: { number: string; title: string };
   locale: Locale; courseId: string; lessonId: string; lessonNumber: string; lessonTitle: string;
@@ -46,13 +48,18 @@ export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber,
       frame = 0;
       if (!reader) return;
       const bounds = reader.getBoundingClientRect();
-      surface.style.setProperty("--completion-center", `${bounds.left + bounds.width / 2}px`);
-      surface.style.setProperty("--completion-max-width", `${Math.max(0, Math.min(bounds.width - 24, window.innerWidth - 24))}px`);
+      const tools = surface.closest("[data-course-id]")?.querySelector<HTMLElement>("[data-reading-tools]");
+      const toolsBounds = tools?.getBoundingClientRect();
+      const besideReader = toolsBounds && toolsBounds.left >= bounds.right;
+      const maxWidth = besideReader ? window.innerWidth - toolsBounds.left - 12 : Math.min(bounds.width - 24, window.innerWidth - 48);
+      surface.style.setProperty("--completion-max-width", `${Math.max(0, maxWidth)}px`);
+      const left = besideReader ? toolsBounds.left : window.innerWidth - 24 - (card.current?.getBoundingClientRect().width || 0);
+      surface.style.setProperty("--completion-left", `${Math.max(12, left)}px`);
       setOnSurface(bounds.top < window.innerHeight && bounds.bottom > 0);
     };
     const schedulePosition = () => { if (!frame) frame = requestAnimationFrame(position); };
     const reserveSpace = () => {
-      const height = `${Math.ceil(card.current!.getBoundingClientRect().height) + 24}px`;
+      const height = `${Math.ceil(card.current!.getBoundingClientRect().height) + 54}px`;
       if (surface.style.getPropertyValue("--text-completion-height") === height) return;
       surface.style.setProperty("--text-completion-height", height);
       // Keep retries reachable if a translated error makes the floating bar taller.
@@ -71,24 +78,24 @@ export function TextLessonCompletion({ locale, courseId, lessonId, lessonNumber,
       window.removeEventListener("scroll", schedulePosition);
       window.removeEventListener("resize", schedulePosition);
       window.visualViewport?.removeEventListener("resize", schedulePosition);
-      for (const property of ["--text-completion-height", "--completion-center", "--completion-max-width"]) surface.style.removeProperty(property);
+      for (const property of ["--text-completion-height", "--completion-left", "--completion-max-width"]) surface.style.removeProperty(property);
     };
   }, [visible, variant]);
-  const request = useRef<string | null>(null), inFlight = useRef(false), saved = useRef(false);
+  const request = useRef<string | null>(null), inFlight = useRef(false), saved = useRef(initialCompleted);
   async function complete() {
     if (inFlight.current) return;
-    if (saved.current) { setDialogOpen(true); return; }
+    if (saved.current || initialCompleted) { setDialogOpen(true); return; }
     inFlight.current = true; setBusy(true); setError("");
     request.current ||= createClientEventId();
     try {
       await completeLessonOutline(endpoint, courseId, lessonId, learningMode, request.current);
-      saved.current = true; setDialogOpen(true);
+      saved.current = true; onCompleted?.(); setDialogOpen(true); router.refresh();
     } catch { setError(messages.overviewDesign.previewSaveError); }
     finally { inFlight.current = false; setBusy(false); }
   }
   if (!visible) return null;
   return <><div ref={card} className={variant === "card" ? styles.card : variant === "inline" ? styles.inline : styles.row} data-text-completion data-at-end={atEnd} data-on-surface={onSurface} inert={variant === "card" && !onSurface ? true : undefined}>
-    <button type="button" className={variant !== "row" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{variant !== "row" ? <>{busy ? messages.learning.processing : messages.videoCompletion.markComplete}{busy ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</> : busy ? messages.learning.processing : messages.videoCompletion.markComplete}</button>
+    <button type="button" className={variant !== "row" ? styles.primary : styles.next} disabled={busy} aria-busy={busy} onClick={() => void complete()}>{saved.current || initialCompleted ? messages.learning.completed : busy ? messages.learning.processing : messages.videoCompletion.markComplete}{busy && variant !== "row" ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true"/> : null}</button>
     {error && <p role="alert">{error}</p>}
   </div>
     {dialogOpen && <LessonCompletedDialog nextLesson={nextLesson} isLastLesson={nextHref === null} assessmentAvailability={assessmentAvailability} locale={locale} courseId={courseId} lessonId={lessonId} lessonNumber={lessonNumber} lessonTitle={lessonTitle} onClose={() => setDialogOpen(false)} onContinue={() => { setDialogOpen(false); router.push(nextHref || `/${locale}/account/my-learning`); }}/>}

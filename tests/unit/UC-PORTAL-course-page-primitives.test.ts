@@ -44,7 +44,7 @@ function assertCurriculumActions(page: CoursePage) {
         assert.equal(html, "");
         continue;
       }
-      assert.ok(html.includes(`>${lesson.access === "entitled" ? copy.start : copy.preview}</`), html);
+      assert.ok(html.includes(`>${lesson.access === "entitled" ? lesson.completed ? copy.review : lesson.continuable ? copy.continue : copy.start : copy.preview}</`), html);
       if (href) {
         assert.ok(html.includes(`href="${href}"`), html);
         assert.ok(!html.includes("disabled"), html);
@@ -89,6 +89,25 @@ test("UC-PORTAL-1: course identity comes from the product store, not KS leftover
   assert.equal(identity.previewAvailable, true);
   assert.equal(identity.totalMinutes, 45);
   assert.notEqual(identity.track, "Course");
+});
+
+test("UC-PORTAL-1: course service exposes the shared video duration with configured-minute fallback", async () => {
+  const data = await readProductData();
+  const course = data.courses.find((item: { id: string }) => item.id === COURSE_ID);
+  const originalSections = structuredClone(course.sections);
+  try {
+    const lessons = course.sections.flatMap((section: { lessons: any[] }) => section.lessons);
+    lessons[0].durationMinutes = 25; lessons[0].videoDurationSeconds = 1469;
+    lessons[1].durationMinutes = 27; lessons[1].videoDurationSeconds = 1584;
+    await writeProductData(data);
+    assert.equal((await store.getCoursePage(COURSE_ID)).identity?.totalMinutes, 51);
+    lessons[1].videoDurationSeconds = null;
+    await writeProductData(data);
+    assert.equal((await store.getCoursePage(COURSE_ID)).identity?.totalMinutes, 52);
+  } finally {
+    course.sections = originalSections;
+    await writeProductData(data);
+  }
 });
 
 test("UC-PORTAL-1: visitor syllabus is previewable vs locked", async () => {
@@ -177,15 +196,18 @@ test("UC-PORTAL-4: subscribed access marks every LP entitled and Continue learni
   assertCurriculumActions(page);
 });
 
-test("completed course recommends the final lesson while keeping every entitled lesson accessible", async () => {
+test("completed Lessons retain completion while review resumes the latest Lesson with Course percentages retired", async () => {
   const user = await verifiedUser(store, "course-page-completed@example.test");
   await purchaseCourse(store, user.id);
   await openLearningPoint(store, user.id, PREVIEW_LP, "completed-course-first");
   await openLearningPoint(store, user.id, PRIVATE_LP, "completed-course-last");
+  for (const lessonId of [PREVIEW_LP, PRIVATE_LP]) await store.recordStudyEvent({ userId: user.id, courseId: COURSE_ID, lessonId, event: "complete", seconds: 0, clientEventId: `course-page-complete-${lessonId}` });
   await openLearningPoint(store, user.id, PREVIEW_LP, "completed-course-revisit");
   const page = await store.getCoursePage(COURSE_ID, user.id);
-  assert.equal(page.progress, 100);
-  assert.equal(page.actionLessonId, PRIVATE_LP);
+  assert.equal(page.progress, 0);
+  assert.equal(page.actionLessonId, PREVIEW_LP);
+  const study = (await store.getLearningOverview(user.id)).courses.find(course => course.courseId === COURSE_ID)!;
+  assert.ok([PREVIEW_LP, PRIVATE_LP].every(lessonId => study.completedLessonIds.includes(lessonId)));
   assertCurriculumActions(page);
 });
 
@@ -249,9 +271,11 @@ test("Science plus a single-course subscription keeps a historical locked resume
     const record = snapshot.studyRecords.find((record: { userId: string; courseId: string }) => record.userId === user.id && record.courseId === horace.id);
     Object.assign(record, patch);
     await writeProductData(snapshot);
+    const persisted = (await readProductData()).studyRecords.find((item: { id: string }) => item.id === record.id);
     const revised = await store.getCoursePage(horace.slug, user.id);
     assert.equal(revised.actionLessonId, revised.syllabus[0].lessonId);
-    assert.equal(revised.progress, patch.progress);
+    assert.equal(revised.progress, 0, "legacy percentages remain retired in the compatibility projection");
+    assert.deepEqual((await readProductData()).studyRecords.find((item: { id: string }) => item.id === record.id), persisted, "reading the projection preserves historical records");
     assertCurriculumActions(revised);
   }
   const state = { user, store };

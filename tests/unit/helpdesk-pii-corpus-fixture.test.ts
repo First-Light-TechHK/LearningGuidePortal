@@ -11,7 +11,8 @@ import { test } from "node:test";
 import { scrubPii, type ScrubContext } from "../../modules/helpdesk/piiScrubber";
 
 const FILE = join(__dirname, "..", "fixtures", "helpdesk-pii-corpus.json");
-const raw = readFileSync(FILE);
+// Pins describe repository LF bytes, independent of Windows checkout conversion.
+const raw = Buffer.from(readFileSync(FILE, "utf8").replace(/\r\n/g, "\n"));
 const corpus = JSON.parse(raw.toString("utf8")) as { cases: { group: string; input: string; expected: string; context?: ScrubContext }[] };
 
 /** Change both copies together, then update this pin and Admin's. */

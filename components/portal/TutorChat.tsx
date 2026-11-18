@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { PortalDialog } from "./PortalDialog";
 import { TutorAnswer } from "./TutorAnswer";
+import { tutorAnswerPlainText } from "@/lib/tutorAnswer";
 import { getMessages } from "@/lib/i18n/messages";
 import { Copy as CopyIcon, RotateCw, Undo2 } from "lucide-react";
 import { TutorRequestError, tutorErrorMessage } from "./tutorChatError";
@@ -226,7 +227,7 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
         <div className="tutor-message-actions">
           {message.role === "assistant" ? <>
             <details><summary aria-label={actions.tutorCopy} title={actions.tutorCopy}><CopyIcon size={15} /></summary><div className="tutor-copy-menu">
-              <button type="button" disabled={!message.content} onClick={() => void copyText(message.content.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`]/g, ""))}>{actions.tutorCopyPlain}</button>
+              <button type="button" disabled={!message.content} onClick={() => void copyText(tutorAnswerPlainText(message.content, actions.tutorSources))}>{actions.tutorCopyPlain}</button>
               <button type="button" disabled={!message.content} onClick={() => void copyText(message.content)}>{actions.tutorCopyMarkdown}</button>
             </div></details>
           </> : <>
