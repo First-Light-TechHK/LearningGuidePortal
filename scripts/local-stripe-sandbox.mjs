@@ -8,15 +8,26 @@ import Stripe from "stripe";
 import next from "next";
 
 // One process keeps the app and CLI on the same ephemeral signing secret.
-// --smoke uses disposable local data and expires an unpaid test Checkout only.
+// Both verification modes use disposable local data.
 const repo = process.cwd();
-const env = parseEnv(await readFile(path.join(repo, ".env.local"), "utf8"));
-Object.assign(process.env, env);
+const localEnv = await readFile(path.join(repo, ".env.local"), "utf8").catch(error => {
+  if (error.code !== "ENOENT") throw error;
+  return "";
+});
+for (const [name, value] of Object.entries(parseEnv(localEnv))) process.env[name] ??= value;
 if (process.env.STRIPE_SANDBOX !== "1" || !process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_")) throw new Error("Stripe Sandbox test key required.");
-const smoke = process.argv.includes("--smoke"), port = Number(process.env.STRIPE_LOCAL_PORT || 3014);
+const smoke = process.argv.includes("--smoke");
+const paymentE2e = process.argv.includes("--payment-e2e");
+const unpaidOnly = process.argv.includes("--unpaid-only");
+if (smoke && paymentE2e) throw new Error("Choose one Sandbox verification mode.");
+if (unpaidOnly && !paymentE2e) throw new Error("--unpaid-only requires --payment-e2e.");
+if (paymentE2e && !unpaidOnly && !process.env.STRIPE_COUPON_UPGRADE_SIX_MONTHS) throw new Error("Configure the six-month Sandbox upgrade Coupon.");
+const port = Number(process.env.STRIPE_LOCAL_PORT || 3014);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid local port.");
 const origin = `http://127.0.0.1:${port}`;
 Object.assign(process.env, { APP_ENV: "DEV", STORAGE_BACKEND: "local", PAYMENT_MODE: "stripe", NEXT_PUBLIC_APP_URL: origin, STRIPE_NO_AUTO_UPDATE: "1" });
+if (smoke || paymentE2e) process.env.ADMIN_HOSTS = "admin.example.test";
+if (paymentE2e) Object.assign(process.env, { EMAIL_VERIFICATION_REQUIRED: "0", LOCAL_SOCIAL_LOGIN: "0" });
 const events = "checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,invoice.paid,invoice.payment_failed,invoice.voided,customer.subscription.updated,customer.subscription.deleted,charge.refunded,charge.refund.updated,refund.created,refund.updated,refund.failed";
 const delivered = new Set();
 const listener = spawn(process.env.STRIPE_CLI_PATH || "stripe", ["listen", "--forward-to", `${origin}/api/payment/webhook`, "--events", events], {
@@ -43,6 +54,8 @@ for (const stream of [listener.stdout, listener.stderr]) {
 listener.on("error", () => rejectSecret(new Error("Stripe CLI unavailable; set STRIPE_CLI_PATH or install Stripe CLI.")));
 listener.on("exit", () => { if (!secretSettled) rejectSecret(new Error("Stripe listener exited before becoming ready.")); });
 let app, server, temporary, probe, stripe, closing = false;
+let verifyingPayments = false;
+const verification = new AbortController();
 async function close() {
   if (closing) return; closing = true;
   clearTimeout(listenerTimer); listener.kill();
@@ -52,10 +65,13 @@ async function close() {
   process.chdir(repo);
   if (temporary && path.dirname(temporary) === tmpdir()) await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => { void close().then(() => process.exit()); });
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {
+  if (verifyingPayments) verification.abort(new Error("Sandbox verification interrupted."));
+  else void close().then(() => process.exit());
+});
 try {
   process.env.STRIPE_WEBHOOK_SECRET = await secret;
-  if (smoke) {
+  if (smoke || paymentE2e) {
     temporary = await mkdtemp(path.join(tmpdir(), "lg-stripe-local-"));
     process.chdir(temporary);
   }
@@ -64,7 +80,16 @@ try {
   const handler = app.getRequestHandler();
   server = http.createServer((req, res) => handler(req, res));
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", resolve); });
-  console.log(JSON.stringify({ ready: true, origin, webhook: `${origin}/api/payment/webhook`, isolatedData: smoke, environmentFileChanged: false }));
+  console.log(JSON.stringify({ ready: true, origin, webhook: `${origin}/api/payment/webhook`, isolatedData: smoke || paymentE2e, environmentFileChanged: false }));
+  if (paymentE2e) {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { maxNetworkRetries: 1, timeout: 15000 });
+    const { verifyStripePaymentFlows } = await import("./verify-stripe-payment-flows.mjs");
+    verifyingPayments = true;
+    try {
+      await verifyStripePaymentFlows({ stripe, origin, delivered, signingSecret: process.env.STRIPE_WEBHOOK_SECRET, signal: verification.signal, unpaidOnly });
+    } finally { verifyingPayments = false; }
+    await close();
+  }
   if (smoke) {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { maxNetworkRetries: 1, timeout: 15000 });
     const reference = process.env.STRIPE_PRICE_EVERYTHING_SIX_MONTHS;

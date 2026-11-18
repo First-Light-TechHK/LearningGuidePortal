@@ -207,7 +207,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
             <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
           </aside>);
   return <div ref={pageRef} className={`${styles.page} ${mode === "text" ? styles.textPage : ""}`} data-course-id={courseId} data-lesson-id={lesson.id}>
-    <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb}>
+    <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb} data-lesson-breadcrumb>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
       {category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span aria-hidden="true">/</span></>}
       <Link href={courseHref} prefetch={false} onClick={returnToCourse}>{courseTitle}</Link>

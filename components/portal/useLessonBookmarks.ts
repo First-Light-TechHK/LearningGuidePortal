@@ -48,6 +48,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
         } else sessionStorage.removeItem(key);
       } else sessionStorage.removeItem(key);
     } catch { /* Storage may be disabled; server checkpoints still work. */ }
+    if (mode === "text" && !latest) latest = restore;
     if (restore?.contentId) restoreContent.current(restore.contentId);
     const same = (a: Position | undefined, b: Position | undefined) => a?.contentId === b?.contentId && a?.positionMs === b?.positionMs && a?.paragraphId === b?.paragraphId;
     const remember = () => { if (pending) try { sessionStorage.setItem(key, JSON.stringify({ request: pending, latest })); } catch { /* Optional recovery cache. */ } };
@@ -86,7 +87,8 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     let media: HTMLVideoElement | null = null, detachMedia: (() => void) | undefined;
     let sampleVideo: ((force?: boolean) => void) | undefined;
     let restored = false, restoring = false, textTimer: ReturnType<typeof setTimeout> | undefined;
-    let restoreFrame = 0;
+    let restoreFrame = 0, lastTextScroll: number | undefined;
+    const textScrollOffset = (reader: HTMLElement) => getComputedStyle(reader).overflowY === "visible" ? window.scrollY : reader.scrollTop;
     const textPositions = () => {
       const reader = surface.querySelector<HTMLElement>("[data-text-reader]");
       if (!reader || reader.dataset.bookmarkReady !== "true") return [];
@@ -100,13 +102,19 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
       });
       return result;
     };
-    const sampleText = () => {
+    const sampleText = (settled = true) => {
       if (!restored || restoring) return;
       const reader = surface.querySelector<HTMLElement>("[data-text-reader]");
       if (!reader) return;
+      const scrollOffset = textScrollOffset(reader);
+      if (scrollOffset === lastTextScroll || (!settled && lastTextScroll !== undefined && scrollOffset < lastTextScroll)) return;
+      lastTextScroll = scrollOffset;
       const bounds = reader.getBoundingClientRect();
       const header = document.querySelector<HTMLElement>(".portal-header")?.getBoundingClientRect();
-      const top = Math.max(0, bounds.top, header && header.top <= 0 ? header.bottom : 0);
+      const viewportTop = Math.max(0, header && header.top <= 0 ? header.bottom : 0);
+      const breadcrumb = surface.querySelector<HTMLElement>("[data-lesson-breadcrumb]")?.getBoundingClientRect();
+      if (breadcrumb && breadcrumb.bottom > viewportTop && breadcrumb.top < innerHeight) return;
+      const top = Math.max(viewportTop, bounds.top);
       const bottom = Math.min(innerHeight, bounds.bottom);
       if (bottom <= top) return;
       const entry = textPositions().find(({ element }) => { const rect = element.getBoundingClientRect(); return rect.height > 0 && rect.bottom > top && rect.top < bottom; });
@@ -132,8 +140,9 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
             if (getComputedStyle(reader).overflowY === "visible") window.scrollBy(0, target.getBoundingClientRect().top - headerTop - 12);
             else reader.scrollTop += target.getBoundingClientRect().top - reader.getBoundingClientRect().top - 12;
           }
+          // Initial positioning shows the LP heading while retaining the saved paragraph.
+          if (reader) lastTextScroll = textScrollOffset(reader);
           restored = true; restoring = false;
-          sampleText(); void flush();
         }); });
         return;
       }
@@ -182,7 +191,15 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     };
     const sampleAndFlush = (force = false) => { if (mode === "text") sampleText(); else sampleVideo?.(force); return flush(); };
     flushRef.current = sampleAndFlush;
-    const scroll = () => { if (mode !== "text") return; sampleText(); clearTimeout(textTimer); textTimer = setTimeout(() => void flush(), 800); };
+    const scroll = () => {
+      if (mode !== "text" || !restored || restoring) return;
+      // Buffer a newly reached reading position so even a quick trip up to the breadcrumb can save it.
+      sampleText(false);
+      clearTimeout(textTimer);
+      // Sample where a scroll settles. Traversing earlier LPs on the way to the breadcrumb
+      // must not replace the last reading position.
+      textTimer = setTimeout(() => void sampleAndFlush(), 800);
+    };
     const visibility = () => { if (document.visibilityState === "hidden") void sampleAndFlush(); };
     const leave = () => { void sampleAndFlush(); };
     const online = () => { void flush(); };
