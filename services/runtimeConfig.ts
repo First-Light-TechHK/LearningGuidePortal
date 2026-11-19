@@ -9,7 +9,11 @@ export function isProductionEnvironment() {
 }
 
 export function isManagedEnvironment() {
-  return ["SIT", "UAT", "PROD", "PPE/PROD", "PRODUCTION"].includes(appEnvironment());
+  // SANDBOX is the customer-facing Course Sandbox (PRD v2.0 §3.1): an independent
+  // deployment of the same code, so it gets the managed checks (/api/health DB+S3
+  // dependency checks, HTTPS, session secret, email verification) instead of
+  // local-development semantics.
+  return ["SIT", "UAT", "SANDBOX", "PROD", "PPE/PROD", "PRODUCTION"].includes(appEnvironment());
 }
 
 export function localResetPreviewAllowed(request: Request) {
@@ -86,7 +90,9 @@ export function runtimeConfiguration() {
   if (production && publicUrl && !/^https:\/\//i.test(process.env.NEXT_PUBLIC_APP_URL || "")) required.push("HTTPS NEXT_PUBLIC_APP_URL");
   if (production && process.env.LOCAL_SOCIAL_LOGIN !== "0") required.push("LOCAL_SOCIAL_LOGIN=0");
   if (production && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
-  if (["SIT", "UAT"].includes(appEnvironment()) && (process.env.STRIPE_SANDBOX !== "1" || !process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_"))) required.push("Stripe sandbox test credentials");
+  // Sandbox runs the complete payment flow against Stripe test mode (PRD v2.0 §3.1).
+  // A live key or a missing key must fail readiness instead of reporting green.
+  if (["SIT", "UAT", "SANDBOX"].includes(appEnvironment()) && (process.env.STRIPE_SANDBOX !== "1" || !process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_"))) required.push("Stripe sandbox test credentials");
   if (production && !persistentStorage) required.push("DATABASE_URL + DATA_S3_BUCKET (and STORAGE_BACKEND must not be local)");
   if (production && payment !== "stripe") required.push("PAYMENT_MODE=stripe");
   if (production && payment === "stripe" && !stripeSecret) required.push("STRIPE_SECRET_KEY");
@@ -95,7 +101,10 @@ export function runtimeConfiguration() {
   if (production && !google) required.push("GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET");
   if (production && !wechat) required.push("WECHAT_APP_ID + WECHAT_APP_SECRET");
   if (emailVerification && !email) required.push("SMTP_HOST + SMTP_USER + SMTP_PASS");
-  if (production && !openRouter) required.push("OPENROUTER_API_KEY");
+  // Course-only Sandbox (owner partition 2026-11-16/19): the Sandbox Portal is
+  // deployed without the AI Tutor / OpenRouter configuration, so OpenRouter must
+  // not gate readiness there. Every other managed environment keeps the check.
+  if (production && appEnvironment() !== "SANDBOX" && !openRouter) required.push("OPENROUTER_API_KEY");
   if ((google || wechat) && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
   return {
     environment: appEnvironment(),
