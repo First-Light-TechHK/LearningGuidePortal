@@ -21,6 +21,7 @@ import type { VideoPlaybackProgress } from "@/contracts/video-progress";
 import { videoCompletionPercent } from "@/lib/videoLessonCompletion";
 import { PreviewProgress } from "./PreviewProgress";
 import styles from "./preview-lesson.module.css";
+import { ReadingNavigation } from "./ReadingNavigation";
 import type { CourseLearningMode, CourseLearningModeResult } from "@/contracts/course-learning-mode";
 import { resolveLessonPresentation, modeLessonDestination } from "@/lib/courseLearningMode";
 import { TextLessonReader } from "./TextLessonReader";
@@ -87,13 +88,13 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
       const offset = `${Math.ceil(page.getBoundingClientRect().top + window.scrollY)}px`;
       if (page.style.getPropertyValue("--learning-top-offset") !== offset) page.style.setProperty("--learning-top-offset", offset);
       for (const element of [outline, tools]) if (element) {
-        element.dataset.readingSticky = String(element.getBoundingClientRect().height <= window.innerHeight - 32);
+        element.dataset.readingSticky = String(mode === "text" || element.getBoundingClientRect().height <= window.innerHeight - 32);
       }
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     update();
     const observer = new ResizeObserver(schedule);
-    for (const element of [page, page.parentElement, outline, tools, document.querySelector(".portal-header")]) if (element) observer.observe(element);
+    for (const element of [page, page.parentElement, outline, tools, page.querySelector("[data-reading-toolbar]"), document.querySelector(".portal-header")]) if (element) observer.observe(element);
     window.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
     return () => {
@@ -208,6 +209,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
             <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
           </aside>);
   return <div ref={pageRef} className={`${styles.page} ${mode === "text" ? styles.textPage : ""}`} data-course-id={courseId} data-lesson-id={lesson.id}>
+    {mode === "text" && <ReadingNavigation root={pageRef} locale={locale} courseHref={courseHref} beforeNavigate={entitled ? () => resume.flush({ requireSaved: true }) : undefined}/>}
     <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb} data-lesson-breadcrumb>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
       {category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span aria-hidden="true">/</span></>}
@@ -233,7 +235,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
               if (modeSaving) { event.preventDefault();return; }
               if (bookmarkSnapshot || destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
             }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
-            {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
+            {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button data-reading-point key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
           </div>; })}
           {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}
         </nav>

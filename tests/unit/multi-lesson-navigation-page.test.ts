@@ -74,7 +74,7 @@ test("three lessons remain reachable across text/video changes, with locked and 
       assert.ok((await mixed.getAttribute("href"))?.includes("lessonId=third&viewMode=video"), "leaving the fallback Lesson restores the Course preference");
       await mixed.click();
       await page.waitForFunction(() => (window as unknown as { destination: string }).destination.includes("lessonId=third&viewMode=video"));
-      assert.deepEqual(saves, [], "opening a Lesson never rewrites the chosen Course mode");
+      assert.equal(saves.length, 0, "opening a Lesson never rewrites the chosen Course mode");
       const copy = getMessages(locale).previewVideoDesign;
       await page.getByRole("combobox", { name: copy.learningMode }).click();
       await page.getByTitle(copy.textMode, { exact: true }).last().click();
