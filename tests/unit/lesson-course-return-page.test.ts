@@ -44,9 +44,9 @@ test("Course breadcrumb waits for the latest text/video checkpoint before a fres
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
       const lessonUrl = `http://course-return.test/${locale}/account/learn/${course.id}?lessonId=${lesson.id}`;
       const courseUrl = `http://course-return.test/${locale}/portal/courses/${course.id}`;
-      const breadcrumb = page.locator(`nav a[href="/${locale}/portal/courses/${course.id}"]`);
+      const breadcrumb = page.locator(`[data-lesson-breadcrumb] a[href="/${locale}/portal/courses/${course.id}"]`);
       const scrollToParagraph = (point: number, paragraph: number) => page.locator(`[data-text-point-id="${points[point].id}"] .la-prose p`).nth(paragraph)
-        .evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + scrollY + 2));
+        .evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + scrollY - (document.querySelector("[data-reading-toolbar]")?.getBoundingClientRect().height || 0) + 2));
       let delaySave = false, failSave = false, committedAt = 0, readAt = 0;
       await page.route("http://course-return.test/**", async route => {
         const request = route.request(), url = new URL(request.url());
@@ -116,12 +116,13 @@ test("Course breadcrumb waits for the latest text/video checkpoint before a fres
         assert.notEqual(latest.paragraphId, `${points[1].id}:paragraph:0`);
         const before = pendingWrites.length;
         await mount();
+        const barHeight = await page.locator("[data-reading-toolbar]").evaluate(element => element.getBoundingClientRect().height);
         const headingTop = await page.locator(`[data-text-point-id="${points[1].id}"]`).evaluate(element => element.getBoundingClientRect().top);
-        assert.ok(Math.abs(headingTop - 12) < 3, "reentry still restores the LP heading");
+        assert.ok(Math.abs(headingTop - barHeight - 12) < 3, "reentry still restores the LP heading");
         await page.evaluate(() => window.scrollTo(0, 0));
         await breadcrumb.click();
         await page.waitForURL(courseUrl);
-        assert.equal(pendingWrites.length, before, "reentry and returning to the breadcrumb must not write a new checkpoint");
+        assert.equal(pendingWrites.length, before, `reentry and returning to the breadcrumb must not write a new checkpoint: ${JSON.stringify({before:latest,after:await readBookmark()})}`);
         assert.deepEqual(await readBookmark(), latest);
 
         await mount();
@@ -144,6 +145,11 @@ test("Course breadcrumb waits for the latest text/video checkpoint before a fres
         await failed;
       }
       await breadcrumb.click();
+      if (mode === "text") {
+        await page.locator('[data-reading-toolbar] [role="alert"]').waitFor();
+        assert.equal(page.url(), lessonUrl, "failed text saves offer an explicit choice before leaving");
+        await page.getByRole("button", {name: (await import("../../lib/i18n/messages")).getMessages(locale).readingNavigation.leave, exact:true}).click();
+      }
       await page.waitForURL(courseUrl);
       assert.equal(await page.locator("[data-server-lp]").textContent(), latest.lpNumber);
       assert.deepEqual(await readBookmark(), latest);

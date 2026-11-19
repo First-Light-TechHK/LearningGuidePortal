@@ -6,6 +6,7 @@ import { lessonLanguageSaveEvent, type LessonLanguageSave } from "@/lib/lessonLa
 import type { LessonContent } from "@/contracts/lesson-content";
 import { bookmarkLessonRevision } from "@/lib/lessonBookmarkDisplay";
 import { createClientEventId } from "@/lib/clientEventId";
+import { readingTargetTop, readingViewportTop } from "@/lib/readingViewport";
 
 type Position = Pick<LessonBookmarkInput, "contentId" | "positionMs" | "paragraphId">;
 const blocks = "p,h1,h2,h3,h4,h5,h6,li,blockquote";
@@ -20,7 +21,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
   const [bookmarks, setBookmarks] = useState(initial?.bookmarks || {});
   const [error, setError] = useState(false), [reloadRequired, setReloadRequired] = useState(false);
   const snapshot = useRef(initial), mounted = useRef(true);
-  const flushRef = useRef<() => Promise<void>>(async () => {});
+  const flushRef = useRef<(requireSaved?: boolean) => Promise<void>>(async () => {});
   const restoreContent = useRef(onRestoreContent);
   restoreContent.current = onRestoreContent;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -28,7 +29,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
   useEffect(() => {
     const version = snapshot.current?.versions[lessonId]?.[mode];
     const surface = root.current;
-    if (!enabled || !ownerId || !version || !surface) return;
+    if (!enabled || !ownerId || !version || !surface) { flushRef.current = async () => {}; return; }
     const key = `learning-guide:bookmark:${ownerId}:${courseId}:${lessonId}:${mode}`;
     let active = true, blocked = false, dirty = false;
     let latest: Position | undefined, inFlight: Promise<void> | undefined, pending: LessonBookmarkInput | undefined;
@@ -88,6 +89,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     let sampleVideo: ((force?: boolean) => void) | undefined;
     let restored = false, restoring = false, textTimer: ReturnType<typeof setTimeout> | undefined;
     let restoreFrame = 0, lastTextScroll: number | undefined;
+    let restoredTextAnchor: { element: HTMLElement; top: number } | undefined;
     const textScrollOffset = (reader: HTMLElement) => getComputedStyle(reader).overflowY === "visible" ? window.scrollY : reader.scrollTop;
     const textPositions = () => {
       const reader = surface.querySelector<HTMLElement>("[data-text-reader]");
@@ -107,13 +109,22 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
       const reader = surface.querySelector<HTMLElement>("[data-text-reader]");
       if (!reader) return;
       const scrollOffset = textScrollOffset(reader);
+      if (restoredTextAnchor?.element.isConnected && Math.abs(restoredTextAnchor.element.getBoundingClientRect().top - restoredTextAnchor.top) < 2) {
+        // Late images/fonts can move scrollY while the browser keeps the restored anchor
+        // in the same visible place. That is layout recovery, not a new reading position.
+        lastTextScroll = scrollOffset;
+        return;
+      }
+      restoredTextAnchor = undefined;
       if (scrollOffset === lastTextScroll || (!settled && lastTextScroll !== undefined && scrollOffset < lastTextScroll)) return;
       lastTextScroll = scrollOffset;
       const bounds = reader.getBoundingClientRect();
       const header = document.querySelector<HTMLElement>(".portal-header")?.getBoundingClientRect();
-      const viewportTop = Math.max(0, header && header.top <= 0 ? header.bottom : 0);
+      const headerTop = Math.max(0, header && header.top <= 0 ? header.bottom : 0);
+      const viewportTop = Math.max(readingViewportTop(surface), headerTop);
       const breadcrumb = surface.querySelector<HTMLElement>("[data-lesson-breadcrumb]")?.getBoundingClientRect();
-      if (breadcrumb && breadcrumb.bottom > viewportTop && breadcrumb.top < innerHeight) return;
+      // A temporary save/error bar must not turn returning to the original nav into reading.
+      if (breadcrumb && breadcrumb.bottom > headerTop && breadcrumb.top < innerHeight) return;
       const top = Math.max(viewportTop, bounds.top);
       const bottom = Math.min(innerHeight, bounds.bottom);
       if (bottom <= top) return;
@@ -135,14 +146,20 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
             : entries.find(entry => entry.position.paragraphId === restore?.paragraphId)?.element;
           const reader = surface.querySelector<HTMLElement>("[data-text-reader]");
           if (target && reader) {
-            const header = document.querySelector<HTMLElement>(".portal-header");
-            const headerTop = header && getComputedStyle(header).position === "fixed" ? header.getBoundingClientRect().bottom : 0;
+            const headerTop = readingTargetTop(surface, target);
             if (getComputedStyle(reader).overflowY === "visible") window.scrollBy(0, target.getBoundingClientRect().top - headerTop - 12);
             else reader.scrollTop += target.getBoundingClientRect().top - reader.getBoundingClientRect().top - 12;
           }
           // Initial positioning shows the LP heading while retaining the saved paragraph.
-          if (reader) lastTextScroll = textScrollOffset(reader);
-          restored = true; restoring = false;
+          restored = true;
+          // Sticky sidebar limits settle after the compact bar appears. Ignore that layout
+          // adjustment just like the initial programmatic LP/paragraph restoration.
+          restoreFrame = requestAnimationFrame(() => {
+            if (!active) return;
+            if (reader) lastTextScroll = textScrollOffset(reader);
+            if (target) restoredTextAnchor = { element: target, top: target.getBoundingClientRect().top };
+            restoring = false;
+          });
         }); });
         return;
       }
@@ -190,7 +207,11 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
       };
     };
     const sampleAndFlush = (force = false) => { if (mode === "text") sampleText(); else sampleVideo?.(force); return flush(); };
-    flushRef.current = sampleAndFlush;
+    flushRef.current = async (requireSaved = false) => {
+      await sampleAndFlush();
+      // Existing background saves remain best-effort; explicit navigation can offer retry.
+      if (requireSaved && (blocked || pending || dirty)) throw new Error("bookmark-not-saved");
+    };
     const scroll = () => {
       if (mode !== "text" || !restored || restoring) return;
       // Buffer a newly reached reading position so even a quick trip up to the breadcrumb can save it.
@@ -221,6 +242,6 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     };
   }, [courseId, lessonId, mode, enabled, ownerId, root, restorePolicy]);
 
-  const flush = useCallback(() => flushRef.current(), []);
+  const flush = useCallback((options?: { requireSaved?: boolean }) => flushRef.current(options?.requireSaved), []);
   return { bookmarks, error, reloadRequired, flush };
 }

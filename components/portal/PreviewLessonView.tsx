@@ -22,6 +22,7 @@ import type { VideoPlaybackProgress } from "@/contracts/video-progress";
 import { videoCompletionPercent } from "@/lib/videoLessonCompletion";
 import { PreviewProgress } from "./PreviewProgress";
 import styles from "./preview-lesson.module.css";
+import { ReadingNavigation } from "./ReadingNavigation";
 import type { CourseLearningMode, CourseLearningModeResult } from "@/contracts/course-learning-mode";
 import { resolveLessonPresentation, modeLessonDestination } from "@/lib/courseLearningMode";
 import { TextLessonReader } from "./TextLessonReader";
@@ -84,13 +85,13 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
       const offset = `${Math.ceil(page.getBoundingClientRect().top + window.scrollY)}px`;
       if (page.style.getPropertyValue("--learning-top-offset") !== offset) page.style.setProperty("--learning-top-offset", offset);
       for (const element of [outline, tools]) if (element) {
-        element.dataset.readingSticky = String(element.getBoundingClientRect().height <= window.innerHeight - 32);
+        element.dataset.readingSticky = String(mode === "text" || element.getBoundingClientRect().height <= window.innerHeight - 32);
       }
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     update();
     const observer = new ResizeObserver(schedule);
-    for (const element of [page, page.parentElement, outline, tools, document.querySelector(".portal-header")]) if (element) observer.observe(element);
+    for (const element of [page, page.parentElement, outline, tools, page.querySelector("[data-reading-toolbar]"), document.querySelector(".portal-header")]) if (element) observer.observe(element);
     window.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
     return () => {
@@ -196,6 +197,17 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
     { icon: "understanding", title: copy.understanding, href: entitled ? `/${locale}/portal/courses/${encodeURIComponent(courseId)}/understanding?lessonId=${encodeURIComponent(lesson.id)}${studyEndpoint === "/api/study/preview" ? "&from=preview" : ""}` : undefined },
     { icon: "explore", title: copy.explore, action: "explore" },
   ];
+  const outlineNavigation = (<nav aria-label={copy.outline} className={styles.outline}>
+          {outline.map(item => { const bookmark = entitled ? latestLessonBookmark(resume.bookmarks, item.id, bookmarkSnapshot?.versions[item.id]) : undefined; const destination = lessonOutlineDestination(item, (item.id === lesson.id ? lessonCompleted : completedLessonIds.includes(item.id)) ? mode : bookmark?.mode || mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
+            {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} onClick={event => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              if (modeSaving) { event.preventDefault();return; }
+              if (bookmarkSnapshot || destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
+            }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
+            {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button data-reading-point key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
+          </div>; })}
+          {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}
+        </nav>);
   const toolsPanel = (<aside className={styles.tools} data-reading-tools aria-label={copy.deepLearning} tabIndex={!entitled ? 0 : undefined} aria-describedby={!entitled ? toolId : undefined}><h2>{copy.deepLearning}</h2>
             {tools.map(tool => {
               const body = <><span className={styles.toolIcon} aria-hidden="true"><Image src={`/portal/study/${tool.icon}.svg`} alt="" width={16} height={16}/></span><span className={styles.toolLabel}>{tool.title}</span></>;
@@ -207,6 +219,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
             <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
           </aside>);
   return <div ref={pageRef} className={`${styles.page} ${mode === "text" ? styles.textPage : ""}`} data-course-id={courseId} data-lesson-id={lesson.id}>
+    {mode === "text" && <ReadingNavigation root={pageRef} locale={locale} courseHref={courseHref} beforeNavigate={entitled ? () => resume.flush({ requireSaved: true }) : undefined}/>}
     <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb} data-lesson-breadcrumb>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
       {category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span aria-hidden="true">/</span></>}
@@ -225,17 +238,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
             onChange={value => void switchMode(value)} />
         </PortalProvider> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
-        <nav aria-label={copy.outline} className={styles.outline}>
-          {outline.map(item => { const bookmark = entitled ? latestLessonBookmark(resume.bookmarks, item.id, bookmarkSnapshot?.versions[item.id]) : undefined; const destination = lessonOutlineDestination(item, (item.id === lesson.id ? lessonCompleted : completedLessonIds.includes(item.id)) ? mode : bookmark?.mode || mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
-            {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} onClick={event => {
-              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              if (modeSaving) { event.preventDefault();return; }
-              if (bookmarkSnapshot || destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
-            }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
-            {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
-          </div>; })}
-          {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}
-        </nav>
+        {outlineNavigation}
       </aside>
       <article className={styles.main}>
         <header className={styles.heading} data-preview={!entitled}><p>{current?.number}</p><h1>{lesson.title}</h1>{!entitled && <button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button>}{selected?.type === "video" && entitled && <LessonCompletionBar actionOnly onCompleted={() => setLessonCompleted(true)} nextLesson={nextLesson} assessmentAvailability={assessmentAvailability} lessonTitle={lesson.title} key={`${lesson.id}:${selected.id}`} contentId={selected.id} endedRequest={ended?.contentId === selected.id ? ended.request : 0} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} percentage={videoCompletionPercent(selectedVideoProgress) || 0} seconds={Math.floor(selectedVideoProgress?.currentTime || 0)} initialCompleted={lessonCompleted || initialCompleted} nextHref={nextHref} endpoint={studyEndpoint}/>}<div className={styles.introduction}>{description}</div><Image className={styles.headingDivider} src="/portal/study/divider.svg" alt="" width={940} height={1}/></header>

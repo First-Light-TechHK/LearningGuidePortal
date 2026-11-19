@@ -63,12 +63,12 @@ test("entitled Lesson restores video and paragraph positions without video or te
     await select.click();await page.getByTitle(getMessages(locale).previewVideoDesign.textMode,{exact:true}).last().click();
     const paragraph=page.locator('[data-text-point-id="t1"]');
     await paragraph.waitFor();
-    await page.waitForFunction(()=>{const p=document.querySelector('[data-text-point-id="t1"]');return p&&Math.abs(p.getBoundingClientRect().top-12)<3;});
+    await page.waitForFunction(()=>{const p=document.querySelector('[data-text-point-id="t1"]');return p&&Math.abs(p.getBoundingClientRect().top-(document.querySelector("[data-reading-toolbar]")?.getBoundingClientRect().height || 0)-12)<3;});
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))));
     await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
     assert.equal(writes.filter(write => write.mode === "text").length, 0, "restoring the heading alone does not overwrite the saved paragraph");
     const textCheckpoint = page.waitForResponse(response => response.url().endsWith('/api/study/bookmarks') && response.request().postDataJSON()?.mode === 'text');
-    await paragraph.locator(".la-prose p").nth(23).evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + scrollY + 2));
+    await paragraph.locator(".la-prose p").nth(23).evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + scrollY - (document.querySelector("[data-reading-toolbar]")?.getBoundingClientRect().height || 0) + 2));
     assert.equal((await (await textCheckpoint).json()).data.lpNumber, '1.1', 'text position still saves without a sidebar label');
     assert.equal(writes.at(-1).paragraphId,"t1:paragraph:23");
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),0);
