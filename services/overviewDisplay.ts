@@ -16,14 +16,17 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
     const bookmarks = record.entitlement ? await getLessonBookmarks(userId, course.id) : null;
     const latest = bookmarks ? lessons.map(lesson => ({ lessonId: lesson.id, bookmark: latestLessonBookmark(bookmarks.bookmarks, lesson.id, bookmarks.versions[lesson.id]) }))
       .filter(item => item.bookmark).sort((a, b) => b.bookmark!.updatedAt.localeCompare(a.bookmark!.updatedAt))[0] : undefined;
-    const completed = lessons.length > 0 && lessons.every(lesson => record.completedLessonIds.includes(lesson.id));
-    const learningState = completed ? "completed" : latest ? "in_progress" : "not_started";
+    const completedIds = new Set(record.completedLessonIds);
+    const firstUnfinished = lessons.find(lesson => !completedIds.has(lesson.id));
+    const completed = lessons.length > 0 && !firstUnfinished;
+    const hasCompletedLesson = lessons.some(lesson => completedIds.has(lesson.id));
+    const learningState = completed ? "completed" : latest || hasCompletedLesson ? "in_progress" : "not_started";
     const modes = availableCourseLearningModes(course);
     const mode = latest?.bookmark?.mode || (modes.includes(record.mode) ? record.mode : modes[0] || "text");
     const points = courseKnowledgePoints(course, mode);
     const position = points.find(point => point.lessonId === record.currentLessonId && point.contentId === record.currentContentId)
       || points.find(point => point.lessonId === record.currentLessonId) || points[0];
-    const lessonId = record.entitlement ? (completed || !latest ? lessons[0]?.id : latest.lessonId) || null
+    const lessonId = record.entitlement ? (completed ? lessons[0]?.id : latest?.lessonId || firstUnfinished?.id) || null
       : position?.lessonId || lessons.find(lesson => lesson.id === record.currentLessonId)?.id || lessons[0]?.id || null;
     const contentId = record.entitlement ? (!completed ? latest?.bookmark?.contentId || null : null) : position?.contentId || null;
     // Compatibility only: display state comes from bookmarks and Lesson completion.
@@ -35,7 +38,7 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
     let action: OverviewDisplayCourse["action"] = "detail";
     let href = `/${locale}/portal/courses/${encodeURIComponent(course.slug)}`;
     if (progress !== null && lessonId && record.entitlement) {
-      action = completed ? "review" : latest ? "resume" : "start";
+      action = completed ? "review" : learningState === "in_progress" ? "resume" : "start";
       href = `/${locale}/account/learn/${encodeURIComponent(course.id)}?${query}`;
     } else if (progress !== null && record.cta === "continue_preview") {
       const preview = publicFirstLesson(course);
@@ -59,5 +62,6 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
     syncCourses: overview.courses.filter(record => catalogue.has(record.courseId)).map(record => ({
       courseId: record.courseId, mode: record.mode, currentLessonId: record.currentLessonId,
       currentContentId: record.currentContentId, progress: record.progress, updatedAt: record.updatedAt,
+      bookmarkRevision: record.bookmarkRevision, completedLessonIds: record.completedLessonIds,
     })) };
 }

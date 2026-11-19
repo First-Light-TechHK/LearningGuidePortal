@@ -8,6 +8,8 @@ export type CourseModeSnapshot = {
   courseId: string; mode: CourseLearningMode;
   currentLessonId?: string | null; currentContentId?: string | null;
   progress?: number | null; updatedAt?: string | null;
+  bookmarkRevision?: number;
+  completedLessonIds?: string[];
 };
 
 export function isCourseLearningMode(value: unknown): value is CourseLearningMode {

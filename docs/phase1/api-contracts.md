@@ -1,5 +1,7 @@
 # Phase 1：API contract
 
+My Learning reconciliation (2026-11-19): `GET /api/my-learning/overview` includes `bookmarkRevision` for each Course alongside the existing `completedLessonIds`. The revision is the sum of the accepted Lesson bookmark revisions, matching Course detail. The client compares both fields when revalidating a cached Overview.
+
 Completed Lesson bookmark resume (2026-11-14): no endpoint/request/response change. Protected and entitled public Lesson pages now apply the same latest-valid-bookmark entry policy regardless of completion. A saved review video resumes at its exact milliseconds; missing/outdated bookmarks retain the beginning fallback. Explicit mode switches and locale continuation retain their own-mode restoration. Session/Entitlement checks and completion writes remain unchanged. Supersedes the earlier ordinary completed-reentry-from-start rule.
 
 Browser Back Course-state reconciliation (2026-11-14): private/no-store GET /api/portal/courses/:slug adds optional page.bookmarkRevision:number, a nonpersisted sum of the current User's accepted per-mode bookmark revisions (0 when none). It invalidates a restored detail snapshot even when Lesson id, completion and Continue membership stay unchanged. The client treats absent legacy values as 0 and rejects invalid/negative revisions. Existing bookmark writes/idempotency/access gates remain unchanged; no database migration.
