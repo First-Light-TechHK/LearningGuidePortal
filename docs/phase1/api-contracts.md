@@ -1,5 +1,7 @@
 # Phase 1：API contract
 
+Persistent Course learning mode (2026-11-19): the existing learning-mode PUT saves the user's explicit preference, and ordinary Lesson navigation does not call it. The private Course detail and My Learning API projections add optional `preferredMode` for cache reconciliation. The Lesson routes use the saved preference before entry query hints and restore only the bookmark for the mode actually opened. An unsupported preference falls back within the requested Lesson. Bookmark writes preserve the saved Course preference.
+
 Study entry and bookmark reconciliation (2026-11-19): outline and completion links pass the existing explicit `viewMode` and `modeSwitch=1` query parameters on the Lesson route. On `409 stale_bookmark`, an active reader/player discards the rejected position and reads the existing GET bookmark snapshot. A compatible snapshot lets subsequent user activity save with the current per-mode and Lesson revisions. A changed content version still requires re-entry. The server's optimistic concurrency and idempotency contract stays in effect.
 
 My Learning reconciliation (2026-11-19): `GET /api/my-learning/overview` includes `bookmarkRevision` for each Course alongside the existing `completedLessonIds`. The revision is the sum of the accepted Lesson bookmark revisions, matching Course detail. The client compares both fields when revalidating a cached Overview.

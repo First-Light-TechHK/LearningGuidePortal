@@ -3,7 +3,8 @@ import type { Locale } from "@/lib/i18n/config";
 import { availableCourseLearningModes } from "@/lib/courseLearningMode";
 import { courseKnowledgePoints } from "@/lib/knowledgeProgress";
 import { getLearningOverview, getPortalContent, getLessonBookmarks, listPublishedCourses, publicFirstLesson } from "./productStore";
-import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
+import { latestLessonBookmark, lessonModeBookmark } from "@/lib/lessonBookmarkDisplay";
+import { availableLessonMode, lessonLearningModes } from "@/lib/previewLessonPresentation";
 import { signCourseMediaUrl } from "./persistence/s3";
 
 export async function getOverviewDisplay(userId: string, name: string, locale: Locale): Promise<OverviewDisplay> {
@@ -22,13 +23,18 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
     const hasCompletedLesson = lessons.some(lesson => completedIds.has(lesson.id));
     const learningState = completed ? "completed" : latest || hasCompletedLesson ? "in_progress" : "not_started";
     const modes = availableCourseLearningModes(course);
-    const mode = latest?.bookmark?.mode || (modes.includes(record.mode) ? record.mode : modes[0] || "text");
+    const target = record.entitlement ? (completed ? lessons[0] : lessons.find(lesson => lesson.id === latest?.lessonId) || firstUnfinished) : undefined;
+    const preferredMode = record.entitlement && record.preferredMode;
+    const mode = preferredMode && target ? availableLessonMode(lessonLearningModes(target), preferredMode)
+      : latest?.bookmark?.mode || (modes.includes(record.mode) ? record.mode : modes[0] || "text");
+    const resume = completed ? undefined : preferredMode && bookmarks && target
+      ? lessonModeBookmark(bookmarks.bookmarks, target.id, bookmarks.versions[target.id], mode) : latest?.bookmark;
     const points = courseKnowledgePoints(course, mode);
     const position = points.find(point => point.lessonId === record.currentLessonId && point.contentId === record.currentContentId)
       || points.find(point => point.lessonId === record.currentLessonId) || points[0];
-    const lessonId = record.entitlement ? (completed ? lessons[0]?.id : latest?.lessonId || firstUnfinished?.id) || null
+    const lessonId = record.entitlement ? target?.id || null
       : position?.lessonId || lessons.find(lesson => lesson.id === record.currentLessonId)?.id || lessons[0]?.id || null;
-    const contentId = record.entitlement ? (!completed ? latest?.bookmark?.contentId || null : null) : position?.contentId || null;
+    const contentId = record.entitlement ? resume?.contentId || null : position?.contentId || null;
     // Compatibility only: display state comes from bookmarks and Lesson completion.
     const progress = !points.length ? null : record.progress;
     const category = portal.categories.find(item => item.id === course.categoryId || item.id === course.category || Object.values(item.labels).includes(course.category || ""));
@@ -56,11 +62,12 @@ export async function getOverviewDisplay(userId: string, name: string, locale: L
       lessonCount:lessons.length, currentLesson:lessonId ? lessons.findIndex(lesson => lesson.id === lessonId) + 1 : null,
       lessonId, contentId, progress, mode, action, href, learningState,
       lessonTitle: lessons.find(lesson => lesson.id === lessonId)?.title || null,
-      bookmark: !completed && latest?.bookmark ? { mode: latest.bookmark.mode, lpNumber: latest.bookmark.lpNumber } : null };
+      bookmark: resume ? { mode: resume.mode, lpNumber: resume.lpNumber } : null };
   }));
   return { name, courses:cards.filter((card): card is OverviewDisplayCourse => card !== null),
     syncCourses: overview.courses.filter(record => catalogue.has(record.courseId)).map(record => ({
       courseId: record.courseId, mode: record.mode, currentLessonId: record.currentLessonId,
+      preferredMode: record.preferredMode,
       currentContentId: record.currentContentId, progress: record.progress, updatedAt: record.updatedAt,
       bookmarkRevision: record.bookmarkRevision, completedLessonIds: record.completedLessonIds,
     })) };

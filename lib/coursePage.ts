@@ -1,4 +1,5 @@
 import { totalCourseMinutes } from "@/lib/courseDuration";
+import type { CourseLearningMode } from "@/contracts/course-learning-mode";
 import {
   courseProgressFromUniqueLearningPoints,
   type AccessState,
@@ -35,6 +36,7 @@ export type CourseSyllabusItem = {
 export type CoursePage = {
   /** Nonpersisted aggregate of accepted per-mode bookmark revisions. */
   bookmarkRevision?: number;
+  preferredMode?: CourseLearningMode | null;
   pageState: CoursePageState;
   identity: CourseIdentity | null;
   syllabus: CourseSyllabusItem[];

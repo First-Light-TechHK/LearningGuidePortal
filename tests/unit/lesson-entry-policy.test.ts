@@ -28,3 +28,14 @@ test('language continuation removes stale mode/cursor parameters and retains the
   }
   assert.equal(lessonLanguageHref('/zh-CN/subscription', 'planId=p', 'en-GB').href, '/en-GB/subscription?planId=p');
 });
+
+test("the saved Course preference selects its own bookmark across entry links and single-mode fallbacks", () => {
+  const input = { lessonId: "lesson", snapshot, completed: true, courseMode: "text" as const, preferredCourseMode: "text" as const };
+  assert.deepEqual(resolveLessonEntry({ ...input, switchingMode: true, requestedMode: "video" }),
+    { preferredMode: "text", initialContentId: "t2", bookmarkRestore: "lp" });
+  assert.deepEqual(resolveLessonEntry({ ...input, languageContinuation: true, requestedMode: "video", availableModes: ["video"] }),
+    { preferredMode: "video", initialContentId: "v2", bookmarkRestore: "lp" });
+  const onlyVideoBookmark = { ...snapshot, bookmarks: { lesson: { video: snapshot.bookmarks.lesson.video } } };
+  assert.deepEqual(resolveLessonEntry({ ...input, snapshot: onlyVideoBookmark, availableModes: ["video", "text"] }),
+    { preferredMode: "text", initialContentId: null, bookmarkRestore: "start" });
+});

@@ -3,12 +3,12 @@ import { resolveLessonEntry } from "@/services/lessonEntryPolicy";
 import { nextLessonHref } from "@/lib/lessonContinuation";
 import { notFound, redirect } from "next/navigation";
 import { localeFrom } from "@/lib/i18n/config";
-import { checkEntitlement, getLearningOverview, getProductCourse, getCourseLearningMode, listPublishedCourses, publicFirstLesson } from "@/services/productStore";
+import { checkEntitlement, getLearningOverview, getProductCourse, getCourseLearningModeSelection, listPublishedCourses, publicFirstLesson } from "@/services/productStore";
 import { currentProductUser } from "@/services/productAuth";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { type TrialGate } from "@/components/portal/LessonContentPlayer";
 import { PreviewLessonView } from "@/components/portal/PreviewLessonView";
-import { previewLessonOutline } from "@/lib/previewLessonPresentation";
+import { lessonLearningModes, previewLessonOutline } from "@/lib/previewLessonPresentation";
 import { courseImageFor } from "@/components/portal/CourseThumbnail";
 import { buildTextLessonPreview } from "@/services/textLessonPreview";
 import { signCourseMediaReferences } from "@/services/courseMediaSigning";
@@ -40,12 +40,12 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/portal/courses/${course.id}/public-lesson${query.size ? `?${query}` : ""}`)}`);
   }
   const access = await checkEntitlement(user.id, course.id);
-  const courseMode = await getCourseLearningMode(user.id, course.id);
+  const { mode: courseMode, preferredMode: preferredCourseMode } = await getCourseLearningModeSelection(user.id, course.id);
   if (access.allowed && !courseMode && availableCourseLearningModes(course).length > 1) redirect(`/${locale}/portal/courses/${encodeURIComponent(course.id)}?lessonEntry=${encodeURIComponent(lesson.id)}`);
   const bookmarkSnapshot = access.allowed ? await getLessonBookmarks(user.id, course.id) : undefined;
   const overview = await getLearningOverview(user.id);
   const record = overview?.courses.find(item => item.courseId === course.id);
-  const entry = bookmarkSnapshot ? resolveLessonEntry({ lessonId: lesson.id, snapshot: bookmarkSnapshot, completed: Boolean(record?.completedLessonIds.includes(lesson.id)), courseMode, languageContinuation: resume === "1", switchingMode: modeSwitch === "1", requestedMode: isCourseLearningMode(viewMode) ? viewMode : null }) : { preferredMode: isCourseLearningMode(viewMode) ? viewMode : courseMode, initialContentId: contentId || null, bookmarkRestore: "position" as const };
+  const entry = bookmarkSnapshot ? resolveLessonEntry({ lessonId: lesson.id, snapshot: bookmarkSnapshot, completed: Boolean(record?.completedLessonIds.includes(lesson.id)), courseMode, preferredCourseMode, availableModes: lessonLearningModes(lesson), languageContinuation: resume === "1", switchingMode: modeSwitch === "1", requestedMode: isCourseLearningMode(viewMode) ? viewMode : null }) : { preferredMode: preferredCourseMode || (isCourseLearningMode(viewMode) ? viewMode : courseMode), initialContentId: contentId || null, bookmarkRestore: "position" as const };
   const publishedCourses = await listPublishedCourses();
   const recommendationCourses = publishedCourses.slice(0, 2);
   const recommendations = recommendationCourses
@@ -67,6 +67,6 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const tutorAvailability = await getTutorAvailability(course.slug);
   return <main className="portal-page portal-public-lesson-page">
     <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} />
-    <PreviewLessonView {...entry} autoPlayVideo={autoplay === "1" && entry.preferredMode === "video"} bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={access.allowed ? user.id : undefined} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} key={`${locale}:${lesson.id}`} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
+    <PreviewLessonView {...entry} preferredCourseMode={preferredCourseMode} autoPlayVideo={autoplay === "1" && entry.preferredMode === "video"} bookmarkSnapshot={bookmarkSnapshot} bookmarkOwnerId={access.allowed ? user.id : undefined} explorationData={access.allowed ? courseExploration(course) : undefined} assessmentAvailability={lessonAssessmentAvailability(lesson)} textPreview={preview.textPreview} completedContentIds={record?.completedContentIds || []} key={`${locale}:${lesson.id}`} locale={locale} courseId={course.id} courseTitle={course.title} category={course.category || ""} description={lesson.summary?.trim() || ""} lesson={{ id: lesson.id, title: lesson.title, body: preview.body, durationMinutes: lesson.durationMinutes, contents, preview: lesson.preview }} outline={previewLessonOutline(course, locale, access.allowed)} poster={poster} trialGate={trialGate} initialCompleted={Boolean(record?.completedLessonIds.includes(lesson.id))} entitled={access.allowed} tutorOnline={tutorAvailability.online} nextHref={access.allowed ? nextLessonHref(locale, course.id, course.sections.flatMap(section => section.lessons), lesson.id) : null} />
   </main>;
 }

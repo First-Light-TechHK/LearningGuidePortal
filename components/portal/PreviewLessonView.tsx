@@ -30,7 +30,7 @@ import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { AssessmentAvailability, LessonPreviewConfiguration } from "@/contracts/lesson-resources";
 import type { ExplorationDisplay } from "@/contracts/exploration";
 
-export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, bookmarkSnapshot, bookmarkOwnerId, locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
+export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, bookmarkSnapshot, bookmarkOwnerId, locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, preferredCourseMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
   autoPlayVideo?: boolean; bookmarkRestore?: LessonBookmarkRestore; bookmarkSnapshot?: LessonBookmarkSnapshot; bookmarkOwnerId?: string;
   locale: Locale; courseId: string; courseTitle: string; category: string; description: string;
   lesson: { id: string; title: string; body: string; durationMinutes: number; contents?: LessonContent[]; preview?: LessonPreviewConfiguration };
@@ -41,6 +41,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
   /** KS 课程级 Online 状态；false 时隐藏「询问 AI 导师」入口（2026-10-22）；页面必须显式传入 */
   tutorOnline?: boolean;
   preferredMode?: CourseLearningMode | null;
+  preferredCourseMode?: CourseLearningMode | null;
   initialContentId?: string | null;
   studyEndpoint?: "/api/study/preview" | "/api/study/events";
 }) {
@@ -64,6 +65,8 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
   const [videoNavigation, setVideoNavigation] = useState<{ id: string; request: number }>();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [modeSaving, setModeSaving] = useState(false), [modeError, setModeError] = useState("");
+  const [coursePreference, setCoursePreference] = useState(preferredCourseMode);
+  useEffect(() => { setCoursePreference(preferredCourseMode); }, [preferredCourseMode]);
   const modeSaveLock = useRef(false);
   const modeMounted = useRef(true);
   useEffect(() => { modeMounted.current = true;return () => { modeMounted.current = false; }; }, []);
@@ -71,6 +74,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
   const selectedVideoProgress = videoProgress?.contentId === selected?.id ? videoProgress : null;
   useEffect(() => { setPlayingId(null); }, [lesson.id]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
+  const navigationMode = coursePreference || mode;
   const resume = useLessonBookmarks({ root: pageRef, courseId, lessonId: lesson.id, mode, enabled: entitled, ownerId: bookmarkOwnerId, initial: bookmarkSnapshot, contents, restorePolicy: bookmarkRestore, onRestoreContent: setContentId });
   useLayoutEffect(() => {
     const page = pageRef.current;
@@ -123,33 +127,30 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
       await resume.flush();
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: destination.mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
-      const result = await response.json() as { ok?: boolean };
-      if (!response.ok || !result.ok) throw new Error("mode-save");
-      // This is an explicit lesson choice, so do not replace it with the mode's saved cursor.
       if (modeMounted.current) {
         if (lessonCompleted && new URL(destination.href, window.location.origin).searchParams.get("lessonId") === lesson.id) window.location.assign(destination.href);
         else router.push(destination.href);
       }
-    } catch { if (modeMounted.current) setModeError(messages.courseLearningMode.saveError); }
-    finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
+    } finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
   }
-  async function switchMode(mode: CourseLearningMode) {
-    if (modeSaveLock.current) return;
-    const content = mode === "video" ? videoContent : textContent;
-    const currentHasMode=Boolean(content) || (mode==="text" && !contents.length && Boolean(lesson.body?.trim()));
-    if(!modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id))return;
+  async function switchMode(nextMode: CourseLearningMode) {
+    if (modeSaveLock.current || (nextMode === mode && nextMode === coursePreference)) return;
+    const content = nextMode === "video" ? videoContent : textContent;
+    const currentHasMode=Boolean(content) || (nextMode==="text" && !contents.length && Boolean(lesson.body?.trim()));
+    if(!modeLessonDestination(outline,lesson.id,nextMode,currentHasMode,content?.id))return;
     modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
       await resume.flush();
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: nextMode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
       const result = await response.json() as { ok: boolean; data?: CourseLearningModeResult };
       if (!response.ok || !result.ok) throw new Error("mode-save");
       if (!modeMounted.current) return;
-      const saved = resume.bookmarks[lesson.id]?.[mode];
-      const localPosition = bookmarkSnapshot && currentHasMode ? { lessonId: lesson.id, contentId: saved && saved.contentVersion === bookmarkSnapshot.versions[lesson.id]?.[mode] ? saved.contentId : content?.id || null } : result.data?.position;
-      const destination = modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id,localPosition);
+      setCoursePreference(nextMode);
+      if (nextMode === mode) return;
+      const saved = resume.bookmarks[lesson.id]?.[nextMode];
+      const localPosition = bookmarkSnapshot && currentHasMode ? { lessonId: lesson.id, contentId: saved && saved.contentVersion === bookmarkSnapshot.versions[lesson.id]?.[nextMode] ? saved.contentId : content?.id || null } : result.data?.position;
+      const destination = modeLessonDestination(outline,lesson.id,nextMode,currentHasMode,content?.id,localPosition);
       if (!destination) throw new Error("mode-destination");
       setNodeRequest(undefined);
       setVideoProgress(null);
@@ -157,7 +158,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
       if(destination.lessonId===lesson.id) {
         const targetId = localPosition?.lessonId === lesson.id ? localPosition.contentId || "" : content?.id || "";
         setContentId(targetId);
-        setTextNavigation(mode === "text" && targetId ? { id: targetId, request: Date.now() } : undefined);
+        setTextNavigation(nextMode === "text" && targetId ? { id: targetId, request: Date.now() } : undefined);
       }
       setVideoNavigation(undefined);
       setPlayingId(null);
@@ -170,7 +171,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
   const current = outline.find(item => item.id === lesson.id);
   const nextLessonId = nextHref ? new URLSearchParams(nextHref.split("?")[1] || "").get("lessonId") : null;
   const nextLesson = outline.find(item => item.id === nextLessonId);
-  const continuationHref = (nextLesson && lessonOutlineDestination(nextLesson, mode)?.href) || nextHref;
+  const continuationHref = (nextLesson && lessonOutlineDestination(nextLesson, navigationMode)?.href) || nextHref;
   const courseHref = `/${locale}/portal/courses/${courseId}`;
   const courseReturnPending = useRef(false);
   async function returnToCourse(event: MouseEvent<HTMLAnchorElement>) {
@@ -222,11 +223,11 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, book
               { value: "video", label: copy.videoMode, disabled: !modeLessonDestination(outline, lesson.id, "video", Boolean(videoContent)) },
               { value: "text", label: copy.textMode, disabled: !modeLessonDestination(outline, lesson.id, "text", Boolean(textContent) || (!contents.length && Boolean(lesson.body?.trim()))) },
             ]}
-            onChange={value => void switchMode(value)} />
+            onSelect={value => void switchMode(value)} />
         </PortalProvider> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
-          {outline.map(item => { const destination = lessonOutlineDestination(item, mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
+          {outline.map(item => { const destination = lessonOutlineDestination(item, navigationMode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
             {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} prefetch={false} onClick={event => {
               if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
               if (modeSaving) { event.preventDefault();return; }
