@@ -30,6 +30,7 @@ export function lessonOutlineDestination(item: { href: string | null; modes?: Co
   const mode = !item.modes || item.modes.includes(preferredMode) ? preferredMode : item.modes[0];
   const url = new URL(item.href, "https://learning-guide.invalid");
   url.searchParams.set("viewMode", mode);
+  url.searchParams.set("modeSwitch", "1");
   url.searchParams.delete("contentId");
   return { href: url.pathname + url.search + url.hash, mode };
 }

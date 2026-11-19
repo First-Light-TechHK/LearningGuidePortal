@@ -27,11 +27,13 @@ test("entitled Lesson restores video and paragraph positions without video or te
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const writes: any[] = [];
     let bookmarkFailure: number | undefined;
+    let resync: LessonBookmarkSnapshot | undefined;
     await page.route("http://progress.test/**", async route => {
       const pathname = new URL(route.request().url()).pathname;
       if (pathname === "/api/study/bookmarks") {
+        if (route.request().method() === "GET") return route.fulfill({ json: { ok: true, data: resync } });
         const input = route.request().postDataJSON(); writes.push(input);
-        if (bookmarkFailure) return route.fulfill({ status: bookmarkFailure, json: { ok: false } });
+        if (bookmarkFailure) return route.fulfill({ status: bookmarkFailure, json: { ok: false, error: "stale_bookmark" } });
         return route.fulfill({ json: { ok: true, data: { ...input, revision: input.expectedRevision + 1, updatedAt: new Date().toISOString(), lpNumber: input.mode === "video" && input.positionMs >= 30_000 ? "1.2" : "1.1" } } });
       }
       if (pathname.includes("learning-mode")) return route.fulfill({json:{ok:true,data:{courseId:"course",mode:route.request().postDataJSON().mode,position:{lessonId:"lesson",contentId:"t1"}}}});
@@ -59,6 +61,9 @@ test("entitled Lesson restores video and paragraph positions without video or te
     await page.waitForFunction(()=>Math.abs(document.querySelector('video')!.currentTime-45.555)<.001);
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),0,"saved video positions do not add a sidebar label");
     assert.equal(await page.getByText(getMessages(locale).lessonBookmark.video.replace("{lp}","1.2"),{exact:true}).count(),0);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    await page.waitForTimeout(100);
+    assert.equal(writes.length, 0, "restoring a saved video position does not send a duplicate checkpoint");
     const select=page.getByRole('combobox',{name:getMessages(locale).previewVideoDesign.learningMode});
     await select.click();await page.getByTitle(getMessages(locale).previewVideoDesign.textMode,{exact:true}).last().click();
     const paragraph=page.locator('[data-text-point-id="t1"]');
@@ -69,19 +74,34 @@ test("entitled Lesson restores video and paragraph positions without video or te
     assert.equal(writes.filter(write => write.mode === "text").length, 0, "restoring the heading alone does not overwrite the saved paragraph");
     const textCheckpoint = page.waitForResponse(response => response.url().endsWith('/api/study/bookmarks') && response.request().postDataJSON()?.mode === 'text');
     await paragraph.locator(".la-prose p").nth(23).evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + scrollY + 2));
-    assert.equal((await (await textCheckpoint).json()).data.lpNumber, '1.1', 'text position still saves without a sidebar label');
+    const savedText = (await (await textCheckpoint).json()).data;
+    assert.equal(savedText.lpNumber, '1.1', 'text position still saves without a sidebar label');
     assert.equal(writes.at(-1).paragraphId,"t1:paragraph:23");
     assert.equal(await page.locator('[data-lesson-bookmark]').count(),0);
     assert.equal(await page.getByText(getMessages(locale).lessonBookmark.text.replace('{lp}', '1.1'), { exact: true }).count(), 0);
     // A stale checkpoint must not interrupt Lesson browsing with a save/reload notice.
+    resync = { ...bookmarkSnapshot, bookmarks: { lesson: { ...bookmarkSnapshot.bookmarks.lesson, text: {
+      ...savedText, revision: savedText.revision + 1, paragraphId: "t1:paragraph:24", clientEventId: "newer-tab",
+    } } } };
     bookmarkFailure = 409;
     const rejected = page.waitForResponse(response => response.url().endsWith('/api/study/bookmarks') && response.status() === 409);
+    const revalidated = page.waitForResponse(response => response.url().includes('/api/study/bookmarks?courseId=course') && response.request().method() === "GET");
     await paragraph.locator('.la-prose p').last().evaluate(element => element.scrollIntoView());
     await rejected;
+    await revalidated;
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(await page.getByText(getMessages(locale).lessonBookmark.saveError, { exact: true }).count(), 0);
     assert.equal(await page.getByRole('button', { name: getMessages(locale).lessonBookmark.reload, exact: true }).count(), 0);
+    const rejectedWrite = writes.at(-1);
     bookmarkFailure = undefined;
+    const afterConflict = page.waitForResponse(response => response.url().endsWith('/api/study/bookmarks') && response.ok());
+    await paragraph.locator(".la-prose p").nth(27).evaluate(element => window.scrollTo(0, element.getBoundingClientRect().top + scrollY + 2));
+    await afterConflict;
+    assert.equal(writes.at(-1).paragraphId, "t1:paragraph:27");
+    assert.equal(writes.at(-1).expectedRevision, savedText.revision + 1);
+    assert.equal(writes.at(-1).expectedLessonRevision, savedText.revision + 2);
+    assert.notEqual(writes.at(-1).clientEventId, rejectedWrite.clientEventId);
+    assert.equal(writes.filter(write => write.clientEventId === rejectedWrite.clientEventId).length, 1, "a rejected older position is never replayed");
     await mkdir('test-results/lesson-bookmarks',{recursive:true});
     await page.screenshot({path:`test-results/lesson-bookmarks/${locale}-text-desktop.png`});
     await page.setViewportSize({width:390,height:844});
@@ -104,6 +124,24 @@ test("entitled Lesson restores video and paragraph positions without video or te
     await page.locator('video').evaluate(element=>{Object.defineProperty(element,'duration',{configurable:true,value:100});Object.defineProperty(element,'readyState',{configurable:true,value:4});element.dispatchEvent(new Event('loadedmetadata'));});
     await page.waitForFunction(()=>Math.abs(document.querySelector('video')!.currentTime-50.555)<.001);
     assert.equal(await page.locator('video').getAttribute('data-bookmark-content-id'),'v2');
+
+    const targetSnapshot = { ...reviewSnapshot, bookmarks: { lesson: { ...reviewSnapshot.bookmarks.lesson,
+      text: { ...bookmarkSnapshot.bookmarks.lesson.text!, updatedAt: "2099-01-01T00:00:00Z" },
+    } } };
+    const targetPath = `/${locale}/account/learn/course?lessonId=lesson`;
+    const outline = [{ ...props.outline[0], href: targetPath }, { id: "second", number: "02", title: "Second lesson", href: `/${locale}/account/learn/course?lessonId=second`, modes: ["video", "text"] }, { id: "text-only", number: "03", title: "Text only", href: `/${locale}/account/learn/course?lessonId=text-only`, modes: ["text"] }];
+    await page.evaluate(props => (window as any).mount(props), { ...props, key: "second-video", lesson: { ...props.lesson, id: "second" }, outline, bookmarkSnapshot: targetSnapshot });
+    const target = page.getByRole("link", { name: /^01\s*Lesson$/ });
+    const expectedTarget = `${targetPath}&viewMode=video&modeSwitch=1`;
+    assert.equal(await target.getAttribute("href"), expectedTarget);
+    assert.equal(await page.getByRole("link", { name: /^03\s*Text only$/ }).getAttribute("href"), `/${locale}/account/learn/course?lessonId=text-only&viewMode=text&modeSwitch=1`);
+    await target.click();
+    await page.waitForFunction(url => (window as any).destination === url, expectedTarget);
+    const entryUrl = new URL(expectedTarget, "http://progress.test");
+    const selectedEntry = resolveLessonEntry({ lessonId: "lesson", snapshot: targetSnapshot, completed: false,
+      courseMode: "text", requestedMode: entryUrl.searchParams.get("viewMode") as "video", switchingMode: entryUrl.searchParams.get("modeSwitch") === "1" });
+    assert.equal(selectedEntry.preferredMode, "video");
+    assert.equal(selectedEntry.initialContentId, "v2", "the same-mode bookmark beats the newer text bookmark");
     await page.close();
   }} finally { await browser.close(); }
 });

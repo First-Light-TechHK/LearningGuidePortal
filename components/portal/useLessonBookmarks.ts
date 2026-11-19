@@ -53,6 +53,18 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
     const same = (a: Position | undefined, b: Position | undefined) => a?.contentId === b?.contentId && a?.positionMs === b?.positionMs && a?.paragraphId === b?.paragraphId;
     const remember = () => { if (pending) try { sessionStorage.setItem(key, JSON.stringify({ request: pending, latest })); } catch { /* Optional recovery cache. */ } };
     const capture = (position: Position) => { if (!same(latest, position)) { latest = position; dirty = true; } };
+    const refreshRevision = async () => {
+      const response = await fetch(`/api/study/bookmarks?courseId=${encodeURIComponent(courseId)}`, { cache: "no-store" });
+      if (!active || !response.ok) return false;
+      const result = await response.json() as { ok?: boolean; data?: LessonBookmarkSnapshot };
+      if (!active || !result.ok || result.data?.versions[lessonId]?.[mode] !== version) return false;
+      const current = snapshot.current!;
+      if (bookmarkLessonRevision(result.data.bookmarks, lessonId) < bookmarkLessonRevision(current.bookmarks, lessonId)) return false;
+      const next = { ...current.bookmarks, [lessonId]: result.data.bookmarks[lessonId] || {} };
+      snapshot.current = { ...current, bookmarks: next };
+      if (mounted.current) setBookmarks(next);
+      return true;
+    };
     const flush = (): Promise<void> => {
       if (inFlight) { remember(); return inFlight.then(() => { if (!blocked && dirty) return flush(); }); }
       if (blocked || !pending && (!dirty || !latest)) return Promise.resolve();
@@ -68,7 +80,22 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
         try {
           const response = await fetch("/api/study/bookmarks", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
           if (!response.ok) {
-            if ([400, 401, 403, 409].includes(response.status)) { blocked = true; if (mounted.current) setReloadRequired(true); try { sessionStorage.removeItem(key); } catch {} }
+            if ([400, 401, 403, 409].includes(response.status)) {
+              blocked = true;
+              pending = undefined;
+              dirty = false;
+              try { sessionStorage.removeItem(key); } catch {}
+              if (response.status === 409 && active) {
+                const failure = await response.json().catch(() => null) as { error?: string } | null;
+                // Discard the rejected position. Only new interaction may write after revalidation.
+                if (failure?.error === "stale_bookmark" && await refreshRevision().catch(() => false)) {
+                  blocked = false;
+                  if (mounted.current) { setError(false); setReloadRequired(false); }
+                  return;
+                }
+              }
+              if (mounted.current) setReloadRequired(true);
+            }
             throw new Error("bookmark-save");
           }
           const result = await response.json() as { ok: boolean; data: LessonBookmark };
@@ -174,7 +201,7 @@ export function useLessonBookmarks({ root, courseId, lessonId, mode, enabled, ow
           restoring = true;
           element.currentTime = Math.min(restore.positionMs / 1000, element.duration);
           latest = { contentId: element.dataset.bookmarkContentId || restore.contentId, positionMs: Math.round(element.currentTime * 1000) };
-          used = true; dirty = true;
+          used = true;
           requestAnimationFrame(() => { restoring = false; });
         }
       };
