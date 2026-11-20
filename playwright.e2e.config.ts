@@ -14,6 +14,8 @@ const localEnv = {
   EMAIL_VERIFICATION_REQUIRED: "0",
   SESSION_SECRET: sessionSecret,
   APP_VERSION: "e2e",
+  NEXT_PUBLIC_APP_URL: baseURL,
+  ADMIN_HOSTS: "admin.example.test",
 };
 
 const ciEnv = {
@@ -57,7 +59,6 @@ export default defineConfig({
         "**/password-reset.spec.ts",
         "**/email-binding.spec.ts",
         "**/E2E-B1-negative.spec.ts",
-        "**/PAY-stripe.skip.spec.ts",
       ],
     },
     ...(!ci

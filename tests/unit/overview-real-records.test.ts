@@ -78,7 +78,9 @@ test("Overview follows the current user's actual video points, metadata, access 
   const raw=(await store.getLearningOverview(user.id)).courses.find(item=>item.courseId===COURSE_ID)!;
   assert.deepEqual(display.syncCourses?.find(item=>item.courseId===COURSE_ID), {
     courseId: raw.courseId, mode: raw.mode, currentLessonId: raw.currentLessonId,
+    preferredMode: raw.preferredMode,
     currentContentId: raw.currentContentId, progress: raw.progress, updatedAt: raw.updatedAt,
+    bookmarkRevision: raw.bookmarkRevision, completedLessonIds: raw.completedLessonIds,
   }, "cached-page reconciliation uses the raw Study snapshot, not a display fallback");
   assert.equal(display.name,"Alice");assert.equal(display.courses.length,1);
   assert.equal(card.title,"Real video course");assert.equal(card.cover,"/portal/course-book.jpg");
@@ -113,6 +115,99 @@ test("Overview follows the current user's actual video points, metadata, access 
   assert.equal(denied.progress,0);assert.equal(denied.action,"plans");assert.equal(denied.href,`/en-GB/subscription?courseId=${COURSE_ID}`);
   const withdrawn=await readProductData();withdrawn.courses.find((c:ProductCourse)=>c.id===COURSE_ID).status="draft";await writeProductData(withdrawn);
   assert.deepEqual((await getOverviewDisplay(user.id,user.nickname,"en-GB")).courses,[]);
+});
+
+test("a completed Lesson without a bookmark continues at the unfinished Lesson in both views", async () => {
+  const user = await verifiedUser(store, "completion-without-checkpoint@example.test");
+  const data = await readProductData();
+  const course: ProductCourse = structuredClone(data.courses.find((item: ProductCourse) => item.id === COURSE_ID));
+  course.id = course.slug = "completion-without-checkpoint";
+  course.status = "published";
+  const [firstLesson, unfinishedLesson] = course.sections.flatMap(section => section.lessons);
+  firstLesson.contents = [{ id: "first-video", title: "First", type: "video", mode: "lecture", url: "/first.mp4", nodes: [] }];
+  unfinishedLesson.contents = [{ id: "next-video", title: "Next", type: "video", mode: "lecture", url: "/next.mp4", nodes: [] }];
+  data.courses.push(course);
+  await writeProductData(data);
+  const { quote } = await store.createQuote(user.id, "everything-pc-6");
+  await store.completeDemoCheckout(user.id, quote.id);
+  await store.recordStudyEvent({
+    userId: user.id, courseId: course.id, lessonId: PREVIEW_LP,
+    event: "complete", learningMode: "video", contentId: "first-video", seconds: 0, clientEventId: "complete-without-checkpoint",
+  });
+
+  const detail = await store.getCoursePage(course.slug, user.id);
+  assert.equal(detail.syllabus.find(item => item.lessonId === PREVIEW_LP)?.completed, true);
+  for (const locale of ["en-GB", "zh-CN"] as const) {
+    const [card] = (await getOverviewDisplay(user.id, user.nickname, locale)).courses;
+    assert.equal(card.learningState, "in_progress");
+    assert.equal(card.action, "resume");
+    assert.equal(card.lessonId, PRIVATE_LP);
+    assert.equal(card.bookmark, null);
+    assert.equal(new URL(card.href, "http://test").searchParams.get("lessonId"), PRIVATE_LP);
+    assert.equal(new URL(card.href, "http://test").searchParams.has("contentId"), false);
+  }
+  const eventsOnly = await readProductData();
+  eventsOnly.studyRecords = eventsOnly.studyRecords.filter((record: { userId: string }) => record.userId !== user.id);
+  await writeProductData(eventsOnly);
+  const [recovered] = (await getOverviewDisplay(user.id, user.nickname, "en-GB")).courses;
+  assert.equal(recovered.action, "resume");
+  assert.equal(recovered.lessonId, PRIVATE_LP);
+
+  // Rebuilding a mixed legacy record keeps the event cursor and timestamp during bookmark-only writes.
+  eventsOnly.studyEvents.unshift({
+    ...eventsOnly.studyEvents.find((event: { userId: string }) => event.userId === user.id),
+    id: "legacy-preview-event", clientEventId: "legacy-preview", event: "open", accessContext: "preview",
+  });
+  await writeProductData(eventsOnly);
+  const first = (await getOverviewDisplay(user.id, user.nickname, "en-GB")).syncCourses![0];
+  await checkpoint(user.id, course.id, PRIVATE_LP, "video", "next-video");
+  const [updated] = (await store.getLearningOverview(user.id)).courses;
+  assert.equal(updated.updatedAt, first.updatedAt);
+  assert.equal(updated.currentLessonId, first.currentLessonId);
+  assert.equal(updated.bookmarkRevision, 1);
+  const display = await getOverviewDisplay(user.id, user.nickname, "en-GB");
+  assert.equal(display.syncCourses?.[0].bookmarkRevision, updated.bookmarkRevision);
+  assert.equal(display.courses[0].bookmark?.lpNumber, "2.1");
+});
+
+test("a Course mode choice survives later checkpoints and drives the overview card", async () => {
+  const user = await verifiedUser(store, "saved-course-mode@example.test");
+  const data = await readProductData();
+  const course: ProductCourse = structuredClone(data.courses.find((item: ProductCourse) => item.id === COURSE_ID));
+  course.id = course.slug = "saved-course-mode";
+  course.status = "published";
+  const [mixed, textOnly] = course.sections.flatMap(section => section.lessons);
+  const reading = { id: "mixed-text", type: "text" as const, mode: "lecture" as const, title: "Reading", html: "<p>Reading</p>", nodes: [] };
+  mixed.contents = [reading, { id: "mixed-video", type: "video", mode: "lecture", title: "Video", url: "https://example.test/mode.mp4", nodes: [] }];
+  textOnly.contents = [{ ...reading, id: "text-only" }];
+  data.courses.push(course);
+  await writeProductData(data);
+  const { quote } = await store.createQuote(user.id, "everything-pc-6");
+  await store.completeDemoCheckout(user.id, quote.id);
+  await store.saveCourseLearningMode(user.id, course.id, "video", mixed.id, "entitled");
+  await checkpoint(user.id, course.id, mixed.id, "text", "mixed-text");
+  assert.equal((await store.getCourseLearningModeSelection(user.id, course.id)).preferredMode, "video", "a bookmark cannot replace a choice made before any Study Record exists");
+  let [card] = (await getOverviewDisplay(user.id, user.nickname, "en-GB")).courses;
+  assert.equal(card.action, "resume");
+  assert.equal(card.mode, "video");
+  assert.equal(card.bookmark, null, "a checkpoint from the other mode is not advertised");
+
+  await checkpoint(user.id, course.id, mixed.id, "video", "mixed-video");
+  await checkpoint(user.id, course.id, mixed.id, "text", "mixed-text");
+  [card] = (await getOverviewDisplay(user.id, user.nickname, "zh-CN")).courses;
+  assert.equal(card.mode, "video");
+  assert.equal(card.contentId, "mixed-video");
+  assert.equal(card.bookmark?.mode, "video");
+
+  await checkpoint(user.id, course.id, textOnly.id, "text", "text-only");
+  [card] = (await getOverviewDisplay(user.id, user.nickname, "en-GB")).courses;
+  assert.equal(card.lessonId, textOnly.id);
+  assert.equal(card.mode, "text", "the last Lesson is retained when it only has the other mode");
+  assert.equal(card.bookmark?.mode, "text");
+  assert.equal((await store.getCourseLearningModeSelection(user.id, course.id)).preferredMode, "video");
+  await store.saveCourseLearningMode(user.id, course.id, "text", mixed.id, "entitled");
+  assert.equal((await store.getCoursePage(course.slug, user.id)).preferredMode, "text");
+  assert.equal((await store.getLearningOverview(user.id)).courses[0].preferredMode, "text");
 });
 
 test("preview never creates an Overview card or grants protected access",async()=>{

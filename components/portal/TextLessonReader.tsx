@@ -6,6 +6,7 @@ import type { TextLessonPreview } from "@/contracts/text-lesson-preview";
 import type { Locale } from "@/lib/i18n/config";
 import { LegacyLessonBody, LessonContentPlayer } from "./LessonContentPlayer";
 import styles from "./text-lesson-reader.module.css";
+import { readingTargetTop, readingViewportTop } from "@/lib/readingViewport";
 
 function startsWithPointTitle(point: LessonContent, number: string) {
   const opening = point.html?.match(/^\s*<(p|h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/i)?.[2];
@@ -36,7 +37,7 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
     if (!element || !initialized.current) return;
     const sections = Array.from(element.querySelectorAll<HTMLElement>("[data-text-point-id]"));
     const pageScroll = getComputedStyle(element).overflowY === "visible";
-    const top = (pageScroll ? Math.max(0, element.getBoundingClientRect().top) : element.getBoundingClientRect().top) + element.clientTop + 32;
+    const top = (pageScroll ? Math.max(readingViewportTop(element), element.getBoundingClientRect().top) : element.getBoundingClientRect().top) + element.clientTop + 32;
     let current: HTMLElement | undefined = sections[0];
     for (const section of sections) {
       if (section.getBoundingClientRect().top <= top) current = section;
@@ -77,7 +78,7 @@ export function TextLessonReader({ contents, body, locale, lessonNumber, initial
         initialized.current = true;
         element.dataset.bookmarkReady = "true";
         if (getComputedStyle(element).overflowY === "visible") {
-          if (target && (navigationRequest || target !== sections[0])) window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top - 12, behavior: "auto" });
+          if (target && (navigationRequest || target !== sections[0])) window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top - readingTargetTop(element, target) - 12, behavior: "auto" });
         } else {
           element.scrollTo({ top: !target || target === sections[0] ? 0 : element.scrollTop + target.getBoundingClientRect().top - element.getBoundingClientRect().top - element.clientTop - 12, behavior: "auto" });
         }

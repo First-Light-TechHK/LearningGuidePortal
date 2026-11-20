@@ -25,14 +25,12 @@ test("three lessons remain reachable across text/video changes, with locked and 
   try {
     for (const locale of ["en-GB", "zh-CN"] as const) {
       const page = await browser.newPage();
-      let failMode = false;
       const saves: Array<{ mode: string }> = [];
       await page.route("http://lessons.test/**", async route => {
         if (route.request().url().includes("/api/")) {
           if (route.request().url().endsWith("/learning-mode")) {
             saves.push(route.request().postDataJSON());
-            // A different saved cursor must never override an explicit lesson click.
-            return route.fulfill({ status: failMode ? 503 : 200, json: { ok: !failMode, data: { position: { lessonId: "third", contentId: "third-video" } } } });
+            return route.fulfill({ json: { ok: true, data: { position: { lessonId: "third", contentId: "third-video" } } } });
           }
           return route.fulfill({ json: { ok: true } });
         }
@@ -50,10 +48,11 @@ test("three lessons remain reachable across text/video changes, with locked and 
       ];
       const outline = previewLessonOutline({ id: "course", sections: [{ lessons }] } as unknown as ProductCourse, locale, true);
       outline.push({ id: "locked", title: "Locked lesson", number: "05", modes: ["text"], href: null });
-      const mount = async (index: number, mode: string) => {
+      const mount = async (index: number, mode: string, preferredCourseMode?: string) => {
         await page.evaluate(props => (window as unknown as { mount: (p: unknown) => void }).mount(props), {
           locale, courseId: "course", courseTitle: "Three lessons", category: "", description: "", lesson: lessons[index], outline,
-          poster: "", entitled: true, tutorOnline: false, initialCompleted: false, nextHref: null, preferredMode: mode, studyEndpoint: "/api/study/events",
+          poster: "", entitled: true, tutorOnline: false, initialCompleted: false, nextHref: null, preferredMode: mode, preferredCourseMode,
+          bookmarkSnapshot: { bookmarks: {}, versions: {} }, studyEndpoint: "/api/study/events",
         });
       };
       const menu = page.getByRole("navigation", { name: getMessages(locale).previewVideoDesign.outline });
@@ -65,16 +64,22 @@ test("three lessons remain reachable across text/video changes, with locked and 
         assert.ok((await menu.getByRole("link", { name: /Second video lesson/ }).getAttribute("href"))?.includes("viewMode=video"));
         assert.equal(await menu.getByText("Missing content lesson", { exact: false }).getAttribute("title"), getMessages(locale).previewVideoDesign.lessonUnavailable);
       }
-      failMode = true;
-      await menu.getByRole("link", { name: /Second video lesson/ }).click();
-      await page.getByText(getMessages(locale).courseLearningMode.saveError, { exact: true }).waitFor();
-      assert.equal(await page.evaluate(() => (window as unknown as { destination: string | null }).destination), null);
-      failMode = false;
-      await menu.getByRole("link", { name: /Second video lesson/ }).click();
+      await mount(1, "video", "video");
+      await menu.getByRole("link", { name: /Earlier text lesson/ }).click();
       await page.waitForFunction(() => Boolean((window as unknown as { destination: string | null }).destination));
       const destination = await page.evaluate(() => (window as unknown as { destination: string }).destination);
-      assert.ok(destination.includes("lessonId=second&viewMode=video"));
-      assert.deepEqual(saves.map(save => save.mode), ["video", "video"]);
+      assert.ok(destination.includes("lessonId=first&viewMode=text"));
+      await mount(0, "text", "video");
+      const mixed = menu.getByRole("link", { name: /Third mixed lesson/ });
+      assert.ok((await mixed.getAttribute("href"))?.includes("lessonId=third&viewMode=video"), "leaving the fallback Lesson restores the Course preference");
+      await mixed.click();
+      await page.waitForFunction(() => (window as unknown as { destination: string }).destination.includes("lessonId=third&viewMode=video"));
+      assert.equal(saves.length, 0, "opening a Lesson never rewrites the chosen Course mode");
+      const copy = getMessages(locale).previewVideoDesign;
+      await page.getByRole("combobox", { name: copy.learningMode }).click();
+      await page.getByTitle(copy.textMode, { exact: true }).last().click();
+      await page.waitForFunction(() => document.querySelector('a[href*="lessonId=third&viewMode=text"]'));
+      assert.deepEqual(saves.map(save => save.mode), ["text"], "explicitly selecting the displayed fallback makes it the new preference");
       await page.close();
     }
   } finally { await browser.close(); }

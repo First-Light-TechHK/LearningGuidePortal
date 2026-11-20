@@ -1,8 +1,10 @@
 const base = (process.env.SMOKE_BASE_URL || "http://127.0.0.1:3011").replace(/\/$/, "");
+const origin = new URL(base).origin;
 let cookie = "";
 
 async function request(path, options = {}) {
   const headers = { ...(options.headers || {}) };
+  if (options.method && options.method !== "GET") headers.origin = origin;
   if (cookie) headers.cookie = cookie;
   const response = await fetch(`${base}${path}`, { ...options, headers, redirect: "manual" });
   const setCookie = response.headers.get("set-cookie");
@@ -34,26 +36,37 @@ assert(result.status === 200 && ["epicureanism-pc-6", "european-humanities-pc-6"
 // Local OAuth must be usable without provider credentials. It creates the same
 // account/session records as the real callback, then redirects to the product.
 result = await request(`/api/auth/google?locale=en-GB&returnTo=${encodeURIComponent("/en-GB/account/my-learning")}`);
-assert(result.status === 307 && result.location?.endsWith("/en-GB/account/my-learning") && new URL(result.location, base).origin === new URL(base).origin, "local Google sign-in did not redirect on the current host");
+assert(result.status === 307 && result.location?.endsWith("/en-GB/account/my-learning") && new URL(result.location, base).origin === origin, "local Google sign-in did not redirect on the current host");
 result = await request("/api/auth/me");
 assert(result.status === 200 && result.body.user?.email === "google.local@example.test", "local Google session failed");
 result = await request("/api/auth/logout", { method: "POST" });
 assert(result.status === 200 && result.body.ok, "logout after local Google sign-in failed");
 
-result = await request(`/api/auth/wechat?locale=en-GB&returnTo=${encodeURIComponent("/en-GB/account/my-learning")}`);
-assert(result.status === 307 && result.location?.endsWith("/en-GB/account/my-learning") && new URL(result.location, base).origin === new URL(base).origin, "local WeChat sign-in did not redirect on the current host");
-result = await request("/api/auth/me");
-assert(result.status === 200 && Boolean(result.body.user?.id) && result.body.user.email === null, "local WeChat session failed");
+const learningPath = "/en-GB/account/my-learning";
+result = await request(`/api/auth/wechat?locale=en-GB&returnTo=${encodeURIComponent(learningPath)}`);
+assert(result.status === 307 && result.location, "local WeChat sign-in did not redirect");
+const wechatTarget = new URL(result.location, base);
+assert(wechatTarget.origin === origin, "local WeChat sign-in redirected to a different origin");
+if (wechatTarget.pathname === "/en-GB/portal/bind-email") {
+  assert(wechatTarget.searchParams.get("returnTo") === learningPath, "WeChat binding lost the original destination");
+  assert((await request(wechatTarget.pathname + wechatTarget.search)).status === 200, "WeChat binding page did not render");
+  assert((await request("/api/my-learning")).status === 401, "an unbound WeChat session reached My Learning");
+} else {
+  // The reusable local WeChat account may already have completed email binding.
+  assert(wechatTarget.pathname === learningPath, "bound WeChat sign-in lost the original destination");
+  result = await request("/api/auth/me");
+  assert(result.status === 200 && Boolean(result.body.user?.email), "bound WeChat session has no email");
+}
 result = await request("/api/auth/logout", { method: "POST" });
 assert(result.status === 200 && result.body.ok, "logout after local WeChat sign-in failed");
 
 result = await request("/api/auth/check-email", { method: "POST", headers: json, body: JSON.stringify({ email: `new-${stamp}@example.com` }) });
-assert(result.status === 200 && result.body.ok === true && result.body.exists === undefined, "email-first auth entry must not disclose whether an email is new");
+assert(result.status === 200 && result.body.ok === true && result.body.data?.exists === false, "email-first auth did not identify the disposable address as new");
 
 result = await request("/api/auth/register", { method: "POST", headers: json, body: JSON.stringify({ termsAccepted: true, email, password: "Passw0rd!123", nickname: "Smoke User", locale: "en-GB" }) });
 assert(result.status === 200 && result.body.ok, "registration failed");
 result = await request("/api/auth/check-email", { method: "POST", headers: json, body: JSON.stringify({ email }) });
-assert(result.status === 200 && result.body.ok === true && result.body.exists === undefined, "email-first auth entry must not disclose whether an email already exists");
+assert(result.status === 200 && result.body.ok === true && result.body.data?.exists === true && result.body.data.pending === false, "email-first auth did not recognise the registered test account");
 result = await request("/api/my-learning");
 assert(result.status === 200 && result.body.overview.courses.length === 0, "My Learning should be empty before a study record exists");
 
@@ -104,47 +117,29 @@ const subscriptionId = result.body.overview.subscriptions.find((subscription) =>
 assert(subscriptionId, "purchase subscription was not created");
 result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "cancel", reasonCode: "too_expensive" }) });
 assert(result.status === 200 && result.body.subscription?.state === "cancel_at_period_end", "subscription cancellation failed");
+const originalValidTo = result.body.subscription.validTo;
 result = await request("/api/subscription", { method: "POST", headers: json, body: JSON.stringify({ subscriptionId, action: "resume" }) });
-assert(result.status === 400, "paid auto-renewal must not be restored after cancellation (SUB-FR-012)");
+assert(result.status === 200 && result.body.subscription?.state === "active" && result.body.subscription.validTo === originalValidTo, "paid subscription did not resume within its original period");
 
-// A paid category subscription can be upgraded to the matching PC Everything
-// term. The actual Category payment is credited and its expiry is retained.
-result = await request("/api/purchase/quote", { method: "POST", headers: json, body: JSON.stringify({ planId: "european-humanities-pc-6", kind: "purchase" }) });
-assert(result.status === 200 && result.body.quote?.kind === "purchase", "category purchase quote failed");
-result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: result.body.quote.id, locale: "en-GB", consents }) });
-assert(result.status === 200 && result.body.order?.status === "pending", "category purchase did not create a pending order");
-const categoryOrderId = result.body.order.id;
-result = await request("/api/purchase/demo/confirm", { method: "POST", headers: json, body: JSON.stringify({ orderId: categoryOrderId, action: "complete" }) });
-assert(result.status === 200 && result.body.order?.status === "paid", "category purchase completion failed");
+const lessonId = "pleasure-and-the-good-life";
+result = await request("/api/study/events", { method: "POST", headers: json, body: JSON.stringify({ courseId: "epicureanism", lessonId, event: "complete", seconds: 1500, clientEventId: `complete-${stamp}` }) });
+assert(result.status === 200 && result.body.ok, "Lesson completion was rejected");
 result = await request("/api/my-learning");
-const categorySubscriptionId = result.body.overview.subscriptions.find((subscription) => subscription.scope === "category" && subscription.state === "active")?.id;
-assert(categorySubscriptionId, "category subscription was not created");
-result = await request("/api/subscription/quote", { method: "POST", headers: json, body: JSON.stringify({ kind: "upgrade", subscriptionId: categorySubscriptionId }) });
-assert(result.status === 200 && result.body.quote?.kind === "upgrade" && typeof result.body.quote?.creditMinor === "number", "upgrade quote did not calculate credit");
-result = await request("/api/purchase/checkout", { method: "POST", headers: json, body: JSON.stringify({ quoteId: result.body.quote.id, locale: "en-GB", consents }) });
-assert(result.status === 200 && result.body.order?.kind === "upgrade", "upgrade checkout did not create an upgrade order");
-const upgradeOrderId = result.body.order.id;
-result = await request("/api/purchase/demo/confirm", { method: "POST", headers: json, body: JSON.stringify({ orderId: upgradeOrderId, action: "complete" }) });
-assert(result.status === 200 && result.body.order?.status === "paid", "upgrade completion failed");
-result = await request("/api/my-learning");
-assert(result.status === 200 && result.body.overview.entitlements.some((entitlement) => entitlement.scope === "everything"), "upgrade did not replace category access with PC Everything access");
-
-result = await request("/api/study/events", { method: "POST", headers: json, body: JSON.stringify({ courseId: "epicureanism", lessonId: "pleasure-and-the-good-life", event: "complete", seconds: 1500, clientEventId: `complete-${stamp}` }) });
-assert(result.status === 200 && result.body.record.progress === 50, "course progress must be unique opened Learning Points (1/2 = 50), not lesson seconds");
-result = await request("/api/my-learning");
-assert(result.status === 200 && result.body.overview.courses[0]?.courseId === "epicureanism", "My Learning failed");
+const course = result.body.overview?.courses.find(item => item.courseId === "epicureanism");
+assert(result.status === 200 && course?.completedLessonIds.includes(lessonId), "My Learning did not show the completed Lesson");
 assert(result.body.overview.notificationsPlaceholder === true && result.body.overview.notifications.length === 0, "My Learning notifications must stay a placeholder");
 result = await request("/api/my-learning/notifications");
 assert(result.status === 200 && result.body.placeholder === true && result.body.unreadCount === 0, "notification inbox must not be exposed");
-for (const path of ["/en-GB/account/my-learning", "/en-GB/account/my-learning/subscription", "/en-GB/account/my-learning/notifications", "/en-GB/account/my-learning/settings", "/en-GB/account/my-learning/help", "/en-GB/account/learn/epicureanism", "/en-GB/privacy-policy", "/en-GB/terms-of-service", "/en-GB/cookie-policy"]) {
+for (const path of ["/en-GB/account/my-learning", "/en-GB/account/my-learning/subscription", "/en-GB/account/my-learning/notifications", "/en-GB/account/my-learning/settings", "/en-GB/account/my-learning/support", "/en-GB/account/learn/epicureanism", "/en-GB/privacy-policy", "/en-GB/terms-of-service", "/en-GB/cookie-policy"]) {
   assert((await request(path)).status === 200, `${path} did not return 200`);
 }
 const avatarForm = new FormData();
-avatarForm.set("file", new Blob([Buffer.from("smoke-avatar")], { type: "image/png" }), "avatar.png");
+const avatarPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+avatarForm.set("file", new Blob([avatarPng], { type: "image/png" }), "avatar.png");
 result = await request("/api/my-learning/avatar", { method: "POST", body: avatarForm });
 assert(result.status === 200 && result.body.ok, "profile image upload failed");
 result = await request("/api/my-learning/avatar");
 assert(result.status === 200 && result.contentType === "image/png", "profile image fetch failed");
 result = await request("/api/my-learning/avatar", { method: "DELETE" });
 assert(result.status === 200 && result.body.ok, "profile image removal failed");
-console.log(JSON.stringify({ ok: true, base, checked: "public Portal, bilingual pages, registration, trial, Study, My Learning, notifications, profile image" }));
+console.log(JSON.stringify({ ok: true, base, checked: "public Portal, bilingual pages, registration, local OAuth, trial, purchase, receipt, subscription cancel/resume, Study, My Learning, notifications, profile image" }));

@@ -49,7 +49,8 @@ import { canAuthorCourses, canManageCourse, canOperateBackoffice } from "./backo
 import { AuthoringError, applyCourseDraft, validateCourseMetadata, selectAuthorCourses } from "./courseAuthoring";
 import { applyDataMigrations } from "./dataMigrations";
 import { isValidAccountName, normaliseName, validateAccountName } from "@/lib/nameValidation";
-import { CourseLearningModeError, isCourseLearningMode, isCourseLearningModeContext, type CourseLearningMode, type CourseLearningModeContext, type CourseLearningModePreferences, type CourseLearningModeResult } from "@/contracts/course-learning-mode";
+import { CourseLearningModeError, isCourseLearningMode, isCourseLearningModeContext, type CourseLearningMode, type CourseLearningModeContext, type CourseLearningModePreferences, type CourseLearningModeResult, type CourseLearningModeSelection } from "@/contracts/course-learning-mode";
+import { availableLessonMode, lessonLearningModes } from "@/lib/previewLessonPresentation";
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -636,19 +637,27 @@ export async function persistCatalogueMigrations() {
   return persistDataMigrations();
 }
 
-export async function getCourseLearningMode(userId: string, courseId: string): Promise<CourseLearningMode | null> {
+function preferredCourseMode(user: ProductUser | undefined, courseId: string, context: CourseLearningModeContext, record?: ProductStudyRecord) {
+  const choices = user?.courseLearningModePreferences;
+  const scoped = choices && Object.hasOwn(choices, courseId) ? choices[courseId]?.[context] : undefined;
+  // Older bookmark writes could overwrite the User preference after an explicit Study selection.
+  if (context === "entitled" && isCourseLearningMode(record?.selectedMode)) return record.selectedMode;
+  return isCourseLearningMode(scoped) ? scoped : null;
+}
+
+export async function getCourseLearningModeSelection(userId: string, courseId: string): Promise<CourseLearningModeSelection> {
   const data = await ensureProductData();
   const user = data.users.find(item => item.id === userId && item.status === "active");
   const course = data.courses.find(item => item.id === courseId && item.status === "published");
-  if (!user || !course) return null;
+  if (!user || !course) return { mode: null, preferredMode: null };
   const entitled = Boolean(activeEntitlement(data, userId, course.id));
-  const preferences = user.courseLearningModePreferences;
-  const scoped = preferences && Object.hasOwn(preferences, courseId) ? preferences[courseId] : undefined;
-  // Only verified formal Study history can recover an older formal preference.
-  // The legacy shared User field cannot tell a preview choice from a paid one.
   const record = entitled ? studyHistoryFor(data, userId, course).record : undefined;
-  const mode = scoped?.[entitled ? "entitled" : "preview"] || record?.selectedMode || record?.currentMode;
-  return isCourseLearningMode(mode) ? mode : null;
+  const preferredMode = preferredCourseMode(user, courseId, entitled ? "entitled" : "preview", record);
+  return { preferredMode, mode: preferredMode || (isCourseLearningMode(record?.currentMode) ? record.currentMode : null) };
+}
+
+export async function getCourseLearningMode(userId: string, courseId: string): Promise<CourseLearningMode | null> {
+  return (await getCourseLearningModeSelection(userId, courseId)).mode;
 }
 
 export async function saveCourseLearningMode(userId: string, courseId: string, mode: unknown, lessonId?: string, expectedContext?: CourseLearningModeContext, intent?: "entry"): Promise<CourseLearningModeResult> {
@@ -1276,6 +1285,11 @@ export async function getProductCourse(slug: string) {
   return data.courses.find((course) => course.slug === slug || course.id === slug) || null;
 }
 
+function studyBookmarkRevision(record: ProductStudyRecord | undefined) {
+  return Object.values(record?.lessonBookmarks || {}).reduce((sum, modes) =>
+    sum + Object.values(modes).reduce((total, bookmark) => total + bookmark.revision, 0), 0);
+}
+
 /** D1 Course page view: identity, syllabus access, CTA bands, unique-LP progress. */
 export async function getCoursePage(slug: string, userId?: string | null): Promise<CoursePage> {
   if (!userId) {
@@ -1323,14 +1337,17 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       completedLessonIds,
     });
     const record = history.record;
+    const preferredMode = preferredCourseMode(data.users.find(user => user.id === userId), course.id, entitlement ? "entitled" : "preview", record);
+    const modesByLesson = new Map(course.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, lessonLearningModes(lesson)] as const)));
     const continuable = new Set(Object.entries(record?.lessonBookmarks || {}).filter(([lessonId, modes]) =>
       !completedLessonIds.includes(lessonId) && Object.values(modes).some(bookmark => {
+        if (preferredMode && bookmark.mode !== availableLessonMode(modesByLesson.get(lessonId), preferredMode)) return false;
         try { return bookmark.contentVersion === lessonBookmarkContext(course, lessonId, bookmark.mode).contentVersion; }
         catch (error) { if (error instanceof LessonBookmarkError) return false; throw error; }
       })).map(([lessonId]) => lessonId));
     const actionLessonId = !entitlement ? page.actionLessonId : page.pageState === "available" ? record?.currentLessonId || course.sections.flatMap(section => section.lessons)[0]?.id || null : null;
-    const bookmarkRevision = Object.values(record?.lessonBookmarks || {}).reduce((sum, modes) => sum + Object.values(modes).reduce((total, bookmark) => total + bookmark.revision, 0), 0);
-    return { ...page, bookmarkRevision, syllabus: page.syllabus.map(lesson => lesson.access !== "entitled" ? lesson : completedLessonIds.includes(lesson.lessonId)
+    const bookmarkRevision = studyBookmarkRevision(record);
+    return { ...page, bookmarkRevision, preferredMode, syllabus: page.syllabus.map(lesson => lesson.access !== "entitled" ? lesson : completedLessonIds.includes(lesson.lessonId)
       ? { ...lesson, completed: true } : continuable.has(lesson.lessonId) ? { ...lesson, continuable: true } : lesson), progress: 0, actionLessonId };
   });
 }
@@ -2188,38 +2205,38 @@ export async function getLearningOverview(userId: string) {
     data.subscriptions.forEach((subscription) => {
       if (["active", "cancel_at_period_end", "grace"].includes(subscription.state) && new Date(subscription.validTo) <= currentTime) subscription.state = "expired";
     });
-    const records = data.studyRecords.filter(record => record.userId === userId).flatMap(record => {
-      const course = data.courses.find(course => course.id === record.courseId);
-      const actual = course ? studyHistoryFor(data, userId, course).record : undefined;
-      return actual ? [actual] : [];
-    });
-    // Only server-authorised learning can create a My Learning card.
-    const courseIds = [...new Set(records.map((record) => record.courseId))];
+    const courseIds = new Set([
+      ...data.studyRecords.filter(record => record.userId === userId).map(record => record.courseId),
+      ...data.studyEvents.filter(event => event.userId === userId && event.accessContext !== "preview").map(event => event.courseId),
+    ]);
     const subscriptions = data.subscriptions.filter((item) => item.userId === userId).map((subscription) => ({ ...subscription, plan: data.plans.find((plan) => plan.id === subscription.planId) || null }));
     const accessState = accessStateFromSubscriptions(subscriptions);
-    const courses = courseIds.map((courseId) => {
-      const record = records.find((item) => item.courseId === courseId);
+    const courses = [...courseIds].flatMap((courseId) => {
       const course = data.courses.find((item) => item.id === courseId);
-      const entitlement = course ? activeEntitlement(data, userId, courseId) : null;
-      const lessons = course?.sections.flatMap((section) => section.lessons) || [];
-      const courseEvents = course ? studyHistoryFor(data, userId, course).events : [];
+      if (!course) return [];
+      // Recover authorised Study events even if the aggregate record is missing.
+      const { record, events: courseEvents } = studyHistoryFor(data, userId, course);
+      if (!record) return [];
+      const entitlement = activeEntitlement(data, userId, courseId);
+      const lessons = course.sections.flatMap((section) => section.lessons);
       const openedLessonIds = uniqueOpenedLearningPointIds(courseEvents);
-      const preferredMode = record?.selectedMode || record?.currentMode || data.users.find(user => user.id === userId)?.courseLearningModePreferences?.[courseId]?.entitled || "text";
-      const modes = course ? availableCourseLearningModes(course) : [];
-      const mode = modes.includes(preferredMode) ? preferredMode : modes[0] || "text";
-      const pointProgress = course && record?.knowledgePositions ? knowledgeProgress(course, mode, record.knowledgePositions[mode]) : null;
-      const points = course ? courseKnowledgePoints(course, mode) : [];
-      const position = pointProgress?.lessonId ? pointProgress : points.find(point => point.lessonId === record?.currentLessonId) || points[0];
-      const currentLessonId = position?.lessonId || record?.currentLessonId || null;
+      const preferredMode = preferredCourseMode(data.users.find(user => user.id === userId), courseId, "entitled", record);
+      const lastMode = preferredMode || record.currentMode || "text";
+      const modes = availableCourseLearningModes(course);
+      const mode = modes.includes(lastMode) ? lastMode : modes[0] || "text";
+      const pointProgress = record.knowledgePositions ? knowledgeProgress(course, mode, record.knowledgePositions[mode]) : null;
+      const points = courseKnowledgePoints(course, mode);
+      const position = pointProgress?.lessonId ? pointProgress : points.find(point => point.lessonId === record.currentLessonId) || points[0];
+      const currentLessonId = position?.lessonId || record.currentLessonId || null;
       const computed = { progress: 0, progressFailed: false, completed: false };
       const completedLessonIds = courseEvents.filter((event) => event.event === "complete").map((event) => event.lessonId);
-      const previewLesson = course ? publicFirstLesson(course) : null;
+      const previewLesson = publicFirstLesson(course);
       const previewLessons = previewLesson ? [previewLesson] : [];
       const previewLessonIds = previewLessons.map((lesson) => lesson.id);
       const completedPreviewIds = previewLessonIds.filter((id) => completedLessonIds.includes(id));
-      const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && (!course || entitlementCoversCourse(item, course)));
+      const accessEnded = data.entitlements.some((item) => item.userId === userId && (item.state === "expired" || item.state === "revoked") && entitlementCoversCourse(item, course));
       const { cardState, cta } = resolveOverviewCard({
-        courseStatus: course?.status,
+        courseStatus: course.status,
         progressFailed: computed.progressFailed,
         completed: computed.completed,
         hasLiveEntitlement: Boolean(entitlement),
@@ -2229,34 +2246,36 @@ export async function getLearningOverview(userId: string) {
         accessEnded,
       });
       return {
-        id: record?.id || `access_${userId}_${courseId}`,
+        id: record.id || `access_${userId}_${courseId}`,
         userId,
         courseId,
-        startedAt: record?.startedAt || null,
-        updatedAt: record?.updatedAt || entitlement?.validTo || null,
+        startedAt: record.startedAt || null,
+        updatedAt: record.updatedAt || entitlement?.validTo || null,
+        bookmarkRevision: studyBookmarkRevision(record),
         currentLessonId,
         currentContentId: position?.contentId || null,
         mode,
+        preferredMode,
         currentLessonTitle: lessons.find((lesson) => lesson.id === currentLessonId)?.title || null,
         lessonCount: lessons.length,
-        courseDescription: course?.description || "",
-        courseCategory: course?.category || "European Humanities",
+        courseDescription: course.description || "",
+        courseCategory: course.category || "European Humanities",
         totalMinutes: lessons.reduce((total, lesson) => total + lesson.durationMinutes, 0),
-        courseStatus: course?.status || "draft",
-        totalSeconds: record?.totalSeconds || 0,
+        courseStatus: course.status || "draft",
+        totalSeconds: record.totalSeconds || 0,
         openedLearningPointCount: pointProgress?.current ?? openedLessonIds.length,
         totalLearningPoints: pointProgress?.total ?? lessons.length,
         progress: computed.progress,
         progressFailed: computed.progressFailed,
-        completedAt: computed.completed ? record?.completedAt || now() : null,
+        completedAt: computed.completed ? record.completedAt || now() : null,
         completedLessonIds: [...new Set(completedLessonIds)],
         legacyCompletedLessonIds: [...new Set(completedLessonIds)],
         // Compatibility point projections inherit the Lesson's shared completion.
-        completedContentIds: course ? [...new Set((["text", "video"] as const).flatMap(mode =>
-          courseKnowledgePoints(course, mode).filter(point => completedLessonIds.includes(point.lessonId) && point.contentId).map(point => point.contentId!)))] : [],
+        completedContentIds: [...new Set((["text", "video"] as const).flatMap(mode =>
+          courseKnowledgePoints(course, mode).filter(point => completedLessonIds.includes(point.lessonId) && point.contentId).map(point => point.contentId!)))],
         nextPreviewLessonId: previewLessons.find((lesson) => !openedLessonIds.includes(lesson.id))?.id || null,
         previewAvailable: previewLessons.length > 0,
-        courseTitle: course?.title || courseId,
+        courseTitle: course.title || courseId,
         entitlement,
         cardState,
         cta,
@@ -3060,10 +3079,6 @@ export async function saveLessonBookmark(userId: string, body: unknown) {
     record.lessonBookmarks = { ...record.lessonBookmarks, [input.lessonId]: { ...record.lessonBookmarks?.[input.lessonId], [input.mode]: bookmark } };
     record.currentLessonId = input.lessonId;
     record.currentMode = input.mode;
-    const user = data.users.find(item => item.id === userId);
-    if (user) user.courseLearningModePreferences = { ...user.courseLearningModePreferences, [input.courseId]: {
-      ...user.courseLearningModePreferences?.[input.courseId], entitled: input.mode,
-    } };
     record.knowledgePositions = { ...record.knowledgePositions, [input.mode]: { lessonId: input.lessonId, contentId: input.contentId } };
     record.updatedAt = timestamp;
     return bookmark;

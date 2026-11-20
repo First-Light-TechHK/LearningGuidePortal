@@ -88,6 +88,24 @@ For an isolated production-build check, stop only this sandbox server, run `NEXT
 
 ## Sandbox Checkout behaviour
 
+### Assisted payment flow verification
+
+Build the Portal, then run `npm run stripe:local -- --payment-e2e` with the Stripe CLI, Playwright Chromium, a test key, the standard six-month Everything and European Humanities Prices, and the configured six-month upgrade Coupon. Keep the opened browser available and complete each prompted Hosted Checkout with a Stripe test card. The runner binds a separate loopback Portal to a disposable local store and verifies that Stripe CLI delivers each required event with HTTP 200.
+
+- **PAY-01** checks that the initial zero-dollar invoice leaves the three-day trial in place.
+- **PAY-02** purchases a Category plan and upgrades it to Everything, checking the original Stripe subscription is canceled.
+- **PAY-03** checks that resubmitting a quote returns the same pending Order and Stripe Checkout.
+- **PAY-04** checks that a full refund revokes access and a later Stripe invoice leaves it revoked.
+- **PAY-05** checks signed event replay, one grant and invalid signature rejection.
+- **PAY-06** uses a subscription-linked Sandbox invoice with a declining test payment method and checks the three-day grace boundary.
+- **PAY-07** checks that a new paid Stripe invoice preserves cancel-at-period-end.
+
+The runner attempts to expire abandoned sessions, void unpaid test invoices and cancel its test subscriptions at exit. The paid invoice checks use explicit Sandbox invoices, so natural renewal scheduling remains a separate release check. Automated service and Route Handler coverage uses `npm run test:payment` and `npm run test:io`.
+
+For an unattended run of the unpaid Checkout path, use `npm run stripe:local -- --payment-e2e --unpaid-only`. It creates a real Portal Order and test Checkout, verifies that the quote reuses both, then expires the session and checks the signed webhook, replay, canceled Order and lack of access. This path requires the Everything Price and runs without an upgrade Coupon or card submission.
+
+### Checkout rules
+
 - Requires a test API key and rejects live prices and live webhook events.
 - Uses standard Checkout in USD for these test sessions. The sandbox account defaults to Managed Payments, which mandates adaptive pricing. Only the sandbox session request disables Managed Payments and adaptive pricing; the account setting is unchanged. Before any live launch, the business must decide its merchant-of-record, currency and tax policy. See [Stripe Managed Payments](https://docs.stripe.com/payments/managed-payments/update-checkout).
 - Checks all three LG purchase consents and server-generated quotes before Checkout.

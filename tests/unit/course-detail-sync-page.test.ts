@@ -20,7 +20,7 @@ test("course restoration refreshes changed Study/access once and keeps the curre
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
-    const initial = { pageState: "available", cta: "continue_learning", actionLessonId: "one", progress: 14, openedLearningPointCount: 1, bookmarkRevision: 0, syllabus: [] as Array<{lessonId:string;continuable?:boolean;completed?:boolean}> };
+    const initial = { pageState: "available", cta: "continue_learning", actionLessonId: "one", progress: 14, openedLearningPointCount: 1, bookmarkRevision: 0, preferredMode: null as null | "video" | "text", syllabus: [] as Array<{lessonId:string;continuable?:boolean;completed?:boolean}> };
     let current = { ...initial }, failure: "http" | "network" | "malformed" | null = null;
     let release: (() => Promise<void>) | undefined, delay = false;
     await page.route("http://detail-sync.test/**", async route => {
@@ -96,6 +96,8 @@ test("course restoration refreshes changed Study/access once and keeps the curre
     current = {...current, bookmarkRevision:2};
     await waitRefreshes(6, "bounded restoration rechecks pick up a late pagehide bookmark save");
     await mount(current);await check(true);await waitRefreshes(6, "the accepted revision does not refresh repeatedly");
+    current = { ...current, preferredMode: "video" };
+    await check();await waitRefreshes(7, "changing only the Course preference refreshes the curriculum");
     assert.equal(await page.locator("#root").innerHTML(), "", "reconciliation adds no UI or progress notices");
   } finally { await browser.close(); }
 });

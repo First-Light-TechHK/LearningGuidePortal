@@ -1,5 +1,7 @@
 # Phase 1：数据设计
 
+Persistent Course learning mode (2026-11-19): the existing per-Course, per-context User preference and formal Study selectedMode represent the last explicit selection. The formal selectedMode recovers known choices where older automatic bookmark writes changed the User preference. Checkpoints continue recording actual mode and position without changing the chosen preference. Existing values and both mode bookmarks are retained. No migration is required.
+
 Completed Lesson bookmark resume (2026-11-14): accepted completion remains irreversible and independent of the existing per-mode bookmarks. Reviewing a completed Lesson may update its latest position; subsequent entry restores the valid bookmark without clearing completion. No schema, migration or historical-data rewrite. Supersedes the earlier completed-Lesson entry-from-start rule.
 
 Browser Back Course-state reconciliation (2026-11-14): CoursePage.bookmarkRevision is a nonpersisted aggregate of existing LessonBookmark.revision values. Accepted new saves advance it; replaying the same clientEventId does not. It is only a display invalidation hint, never a completion, ownership or Entitlement fact. No new stored field, migration or learner-history rewrite.

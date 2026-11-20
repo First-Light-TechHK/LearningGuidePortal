@@ -3,11 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { CourseEntrySnapshot, CoursePageResponse } from "@/contracts/course-page";
+import { isCourseLearningMode } from "@/contracts/course-learning-mode";
 
 /** Reconcile history-restored course actions with the current server Study record. */
 export function CourseDetailSync({ slug, snapshot }: { slug: string; snapshot: CourseEntrySnapshot }) {
   const router = useRouter();
-  const { pageState, cta, actionLessonId, progress, openedLearningPointCount, bookmarkRevision = 0 } = snapshot;
+  const { pageState, cta, actionLessonId, progress, openedLearningPointCount, bookmarkRevision = 0, preferredMode = null } = snapshot;
   const continuationKey = JSON.stringify([...(snapshot.continuableLessonIds || [])].sort());
   const completionKey = JSON.stringify([...(snapshot.completedLessonIds || [])].sort());
   useEffect(() => {
@@ -38,10 +39,12 @@ export function CourseDetailSync({ slug, snapshot }: { slug: string; snapshot: C
           || !(current.actionLessonId === null || typeof current.actionLessonId === "string")
           || !(current.progress === null || typeof current.progress === "number" && Number.isFinite(current.progress))
           || typeof current.openedLearningPointCount !== "number"
+          || (current.preferredMode != null && !isCourseLearningMode(current.preferredMode))
           || !(current.bookmarkRevision === undefined || typeof current.bookmarkRevision === "number" && Number.isFinite(current.bookmarkRevision) && current.bookmarkRevision >= 0)) return;
         if (current.pageState !== pageState || current.cta !== cta || current.actionLessonId !== actionLessonId
           || current.progress !== progress || current.openedLearningPointCount !== openedLearningPointCount
           || (current.bookmarkRevision ?? 0) !== bookmarkRevision
+          || (current.preferredMode ?? null) !== preferredMode
           || JSON.stringify((current.syllabus || []).filter(lesson => lesson.continuable).map(lesson => lesson.lessonId).sort()) !== continuationKey
           || JSON.stringify((current.syllabus || []).filter(lesson => lesson.completed).map(lesson => lesson.lessonId).sort()) !== completionKey) {
           refreshRequested = true;
@@ -91,6 +94,6 @@ export function CourseDetailSync({ slug, snapshot }: { slug: string; snapshot: C
       window.removeEventListener("focus", restore);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [slug, pageState, cta, actionLessonId, progress, openedLearningPointCount, bookmarkRevision, continuationKey, completionKey, router]);
+  }, [slug, pageState, cta, actionLessonId, progress, openedLearningPointCount, bookmarkRevision, preferredMode, continuationKey, completionKey, router]);
   return null;
 }
