@@ -160,3 +160,27 @@ test("a switched-off HelpDesk template sends nothing, and the Admin event stays 
   assert.equal((event as { reason: string }).reason, "duplicate", "the off event is consumed, not replayed");
   assert.equal((await rowsFor(learner.id)).length, 0);
 });
+
+for (const order of ["portal-first", "admin-first"] as const) {
+  test(`one ticket and one reply give exactly one row (${order})`, async () => {
+    await setEnabled(true);
+    const learner = await makeLearner();
+    const params = { ticket_subject: "Upgrade did not apply", ticket_link: "/en-GB/account/my-learning/support/T1" };
+    const portalWrite = () => notifications.emitCatalogueNotification({
+      templateId: "HELPDESK_TICKET_REPLIED",
+      userId: learner.id,
+      eventKey: "ticket:T1:R1",
+      params,
+      channels: ["in_app"],
+      replaceUnreadEventKeyPrefix: "ticket:T1:",
+    });
+    const adminEvent = () => notifications.emitNotificationEvent({
+      eventType: "HELPDESK_TICKET_REPLIED",
+      eventKey: "ticket:T1:R1",
+      email: learner.email,
+      params,
+    });
+    if (order === "portal-first") { await portalWrite(); await adminEvent(); } else { await adminEvent(); await portalWrite(); }
+    assert.equal((await rowsFor(learner.id)).length, 1);
+  });
+}
