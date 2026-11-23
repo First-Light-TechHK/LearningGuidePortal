@@ -290,6 +290,27 @@ test("renewal reminder job creates one in-app message and one email per billing 
   assert.equal(mails.length, 1, "no second email");
 });
 
+test("a second instance's dispatcher does not mail a renewal row the job is already sending (N2)", async () => {
+  const user = await cleanUser("renewal-claim@example.test");
+  await activeSubscription(user.id, { validTo: "2027-01-16T02:00:00.000Z" });
+  const now = new Date("2027-01-11T02:00:00.000Z");
+  let calls = 0;
+  let dispatched: Awaited<ReturnType<typeof email.dispatchPendingNotificationEmails>> | null = null;
+  const send: import("../../services/notifications/email").SendEmail = async (input) => {
+    calls += 1;
+    if (calls === 1) dispatched = await email.dispatchPendingNotificationEmails({ now, appUrl: APP_URL, send });
+    mails.push({ to: input.to, subject: input.subject, text: input.text, html: input.html });
+    return { messageId: "<claim@example.test>" };
+  };
+  const summary = await scheduler.runRenewalReminderJob({ now, force: true, appUrl: APP_URL, send });
+  assert.equal(summary.emailsSent, 1);
+  assert.equal(dispatched!.attempted, 0, "the dispatcher skips the claimed row");
+  assert.equal(calls, 1, "one send in total");
+  const data = await store.ensureProductData();
+  const row = data.notifications.find((item) => item.userId === user.id && item.templateId === "SUB_RENEWAL_REMINDER")!;
+  assert.equal((data.notificationLog || []).filter((item) => item.notificationId === row.id && item.channel === "email").length, 1);
+});
+
 test("renewal reminder is skipped when auto-renewal is off, six days out, or before 10:00 HKT", async () => {
   const off = await cleanUser("renewal-off@example.test");
   await activeSubscription(off.id, { validTo: "2026-12-16T02:00:00.000Z", cancelAtPeriodEnd: true });

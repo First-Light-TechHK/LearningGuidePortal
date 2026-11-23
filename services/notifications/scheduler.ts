@@ -1,4 +1,4 @@
-import { createNotificationInData, purgeExpiredNotificationRecordsInData } from "./core";
+import { createNotificationInData, notificationEmailRow, purgeExpiredNotificationRecordsInData } from "./core";
 import { dispatchPendingNotificationEmails, sendNotificationEmailForUser, type SendEmail } from "./email";
 import { editProductData, readProductData } from "../productStore";
 import type { ProductData, ProductPlan, ProductSubscription, ProductUser } from "../productStore";
@@ -208,6 +208,8 @@ export async function runRenewalReminderJob(options: {
         skipped += 1;
         continue;
       }
+      // Claim the email now: the dispatcher skips the row for its lease while this job sends it.
+      notificationEmailRow(result.notification).emailClaimedAt = nowIso;
       jobs.push({ userId: user.id, notificationId: result.notification.id, params, related: subscription.id });
     }
     state.renewalReminderDay = day;
