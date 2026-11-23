@@ -909,7 +909,7 @@ export function sendBroadcastInData(data: ProductData, broadcastId: string, acto
       category: "announcement",
       broadcastId: broadcast.id,
       buttonText: broadcast.buttonText || undefined,
-      buttonLink: localiseLink(broadcast.buttonLink, user.locale) || undefined,
+      buttonLink: localiseLink(broadcast.buttonLink ?? null, user.locale) || undefined,
       language,
       withdrawnAt: null,
       eventKey: `broadcast:${broadcast.id}:${user.id}`,
