@@ -67,7 +67,7 @@ test("an event renders and stores one in-app message; the same event key never s
   assert.equal(rows[0].category, "support");
   assert.equal(rows[0].templateId, "HELPDESK_TICKET_REPLIED");
   assert.equal(rows[0].language, "en");
-  assert.equal(rows[0].buttonLink, "/my-learning/support/1");
+  assert.equal(rows[0].buttonLink, "/en-GB/my-learning/support/1");
   assert.equal(rows[0].isTest, undefined);
   const log = (data.notificationLog || []).filter((item) => item.notificationId === rows[0].id);
   assert.equal(log.length, 1);

@@ -8,6 +8,7 @@ import type {
 import { formatRelativeTime } from "./format";
 import {
   FIELD_LABELS,
+  localiseLink,
   MissingNotificationDataError,
   renderTemplate,
   templateFieldLimit,
@@ -539,7 +540,8 @@ export function recordLegacyNotificationInData(data: ProductData, input: LegacyN
   const category = categoryForLegacy(templateId, input.title);
   const buttons = templateId ? LEGACY_BUTTONS[templateId] : undefined;
   const buttonText = buttons ? (language === "zh" ? buttons.zh : buttons.en) : undefined;
-  const buttonLink = buttons?.link(input.sessionId) || undefined;
+  const learner = data.users.find((user) => user.id === input.userId);
+  const buttonLink = localiseLink(buttons?.link(input.sessionId) || null, learner?.locale ?? language) || undefined;
 
   if (templateId === "HELPDESK_TICKET_REPLIED") {
     const number = input.body.match(/\b[A-Z]{2}-\d{6}-\d{4}\b/)?.[0];
@@ -907,7 +909,7 @@ export function sendBroadcastInData(data: ProductData, broadcastId: string, acto
       category: "announcement",
       broadcastId: broadcast.id,
       buttonText: broadcast.buttonText || undefined,
-      buttonLink: broadcast.buttonLink || undefined,
+      buttonLink: localiseLink(broadcast.buttonLink, user.locale) || undefined,
       language,
       withdrawnAt: null,
       eventKey: `broadcast:${broadcast.id}:${user.id}`,

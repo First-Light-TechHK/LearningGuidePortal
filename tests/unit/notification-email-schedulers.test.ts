@@ -122,7 +122,7 @@ test("renewal reminder email renders the fixed layout, HKT date, amount and app 
   assert.match(rendered.html, /Hi Margaret,/);
   assert.match(rendered.html, /16 Dec 2026/);
   assert.match(rendered.html, /US\$149\.00/);
-  assert.match(rendered.html, /href="https:\/\/learningguide\.test\/my-learning\/subscription"/);
+  assert.match(rendered.html, /href="https:\/\/learningguide\.test\/en-GB\/my-learning\/subscription"/);
   assert.match(rendered.html, /Privacy policy/);
   assert.match(rendered.text, /16 Dec 2026/);
   assert.match(rendered.text, /US\$149\.00/);
@@ -140,7 +140,7 @@ test("live session email renders session date and time with (HKT), Chinese inclu
   const en = email.renderNotificationEmail({ templateId: "LIVE_SESSION_REMINDER", locale: "en-GB", appUrl: APP_URL, params });
   assert.match(en.html, /12 Nov 2026/);
   assert.match(en.html, /7:00 PM \(HKT\)/);
-  assert.match(en.html, /href="https:\/\/learningguide\.test\/portal\/study-groups\/sessions\/1"/);
+  assert.match(en.html, /href="https:\/\/learningguide\.test\/en-GB\/portal\/study-groups\/sessions\/1"/);
   const zh = email.renderNotificationEmail({ templateId: "LIVE_SESSION_REMINDER", locale: "zh-CN", appUrl: APP_URL, params });
   assert.match(zh.html, /2026年11月12日/);
   assert.match(zh.html, /19:00 \(HKT\)/);

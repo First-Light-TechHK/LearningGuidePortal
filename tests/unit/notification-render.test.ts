@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MissingNotificationDataError, renderTemplate, validateTemplateCopy, type TemplateCopy } from "../../services/notifications/render";
+import { localiseLink, MissingNotificationDataError, renderTemplate, validateTemplateCopy, type TemplateCopy } from "../../services/notifications/render";
 import { formatAmount, formatHktDate, formatHktDateTimeHkt, formatRelativeTime } from "../../services/notifications/format";
 import { notificationTemplate, NOTIFICATION_TEMPLATES } from "../../services/notifications/templates";
 
@@ -35,7 +35,33 @@ test("renders English, formats variables, and falls back to English when Chinese
   assert.match(rendered.body, /Everything · 12 months/);
   assert.match(rendered.body, /16 Nov 2026/);
   assert.match(rendered.body, /US\$149\.00/);
-  assert.equal(rendered.link, "/my-learning/subscription");
+  assert.equal(rendered.link, "/zh-CN/my-learning/subscription");
+});
+
+test("REV-06: every button link carries the recipient's locale", () => {
+  const expired = notificationTemplate("SUB_EXPIRED");
+  const params = { plan_name: "Everything · 12 months", expired_date: "2026-11-19T10:00:00.000Z" };
+  assert.equal(renderTemplate(expired, { locale: "en-GB", channel: "in_app", params }).link, "/en-GB/my-learning/subscription");
+  assert.equal(renderTemplate(expired, { locale: "zh-CN", channel: "in_app", params }).link, "/zh-CN/my-learning/subscription");
+  const email = renderTemplate(expired, { locale: "zh-CN", channel: "email", params: { ...params, app_url: "https://app.example.test" } });
+  assert.equal(email.link, "https://app.example.test/zh-CN/my-learning/subscription");
+
+  const ticket = notificationTemplate("HELPDESK_TICKET_REPLIED");
+  const reply = renderTemplate(ticket, { locale: "zh-CN", channel: "in_app", params: { ticket_subject: "Help", ticket_link: "/en-GB/account/my-learning/support/T1" } });
+  assert.equal(reply.link, "/zh-CN/account/my-learning/support/T1");
+  const other = renderTemplate(ticket, { locale: "zh-CN", channel: "in_app", params: { ticket_subject: "Help", ticket_link: "https://example.org/x" } });
+  assert.equal(other.link, "https://example.org/x");
+});
+
+test("localiseLink handles paths, queries, the app origin and lookalikes", () => {
+  assert.equal(localiseLink(null, "zh-CN"), null);
+  assert.equal(localiseLink("", "zh-CN"), null);
+  assert.equal(localiseLink("/portal/courses?x=1#top", "ZH"), "/zh-CN/portal/courses?x=1#top");
+  assert.equal(localiseLink("/zh-CN/portal", "en-GB"), "/en-GB/portal");
+  assert.equal(localiseLink("/", "en-GB"), "/en-GB");
+  assert.equal(localiseLink("https://app.test/portal", "zh-CN", "https://app.test/"), "https://app.test/zh-CN/portal");
+  assert.equal(localiseLink("https://app.test.evil.example/portal", "zh-CN", "https://app.test"), "https://app.test.evil.example/portal");
+  assert.equal(localiseLink("//evil.example/x", "zh-CN"), "//evil.example/x");
 });
 
 test("uses the Chinese copy when every required Chinese field is filled", () => {

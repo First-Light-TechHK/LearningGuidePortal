@@ -196,6 +196,21 @@ test("PATCH broadcasts edits a draft, sends to the whole audience, and exposes r
   assert.equal(afterRead.readRate.read, 1);
 });
 
+test("a broadcast button link reaches each recipient in their own locale (REV-06)", async () => {
+  const zh = await verifiedUser(store, "broadcast-link-zh@example.test");
+  const en = await verifiedUser(store, "broadcast-link-en@example.test");
+  await store.editProductData((data) => { data.users.find((user) => user.id === zh.id)!.locale = "zh-CN"; });
+  const created = await broadcastsRoute.POST(request("/api/integration/notifications/broadcasts", TOKEN, {
+    titleEn: "New courses", bodyEn: "Have a look.", buttonText: "Browse", buttonLink: "/portal/courses", audience: "all", operator: "ops@example.test",
+  }, "POST"));
+  const draft = (await created.json()).broadcast;
+  const sent = await broadcastsRoute.PATCH(request("/api/integration/notifications/broadcasts", TOKEN, { id: draft.id, action: "send", operator: "ops@example.test" }, "PATCH"));
+  assert.equal(sent.status, 200);
+  const rows = (await store.ensureProductData()).notifications.filter((item) => item.broadcastId === draft.id);
+  assert.equal(rows.find((item) => item.userId === zh.id)?.buttonLink, "/zh-CN/portal/courses");
+  assert.equal(rows.find((item) => item.userId === en.id)?.buttonLink, "/en-GB/portal/courses");
+});
+
 test("PATCH broadcasts withdraw is irreversible, writes withdrawn and clears learner inbox", async () => {
   const created = await broadcastsRoute.POST(request("/api/integration/notifications/broadcasts", TOKEN, {
     titleEn: "Withdraw me", bodyEn: "This will be withdrawn.", audience: "all", operator: "ops@example.test",

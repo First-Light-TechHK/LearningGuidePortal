@@ -63,7 +63,7 @@ test("GET learner notifications returns the inbox, category mapping and unread c
   assert.equal(body.items[0].category, "course");
   assert.equal(body.items[0].categoryLabel, "New course");
   assert.equal(body.items[0].buttonText, "View course");
-  assert.equal(body.items[0].buttonLink, "/courses/1");
+  assert.equal(body.items[0].buttonLink, "/en-GB/courses/1");
   assert.equal(body.items[0].unread, true);
   assert.equal(typeof body.items[0].displayTime, "string");
   const unread = await get(learnerRequest("/api/my-learning/notifications?filter=unread&limit=20", token));

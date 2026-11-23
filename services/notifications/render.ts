@@ -100,6 +100,33 @@ export function copyForLanguage(template: NotificationTemplate, language: Notifi
  * frozen result. Missing text data throws MissingNotificationDataError so the
  * caller can record Failed "missing data" instead of sending a broken message.
  */
+const SITE_LOCALES = ["en-GB", "zh-CN"];
+
+/**
+ * Puts the recipient's locale in front of a site link (REV-06): a site path, or a
+ * URL under `appUrl`, gets its first segment set to en-GB or zh-CN; any other
+ * absolute URL is returned unchanged.
+ */
+export function localiseLink(link: string | null, locale: string, appUrl?: string): string | null {
+  if (!link) return null;
+  const target = locale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-GB";
+  const base = appUrl ? appUrl.replace(/\/+$/, "") : "";
+  let origin = "";
+  let path = link;
+  if (!link.startsWith("/")) {
+    if (!base || !link.startsWith(base) || !/^([/?#]|$)/.test(link.slice(base.length))) return link;
+    origin = base;
+    path = link.slice(base.length) || "/";
+  } else if (link.startsWith("//")) {
+    return link;
+  }
+  const [, pathname, rest] = path.match(/^([^?#]*)(.*)$/) as RegExpMatchArray;
+  const segments = pathname.split("/").slice(1);
+  if (SITE_LOCALES.includes(segments[0])) segments.shift();
+  const tail = segments.join("/");
+  return `${origin}/${target}${tail ? `/${tail}` : ""}${rest}`;
+}
+
 export function renderTemplate(template: NotificationTemplate, input: RenderInput): RenderedNotification {
   const language: NotificationLanguage = input.locale.toLowerCase().startsWith("zh") ? "zh" : "en";
   const copy = copyForLanguage(template, language, input.channel);
@@ -135,7 +162,7 @@ export function renderTemplate(template: NotificationTemplate, input: RenderInpu
     subject: isEmail ? title ?? "" : copy.subject ?? null,
     emailBody: isEmail ? body ?? "" : copy.emailBody ?? null,
     emailButtonText: isEmail ? buttonText : copy.emailButtonText ?? null,
-    link,
+    link: localiseLink(link, input.locale, isBlank(params.app_url) ? undefined : String(params.app_url)),
   };
 }
 
