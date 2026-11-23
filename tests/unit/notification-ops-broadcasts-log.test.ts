@@ -306,6 +306,31 @@ test("send log filters combine, default to 7 days, page at 20 and expose a Test 
   assert.equal(detailBody.isTest, false);
 });
 
+test("send log shows one row per channel for the same notification (REV-04)", async () => {
+  const user = await verifiedUser(store, "send-log-channels@example.test");
+  const event = await service.emitNotificationEvent({
+    eventType: "HELPDESK_TICKET_REPLIED", eventKey: "sendlog:channels", userId: user.id,
+    params: { ticket_subject: "Channels", ticket_link: "/my-learning/support/9" },
+  });
+  assert.equal(event.created, true);
+  const notificationId = (await store.ensureProductData()).notifications.find((item) => item.userId === user.id && item.eventKey === "sendlog:channels")!.id;
+  await store.editProductData((data) => {
+    data.notificationLog!.push({
+      id: "nlog_channel_email", notificationId, userId: user.id, templateId: "HELPDESK_TICKET_REPLIED",
+      channel: "email", status: "sent", failureReason: null, occurredAt: new Date().toISOString(), isTest: false,
+    });
+  });
+  await service.setNotificationRead(user.id, notificationId, true);
+  const list = async (query = "") => (await (await sendLogRoute.GET(request(`/api/integration/notifications/send-log?recipient=${encodeURIComponent(user.email)}${query}`, TOKEN))).json());
+  const both = await list();
+  assert.equal(both.total, 2);
+  assert.deepEqual(both.items.map((item: { channel: string; status: string }) => `${item.channel}/${item.status}`).sort(), ["email/sent", "in_app/read"]);
+  assert.deepEqual((await list("&channel=email")).items.map((item: { status: string }) => item.status), ["sent"]);
+  await service.setNotificationRead(user.id, notificationId, false);
+  const after = await list();
+  assert.deepEqual(after.items.map((item: { channel: string; status: string }) => `${item.channel}/${item.status}`).sort(), ["email/sent", "in_app/delivered"]);
+});
+
 test("send log default window hides older rows; detail 404 after 180 days; purge removes them", async () => {
   const user = await verifiedUser(store, "send-log-old@example.test");
   const tenDays = new Date(Date.now() - 10 * 86400000).toISOString();

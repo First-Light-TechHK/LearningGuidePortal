@@ -1070,10 +1070,10 @@ export function querySendLogInData(data: ProductData, filters: SendLogFilters = 
   const users = new Map(data.users.map((user) => [user.id, user]));
   const broadcasts = new Map(notificationTables(data).broadcasts.map((item) => [item.id, item]));
   const templates = new Map(notificationTables(data).templates.map((item) => [item.id, item]));
-  // One row per message: the newest status wins.
+  // One row per message per channel: the newest status of each channel wins.
   const latest = new Map<string, NotificationLogEntry>();
   for (const entry of [...notificationTables(data).log].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))) {
-    const key = entry.notificationId || entry.id;
+    const key = `${entry.notificationId || entry.id}:${entry.channel}`;
     if (!latest.has(key)) latest.set(key, entry);
   }
   const rows: SendLogItem[] = [...latest.values()].flatMap((entry) => {
