@@ -1,6 +1,6 @@
 import { createNotificationInData, notificationEmailRow, purgeExpiredNotificationRecordsInData } from "./core";
 import { dispatchPendingNotificationEmails, sendNotificationEmailForUser, type SendEmail } from "./email";
-import { editProductData, readProductData } from "../productStore";
+import { editProductData, planDisplayName, planScopeName, readProductData } from "../productStore";
 import type { ProductData, ProductPlan, ProductSubscription, ProductUser } from "../productStore";
 
 /**
@@ -89,23 +89,6 @@ export function renewalReminderEligible(subscription: ProductSubscription): bool
   if (subscription.state !== "active") return false;
   if (subscription.cancelAtPeriodEnd) return false;
   return true;
-}
-
-/** PRD §13.2 plan_name: "Everything · 12 months" (device is not part of the copy). */
-function planDisplayName(plan: ProductPlan): string {
-  return plan.name.replace(/\s*·\s*(PC|Mobile)\s*·/i, " · ").trim();
-}
-
-/** PRD §13.2 scope_name: "Everything" / a category / a course title. */
-function planScopeName(plan: ProductPlan, data: ProductData): string {
-  const scope = plan.scope === "category"
-    ? { kind: "category" as const, id: plan.scopeId || plan.category || null }
-    : plan.scope === "everything" || plan.courseId === "*"
-      ? { kind: "everything" as const, id: "*" }
-      : { kind: "course" as const, id: plan.scopeId || plan.courseId };
-  if (scope.kind === "everything") return "Everything";
-  if (scope.kind === "category") return scope.id || "All courses";
-  return data.courses.find((course) => course.id === scope.id)?.title || scope.id || "Course";
 }
 
 export function renewalReminderParams(plan: ProductPlan, subscription: ProductSubscription, user: ProductUser, data: ProductData): Record<string, unknown> {

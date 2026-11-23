@@ -494,12 +494,12 @@ function planScope(plan: ProductPlan): NormalisedPlanScope {
 }
 
 /** PRD §13.2 plan_name example: "Everything · 12 months" (device is not part of the copy). */
-function planDisplayName(plan: ProductPlan) {
+export function planDisplayName(plan: ProductPlan) {
   return plan.name.replace(/\s*·\s*(PC|Mobile)\s*·/i, " · ").trim();
 }
 
 /** scope_name example: "European History" / "Everything". */
-function planScopeName(plan: ProductPlan, data: ProductData) {
+export function planScopeName(plan: ProductPlan, data: ProductData) {
   const scope = planScope(plan);
   if (scope.scope === "everything") return "Everything";
   if (scope.scope === "category") return scope.scopeId || "All courses";
