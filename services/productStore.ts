@@ -54,6 +54,12 @@ import { availableLessonMode, lessonLearningModes } from "@/lib/previewLessonPre
 import { createNotificationInData, ensureNotificationTemplatesInData, recordLegacyNotificationInData } from "./notifications/core";
 import type { NotificationBroadcast, NotificationEmailDelivery, NotificationLogEntry, NotificationTemplate } from "./notifications/types";
 
+/** A notification that cannot be written must never undo or fail a payment step. */
+function notifySafely(data: ProductData, input: Parameters<typeof createNotificationInData>[1]) {
+  try { return createNotificationInData(data, input); }
+  catch { console.error(JSON.stringify({ type: "notifications.hook_failed", templateId: input.templateId })); return null; }
+}
+
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
 function productFile() { return path.join(productDir(), "product.json"); }
@@ -1713,7 +1719,7 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     });
     data.entitlements = data.entitlements.filter((item) => !(item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
-    createNotificationInData(data, {
+    notifySafely(data, {
       userId,
       templateId: "SUB_SUCCESS",
       eventKey: `${order.id}:SUB_SUCCESS`,
@@ -1751,7 +1757,7 @@ function fulfilUpgrade(data: ProductData, userId: string, order: ProductOrder, t
   data.subscriptions.unshift(subscription);
   data.entitlements.unshift(entitlement);
   const sourcePlan = data.plans.find((plan) => plan.id === source.planId);
-  createNotificationInData(data, {
+  notifySafely(data, {
     userId,
     templateId: "SUB_UPGRADE_SUCCESS",
     eventKey: `${order.id}:SUB_UPGRADE_SUCCESS`,
@@ -1986,7 +1992,7 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
     data.entitlements = data.entitlements.filter((item) => !(item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
     data.orders.unshift(order);
-    createNotificationInData(data, {
+    notifySafely(data, {
       userId: trial.userId,
       templateId: "SUB_SUCCESS",
       eventKey: `${order.id}:SUB_SUCCESS`,
@@ -2033,7 +2039,7 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     }
     const order: ProductOrder = { id: id("order"), userId: subscription.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: start, servicePeriodEnd: end, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
     data.orders.unshift(order);
-    createNotificationInData(data, {
+    notifySafely(data, {
       userId: subscription.userId,
       templateId: "SUB_RENEWAL_SUCCESS",
       eventKey: `${subscription.id}:${input.invoiceId}:SUB_RENEWAL_SUCCESS`,
@@ -2074,7 +2080,7 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
     const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription) && item.state === "active");
     if (entitlement) entitlement.validTo = subscription.validTo;
     const plan = data.plans.find((item) => item.id === subscription.planId);
-    createNotificationInData(data, {
+    notifySafely(data, {
       userId: subscription.userId,
       templateId: "SUB_RENEWAL_FAILED",
       eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
@@ -2218,7 +2224,7 @@ function cancelSubscriptionInData(data: ProductData, userId: string, subscriptio
       subscription.state = "cancel_at_period_end";
       subscription.cancelAtPeriodEnd = true;
       const plan = data.plans.find((item) => item.id === subscription.planId);
-      createNotificationInData(data, {
+      notifySafely(data, {
         userId,
         templateId: "SUB_AUTORENEW_CANCELLED",
         eventKey: `${subscription.id}:${subscription.validTo}:SUB_AUTORENEW_CANCELLED`,
@@ -2973,7 +2979,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           servicePeriodStart: event.periodStart, servicePeriodEnd: event.periodEnd, lastStripeStatus: "paid", lastSyncedAt: now(),
           upgradeCancellation: { state: "pending", attempts: 0, nextAttemptAt: now() } });
         const sourcePlan = data.plans.find(item => item.id === source.planId);
-        createNotificationInData(data, {
+        notifySafely(data, {
           userId: order.userId,
           templateId: "SUB_UPGRADE_SUCCESS",
           eventKey: `${order.id}:SUB_UPGRADE_SUCCESS`,
@@ -3024,7 +3030,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           if (event.trial) {
             data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Trial activated", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
           } else {
-            createNotificationInData(data, {
+            notifySafely(data, {
               userId: order.userId,
               templateId: "SUB_SUCCESS",
               eventKey: `${order.id}:SUB_SUCCESS`,
@@ -3077,14 +3083,14 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
             entitlement.validTo = event.periodEnd;
           }
           if (wasTrial) {
-            createNotificationInData(data, {
+            notifySafely(data, {
               userId: subscription.userId,
               templateId: "SUB_SUCCESS",
               eventKey: `${paid.id}:SUB_SUCCESS`,
               params: { plan_name: planDisplayName(plan), scope_name: planScopeName(plan, data), valid_to: event.periodEnd!, ai_points: plan.aiPoints },
             });
           } else if (event.billingReason !== "subscription_create") {
-            createNotificationInData(data, {
+            notifySafely(data, {
               userId: subscription.userId,
               templateId: "SUB_RENEWAL_SUCCESS",
               eventKey: `${subscription.id}:${event.invoiceId}:SUB_RENEWAL_SUCCESS`,
@@ -3102,7 +3108,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
         data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.validTo = end; });
         if (subscription.source === "purchase") {
           const plan = data.plans.find(item => item.id === subscription!.planId);
-          createNotificationInData(data, {
+          notifySafely(data, {
             userId: subscription.userId,
             templateId: "SUB_RENEWAL_FAILED",
             eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
@@ -3125,7 +3131,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
         data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.state = "expired"; });
         if (subscription.source === "purchase") {
           const plan = data.plans.find(item => item.id === subscription!.planId);
-          createNotificationInData(data, {
+          notifySafely(data, {
             userId: subscription.userId,
             templateId: "SUB_EXPIRED",
             eventKey: `${subscription.id}:SUB_EXPIRED:${expiredDate}`,

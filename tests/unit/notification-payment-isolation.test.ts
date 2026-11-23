@@ -45,7 +45,7 @@ test("a notification that cannot render does not stop a purchase from being fulf
   assert.ok(data.orders.some((order) => order.userId === user.id && order.status === "paid"), "the order is paid");
   assert.ok(data.subscriptions.some((item) => item.userId === user.id && item.source === "purchase"), "the subscription exists");
   assert.ok(data.entitlements.some((item) => item.userId === user.id && item.state === "active"), "the entitlement exists");
-  assert.equal(data.notifications.filter((item) => item.userId === user.id).length, 0, "no notification row was written");
+  assert.equal(data.notifications.filter((item) => item.userId === user.id && item.templateId === "SUB_SUCCESS").length, 0, "no subscription notification row was written");
   assert.equal(errors.length, 1);
   assert.match(errors[0], /notifications\.hook_failed/);
   assert.ok(!errors[0].includes(user.id) && !errors[0].includes("@"), "the log line carries no user data");
