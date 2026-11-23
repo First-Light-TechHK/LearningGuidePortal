@@ -2665,6 +2665,18 @@ const STUDY_GROUP_REMINDER_TITLES = new Set(["Live Session reminder", "直播课
 // Session are shown; older unlinked rows had nowhere to point.
 const STUDY_GROUP_RESCHEDULE_TITLES = new Set(["Live Session rescheduled", "直播课时间已更改"]);
 
+// Notification P0 rows carry their template id; rows written before the
+// catalogue route keep the exact per-locale titles. Both count as the strip's
+// reminder / rescheduled notices, and neither withdraws a booked or cancelled
+// notice.
+function isStudyGroupReminderRow(item: { title: string; templateId?: string }) {
+  return item.templateId === "LIVE_SESSION_REMINDER" || STUDY_GROUP_REMINDER_TITLES.has(item.title);
+}
+
+function isStudyGroupRescheduleRow(item: { title: string; templateId?: string }) {
+  return item.templateId === "LIVE_SESSION_RESCHEDULED" || STUDY_GROUP_RESCHEDULE_TITLES.has(item.title);
+}
+
 export type StudyGroupReminderKind = "reminder" | "rescheduled";
 
 export async function listStudyGroupReminders(
@@ -2677,7 +2689,7 @@ export async function listStudyGroupReminders(
   const seenSessionIds = new Set<string>();
   const pendingReminderFor = async (sessionId: string) => {
     for (const row of data.notifications) {
-      if (row.userId !== userId || row.sessionId !== sessionId || !STUDY_GROUP_REMINDER_TITLES.has(row.title)) continue;
+      if (row.userId !== userId || row.sessionId !== sessionId || !isStudyGroupReminderRow(row)) continue;
       if (await isPendingReminder({ body: row.body, createdAt: row.createdAt, sessionId, kind: "reminder" })) return true;
     }
     return false;
@@ -2685,9 +2697,9 @@ export async function listStudyGroupReminders(
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
     if (item.userId !== userId) continue;
-    const kind: StudyGroupReminderKind | null = STUDY_GROUP_REMINDER_TITLES.has(item.title)
+    const kind: StudyGroupReminderKind | null = isStudyGroupReminderRow(item)
       ? "reminder"
-      : STUDY_GROUP_RESCHEDULE_TITLES.has(item.title) && item.sessionId ? "rescheduled" : null;
+      : isStudyGroupRescheduleRow(item) && item.sessionId ? "rescheduled" : null;
     if (!kind) continue;
     // One row per Session. A pending T-10 reminder replaces the moved Start
     // Time's notice whichever was written last: a move inside the reminder
@@ -2719,6 +2731,9 @@ export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyA
   return editData((data) => {
     const remaining = data.notifications.filter((item) => {
       if (!item.sessionId || !sessionIds.has(item.sessionId)) return true;
+      // Only the reminder and moved-time notices are withdrawn here; a booked
+      // or cancelled notice for the same Session is a different message.
+      if (!isStudyGroupReminderRow(item) && !isStudyGroupRescheduleRow(item)) return true;
       if (input.userId && item.userId !== input.userId) return true;
       if (sentBefore !== null && !(Date.parse(item.createdAt) < sentBefore)) return true;
       return false;

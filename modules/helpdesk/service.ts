@@ -68,7 +68,17 @@ import type { AssistRecord, HelpdeskRepository, TicketListItem } from "./reposit
 
 export type LearnerIdentity = { id: string; email: string; name: string };
 export type LearnerUpdateKind = "agent_replied" | "resolution_proposed";
-export type HelpdeskNotification = { userId: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: LearnerUpdateKind; title: string; body: string };
+export type HelpdeskNotification = {
+  userId: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: LearnerUpdateKind; title: string; body: string;
+  /**
+   * A learner-visible agent reply is a Notification P0 catalogue event. The
+   * event key is the same one Admin's event hook uses (ticket + reply), so the
+   * two write paths collapse to one row; a switched-off template sends nothing.
+   */
+  templateId?: "HELPDESK_TICKET_REPLIED";
+  eventKey?: string;
+  params?: Record<string, unknown>;
+};
 /** A plain-text email to the ticket's contact email (Figma: "we will reply to you by email"). */
 export type HelpdeskEmail = { to: string; subject: string; text: string; ticketId: string; number: string; locale: HelpdeskLocale; kind: LearnerUpdateKind };
 /** remove (optional) deletes bytes written for a change that then did not commit. */
@@ -400,10 +410,23 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
     throw new HelpdeskProblem(decision.code);
   }
 
-  async function notifyLearner(ticket: TicketRecord, kind: LearnerUpdateKind, reply?: string) {
+  async function notifyLearner(ticket: TicketRecord, kind: LearnerUpdateKind, reply?: string, replyId?: string) {
     if (deps.notify) {
       try {
-        await deps.notify({ userId: ticket.userId, ticketId: ticket.id, number: ticket.number, locale: ticket.locale, kind, title: NOTIFICATION_COPY[ticket.locale][kind], body: `${ticket.number} · ${ticket.subject}` });
+        let link: string | null = null;
+        try { link = deps.ticketLink ? deps.ticketLink(ticket.id, ticket.locale) : null; } catch { link = null; }
+        await deps.notify({
+          userId: ticket.userId, ticketId: ticket.id, number: ticket.number, locale: ticket.locale, kind,
+          title: NOTIFICATION_COPY[ticket.locale][kind], body: `${ticket.number} · ${ticket.subject}`,
+          ...(kind === "agent_replied" && replyId
+            ? {
+              templateId: "HELPDESK_TICKET_REPLIED" as const,
+              // Same key as Admin's helpdesk event: ticket:${ticketId}:${replyId}.
+              eventKey: `ticket:${ticket.id}:${replyId}`,
+              params: { ticket_subject: ticket.subject, ticket_link: link },
+            }
+            : {}),
+        });
       } catch {
         log({ type: "helpdesk", event: "notification_failed", ticketId: ticket.id, kind });
       }
@@ -509,7 +532,7 @@ export function createHelpdeskService(deps: HelpdeskDeps) {
       if (outcome === "duplicate") throw new HelpdeskProblem("idempotency_conflict", "This Idempotency-Key was already used for a different request.");
       throw staleProblem((await load(spec.ticketId)).ticket.sequence);
     }
-    if (decision.transition.event === "agent_replied") await notifyLearner(next, "agent_replied", message?.body);
+    if (decision.transition.event === "agent_replied") await notifyLearner(next, "agent_replied", message?.body, message?.id);
     if (decision.transition.event === "resolution_proposed") await notifyLearner(next, "resolution_proposed");
     return { aggregate: await load(spec.ticketId), replayed: false };
   }
