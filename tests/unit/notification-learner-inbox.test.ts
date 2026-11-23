@@ -45,3 +45,32 @@ test("ML-FR-019 replacement: a purchase creates a subscription notification in t
   assert.equal(unread.unreadCount, 0);
   assert.equal(unread.items.length, 0);
 });
+
+test("REV-07: a test notification is visible to its recipient as read and does not count", async () => {
+  const user = await verifiedUser(store, "ntf-test-row@example.test");
+  await store.editProductData((data) => { data.notifications = data.notifications.filter((item) => item.userId !== user.id); });
+  const real = await notifications.emitCatalogueNotification({
+    templateId: "COURSE_NEW_LAUNCH", userId: user.id, eventKey: "t:real", channels: ["in_app"],
+    params: { course_title: "Florence", category_name: "Art", course_link: "/courses/1" },
+  });
+  assert.equal(real.created, true);
+  const test = await notifications.emitCatalogueNotification({
+    templateId: "COURSE_NEW_LAUNCH", userId: user.id, eventKey: "t:test", channels: ["in_app"], isTest: true,
+    params: { course_title: "Florence", category_name: "Art", course_link: "/courses/1" },
+  });
+  assert.equal(test.created, true);
+
+  const all = await notifications.listLearnerNotifications(user.id, { filter: "all" });
+  const row = all.items.find((item) => item.isTest);
+  assert.ok(row, "test row listed under All");
+  assert.equal(row.title.startsWith("[TEST] "), true);
+  assert.equal(row.read, true);
+  assert.equal(row.unread, false);
+  assert.equal(all.items.filter((item) => !item.isTest).every((item) => item.isTest === false), true);
+  assert.equal(all.total, 2);
+  assert.equal(all.unreadCount, 1);
+  const unread = await notifications.listLearnerNotifications(user.id, { filter: "unread" });
+  assert.equal(unread.items.some((item) => item.isTest), false);
+  assert.equal(unread.total, 1);
+  assert.equal(await notifications.unreadNotificationCount(user.id), 1);
+});

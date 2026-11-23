@@ -132,6 +132,7 @@ export type LearnerNotificationItem = {
   language: NotificationLanguage;
   read: boolean;
   unread: boolean;
+  isTest: boolean;
   readAt: string | null;
   createdAt: string;
   displayTime: string;

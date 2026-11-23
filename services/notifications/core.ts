@@ -623,8 +623,9 @@ function learnerVisible(item: ProductNotification) {
 function learnerItems(data: ProductData, userId: string, language: NotificationLanguage, now: Date): LearnerNotificationItem[] {
   const cutoff = now.getTime() - RETENTION_DAYS * DAY_MS;
   return data.notifications
-    .filter((item) => item.userId === userId && learnerVisible(item) && !item.withdrawnAt && !item.isTest && Date.parse(item.createdAt) >= cutoff)
+    .filter((item) => item.userId === userId && learnerVisible(item) && !item.withdrawnAt && Date.parse(item.createdAt) >= cutoff)
     .map((item) => {
+      const isTest = Boolean(item.isTest);
       const category = item.category || (item.broadcastId ? "announcement" : "subscription");
       return {
         id: item.id,
@@ -637,8 +638,10 @@ function learnerItems(data: ProductData, userId: string, language: NotificationL
         buttonText: item.buttonText || null,
         buttonLink: item.buttonLink || null,
         language: item.language || language,
-        read: Boolean(item.readAt),
-        unread: !item.readAt,
+        // A test message is shown to its recipient but is never "unread".
+        read: isTest || Boolean(item.readAt),
+        unread: !isTest && !item.readAt,
+        isTest,
         readAt: item.readAt,
         createdAt: item.createdAt,
         displayTime: formatRelativeTime(item.createdAt, now, language),
@@ -658,6 +661,8 @@ export type LearnerListOptions = {
 export type LearnerListResult = {
   items: LearnerNotificationItem[];
   unreadCount: number;
+  /** Items matching the filter before the cursor is applied. */
+  total: number;
   nextCursor: string | null;
 };
 
@@ -690,7 +695,7 @@ export function listLearnerNotificationsInData(data: ProductData, userId: string
     : filtered;
   const items = remaining.slice(0, limit);
   const nextCursor = remaining.length > limit ? encodeCursor({ createdAt: items[items.length - 1].createdAt, id: items[items.length - 1].id }) : null;
-  return { items, unreadCount, nextCursor };
+  return { items, unreadCount, total: filtered.length, nextCursor };
 }
 
 export function unreadCountInData(data: ProductData, userId: string, now = new Date()): number {

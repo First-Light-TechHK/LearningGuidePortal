@@ -70,6 +70,38 @@ test("GET learner notifications returns the inbox, category mapping and unread c
   assert.equal((await unread.json()).items.length, 2);
 });
 
+test("GET learner notifications reports total for both filters and with a cursor", async () => {
+  const { token } = await signedInLearner("api-total@example.test");
+  const list = async (query: string) => (await get(learnerRequest(`/api/my-learning/notifications?${query}`, token))).json();
+  const page1 = await list("filter=all&limit=1");
+  assert.equal(page1.items.length, 1);
+  assert.equal(page1.total, 2);
+  assert.ok(page1.nextCursor);
+  const page2 = await list(`filter=all&limit=1&cursor=${page1.nextCursor}`);
+  assert.equal(page2.total, 2, "total ignores the cursor");
+  assert.equal(page2.nextCursor, null);
+  await read(new Request(`${origin}/api/my-learning/notifications/read`, {
+    method: "POST", headers: { origin, cookie: `learning_guide_session=${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ notificationId: page1.items[0].id, read: true }),
+  }));
+  const unread = await list("filter=unread");
+  assert.equal(unread.total, 1);
+  assert.equal((await list("filter=all")).total, 2);
+});
+
+test("GET learner notifications honours locale=zh-CN for the label and time only", async () => {
+  const { token } = await signedInLearner("api-locale@example.test");
+  const zh = await (await get(learnerRequest("/api/my-learning/notifications?locale=zh-CN", token))).json();
+  const subscription = await (await get(learnerRequest("/api/my-learning/notifications?locale=en-GB", token))).json();
+  assert.equal(zh.items.length, subscription.items.length);
+  assert.equal(zh.items[0].categoryLabel, "新课程");
+  assert.match(zh.items[0].displayTime, /[一-鿿]/);
+  assert.equal(zh.items[0].title, subscription.items[0].title, "title stays as stored");
+  assert.equal(subscription.items[0].categoryLabel, "New course");
+  const ignored = await (await get(learnerRequest("/api/my-learning/notifications?locale=fr-FR", token))).json();
+  assert.equal(ignored.items[0].categoryLabel, "New course", "unknown locale falls back to the profile language");
+});
+
 test("GET learner notifications rejects signed-out callers and bad filters", async () => {
   assert.equal((await get(learnerRequest("/api/my-learning/notifications"))).status, 401);
   const { token } = await signedInLearner("api-bad-filter@example.test");
