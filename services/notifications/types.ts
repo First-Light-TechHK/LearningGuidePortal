@@ -112,14 +112,6 @@ export type NotificationLogEntry = {
   recipientName?: string | null;
 };
 
-export type NotificationEmailDelivery = {
-  id: string;
-  logId: string;
-  providerMessageId: string | null;
-  status: "sent" | "delivered" | "failed";
-  updatedAt: string;
-};
-
 /** The learner-facing projection returned by GET /api/my-learning/notifications. */
 export type LearnerNotificationItem = {
   id: string;

@@ -52,7 +52,7 @@ import { isValidAccountName, normaliseName, validateAccountName } from "@/lib/na
 import { CourseLearningModeError, isCourseLearningMode, isCourseLearningModeContext, type CourseLearningMode, type CourseLearningModeContext, type CourseLearningModePreferences, type CourseLearningModeResult, type CourseLearningModeSelection } from "@/contracts/course-learning-mode";
 import { availableLessonMode, lessonLearningModes } from "@/lib/previewLessonPresentation";
 import { createNotificationInData, ensureNotificationTemplatesInData, recordLegacyNotificationInData } from "./notifications/core";
-import type { NotificationBroadcast, NotificationEmailDelivery, NotificationLogEntry, NotificationTemplate } from "./notifications/types";
+import type { NotificationBroadcast, NotificationLogEntry, NotificationTemplate } from "./notifications/types";
 
 /** A notification that cannot be written must never undo or fail a payment step. */
 function notifySafely(data: ProductData, input: Parameters<typeof createNotificationInData>[1]) {
@@ -347,7 +347,6 @@ export type ProductData = {
   notificationTemplates?: NotificationTemplate[];
   notificationBroadcasts?: NotificationBroadcast[];
   notificationLog?: NotificationLogEntry[];
-  notificationEmailDeliveries?: NotificationEmailDelivery[];
   stripeEvents: Array<{ id: string; type: string; processedAt: string }>;
   verificationTokens: ProductToken[];
   passwordResetTokens: ProductToken[];
@@ -464,7 +463,6 @@ function defaultData(): ProductData {
     notificationTemplates: [],
     notificationBroadcasts: [],
     notificationLog: [],
-    notificationEmailDeliveries: [],
     stripeEvents: [],
     verificationTokens: [],
     emailBindingTokens: [],
@@ -632,7 +630,6 @@ export async function readProductAggregate() {
     current.notificationTemplates ||= [];
     current.notificationBroadcasts ||= [];
     current.notificationLog ||= [];
-    current.notificationEmailDeliveries ||= [];
     ensureNotificationTemplatesInData(current);
     current.users.forEach((user) => { user.areasOfInterest ||= []; });
     current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });

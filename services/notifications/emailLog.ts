@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { editProductData, readProductData } from "../productStore";
 import { appendNotificationLogInData } from "./core";
 import type { ProductNotification } from "../productStore";
@@ -9,8 +8,7 @@ import type { NotificationLogEntry } from "./types";
  *
  * SMTP gives us Sent or Failed only. Delivered is reserved for a future
  * provider receipt; nothing here may claim it. One email log row per message
- * (the unique event key already guarantees one message), plus its
- * notification_email_deliveries row carrying the provider message id.
+ * (the unique event key already guarantees one message).
  */
 
 export type EmailDeliveryStatus = "sent" | "failed";
@@ -35,23 +33,6 @@ export type EmailDeliveryRecord = {
   deduplicated: boolean;
 };
 
-function appendDeliveryInData(
-  data: Parameters<typeof appendNotificationLogInData>[0],
-  entry: Omit<NotificationLogEntry, "id">,
-  providerMessageId: string | null,
-): NotificationLogEntry {
-  const log = appendNotificationLogInData(data, entry);
-  data.notificationEmailDeliveries ||= [];
-  data.notificationEmailDeliveries.push({
-    id: `email_delivery_${randomUUID()}`,
-    logId: log.id,
-    providerMessageId: providerMessageId || null,
-    status: entry.status === "sent" ? "sent" : "failed",
-    updatedAt: entry.occurredAt,
-  });
-  return log;
-}
-
 /** Record one email result. A message is logged once; a replay returns the first row. */
 export async function recordEmailDelivery(input: EmailDeliveryInput): Promise<EmailDeliveryRecord> {
   return editProductData((data) => {
@@ -61,7 +42,7 @@ export async function recordEmailDelivery(input: EmailDeliveryInput): Promise<Em
       );
       if (existing) return { logId: existing.id, created: false, deduplicated: true };
     }
-    const log = appendDeliveryInData(data, {
+    const log = appendNotificationLogInData(data, {
       notificationId: input.notificationId || null,
       userId: input.userId,
       templateId: input.templateId,
@@ -74,7 +55,7 @@ export async function recordEmailDelivery(input: EmailDeliveryInput): Promise<Em
       related: input.related || null,
       recipientEmail: input.recipientEmail || null,
       recipientName: input.recipientName || null,
-    }, input.providerMessageId || null);
+    });
     return { logId: log.id, created: true, deduplicated: false };
   });
 }
@@ -130,7 +111,7 @@ export async function recordStudyGroupReminderEmail(input: StudyGroupReminderEma
       const existing = (data.notificationLog || []).find((entry) => entry.notificationId === notification.id && entry.channel === "email");
       if (existing) return { logId: existing.id, created: false, deduplicated: true };
     }
-    const log = appendDeliveryInData(data, {
+    const log = appendNotificationLogInData(data, {
       notificationId: notification?.id || null,
       userId: user.id,
       templateId: "LIVE_SESSION_REMINDER",
@@ -143,7 +124,7 @@ export async function recordStudyGroupReminderEmail(input: StudyGroupReminderEma
       related: notification?.sessionId || sessionId || null,
       recipientEmail: user.email || input.to,
       recipientName: user.nickname || null,
-    }, input.providerMessageId || null);
+    });
     return { logId: log.id, created: true, deduplicated: false };
   });
 }

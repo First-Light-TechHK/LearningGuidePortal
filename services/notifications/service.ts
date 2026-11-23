@@ -211,14 +211,6 @@ export async function sendTemplateTest(input: TemplateTestInput): Promise<Templa
       recipientEmail: email,
       recipientName: "",
     });
-    data.notificationEmailDeliveries ||= [];
-    data.notificationEmailDeliveries.push({
-      id: `email_delivery_${randomUUID()}`,
-      logId: entry.id,
-      providerMessageId: null,
-      status,
-      updatedAt: now,
-    });
     auditTemplateTestInData(data, template.id, input.operator, now, "email");
     return entry;
   });

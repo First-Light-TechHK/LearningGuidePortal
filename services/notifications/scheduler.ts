@@ -246,20 +246,19 @@ export type RetentionSummary = {
   reason?: "already_ran";
   notifications: number;
   logs: number;
-  deliveries: number;
 };
 
-/** Delete notification, log and email-delivery rows older than 180 days, once per HKT day. */
+/** Delete notification and log rows older than 180 days, once per HKT day. */
 export async function runNotificationRetentionJob(options: { now?: Date | string; force?: boolean } = {}): Promise<RetentionSummary> {
   const now = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
   const day = hktDayKey(now);
   if (!options.force && retentionDayRun === day) {
-    return { ran: false, reason: "already_ran", notifications: 0, logs: 0, deliveries: 0 };
+    return { ran: false, reason: "already_ran", notifications: 0, logs: 0 };
   }
   const result: RetentionSummary = await editProductData((data): RetentionSummary => {
     const state = ((data as NotificationJobData).notificationJobState ||= {});
     if (!options.force && state.retentionDay === day) {
-      return { ran: false, reason: "already_ran", notifications: 0, logs: 0, deliveries: 0 };
+      return { ran: false, reason: "already_ran", notifications: 0, logs: 0 };
     }
     const purged = purgeExpiredNotificationRecordsInData(data, now);
     state.retentionDay = day;
@@ -312,7 +311,7 @@ export function startNotificationScheduler(): void {
             type: "notifications.jobs",
             renewal: { created: result.renewal.created, sent: result.renewal.emailsSent, failed: result.renewal.emailsFailed },
             emailDispatch: result.emails,
-            retention: { notifications: result.retention.notifications, logs: result.retention.logs, deliveries: result.retention.deliveries },
+            retention: { notifications: result.retention.notifications, logs: result.retention.logs },
           }));
         }
       })

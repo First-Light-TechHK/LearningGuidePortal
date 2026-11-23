@@ -177,7 +177,7 @@ test("messages older than 180 days are hidden and excluded from unread counts", 
 
 test("fan-out uses one Set lookup per recipient instead of scanning every row", async () => {
   const base = await notifications.audienceCounts();
-  const users = [];
+  const users: Awaited<ReturnType<typeof cleanUser>>[] = [];
   for (let index = 0; index < 50; index += 1) users.push(await cleanUser(`notify-fanout-${index}@example.test`));
   const validTo = new Date(Date.now() + 30 * 86400000).toISOString();
   await store.editProductData((data) => {

@@ -25,7 +25,6 @@ let notifications: typeof import("../../services/notifications/service");
 let email: typeof import("../../services/notifications/email");
 let scheduler: typeof import("../../services/notifications/scheduler");
 let emailService: typeof import("../../services/emailService");
-let emailLog: typeof import("../../services/notifications/emailLog");
 
 const APP_URL = "https://learningguide.test";
 
@@ -57,7 +56,6 @@ before(async () => {
   email = await import("../../services/notifications/email");
   scheduler = await import("../../services/notifications/scheduler");
   emailService = await import("../../services/emailService");
-  emailLog = await import("../../services/notifications/emailLog");
   await store.ensureProductData();
   await store.persistDataMigrations();
 });
@@ -79,8 +77,6 @@ async function cleanUser(emailAddress: string, nickname = "Margaret") {
   await store.editProductData((data) => {
     data.notifications = data.notifications.filter((item) => item.userId !== user.id);
     data.notificationLog = (data.notificationLog || []).filter((item) => item.userId !== user.id);
-    const logIds = new Set((data.notificationLog || []).map((item) => item.id));
-    data.notificationEmailDeliveries = (data.notificationEmailDeliveries || []).filter((item) => logIds.has(item.logId));
   });
   return user;
 }
@@ -162,7 +158,7 @@ test("a missing variable blocks the email and is reported as missing data", () =
  * §6 SMTP Sent / Failed logging (never Delivered without a provider receipt)
  * ------------------------------------------------------------------ */
 
-test("a successful SMTP send records Sent plus a sent delivery row, never Delivered", async () => {
+test("a successful SMTP send records Sent, never Delivered", async () => {
   const user = await cleanUser("email-sent@example.test");
   const result = await email.sendNotificationEmailForUser({
     userId: user.id,
@@ -179,11 +175,7 @@ test("a successful SMTP send records Sent plus a sent delivery row, never Delive
   assert.equal(logs.length, 1);
   assert.equal(logs[0].status, "sent");
   assert.equal(logs[0].templateId, "SUB_RENEWAL_REMINDER");
-  const deliveries = (data.notificationEmailDeliveries || []).filter((item) => item.logId === logs[0].id);
-  assert.equal(deliveries.length, 1);
-  assert.equal(deliveries[0].status, "sent");
-  assert.notEqual(String(deliveries[0].status), "delivered", "SMTP has no delivery receipt");
-  assert.ok(deliveries[0].providerMessageId);
+  assert.notEqual(String(logs[0].status), "delivered", "SMTP has no delivery receipt");
 });
 
 test("an SMTP failure records Failed with the provider reason and keeps the in-app message", async () => {
@@ -211,7 +203,6 @@ test("an SMTP failure records Failed with the provider reason and keeps the in-a
   assert.equal(failed.length, 1);
   assert.equal(failed[0].status, "failed");
   assert.equal(failed[0].failureReason, "provider error");
-  assert.equal((data.notificationEmailDeliveries || []).find((item) => item.logId === failed[0].id)?.status, "failed");
 });
 
 test("an unverified email is not sent and is logged as Failed email not verified", async () => {
@@ -373,7 +364,6 @@ test("the T-10 Live Session email uses the fixed layout, app deep link and recor
   const log = (data.notificationLog || []).find((item) => item.notificationId === notification.id && item.channel === "email");
   assert.equal(log?.status, "sent");
   assert.equal(log?.templateId, "LIVE_SESSION_REMINDER");
-  assert.equal((data.notificationEmailDeliveries || []).find((item) => item.logId === log?.id)?.status, "sent");
 });
 
 test("a Live Session email failure is recorded as Failed and re-thrown to the caller", async () => {
@@ -394,7 +384,7 @@ test("a Live Session email failure is recorded as Failed and re-thrown to the ca
  * §7 180-day clean-up
  * ------------------------------------------------------------------ */
 
-test("retention job removes notification, log and delivery rows older than 180 days", async () => {
+test("retention job removes notification and log rows older than 180 days", async () => {
   const user = await cleanUser("retention@example.test");
   const now = new Date("2026-12-11T02:00:00.000Z");
   const old = new Date(now.getTime() - 200 * 86400000).toISOString();
@@ -409,22 +399,14 @@ test("retention job removes notification, log and delivery rows older than 180 d
       { id: "nlog_old_retention", notificationId: "notification_old_retention", userId: user.id, channel: "in_app", status: "delivered", failureReason: null, occurredAt: old, isTest: false },
       { id: "nlog_fresh_retention", notificationId: "notification_fresh_retention", userId: user.id, channel: "in_app", status: "delivered", failureReason: null, occurredAt: fresh, isTest: false },
     );
-    data.notificationEmailDeliveries ||= [];
-    data.notificationEmailDeliveries.unshift(
-      { id: "delivery_old_retention", logId: "nlog_old_retention", providerMessageId: null, status: "sent", updatedAt: old },
-      { id: "delivery_fresh_retention", logId: "nlog_fresh_retention", providerMessageId: null, status: "sent", updatedAt: fresh },
-    );
   });
   const result = await scheduler.runNotificationRetentionJob({ now, force: true });
   assert.equal(result.ran, true);
   assert.equal(result.notifications, 1);
   assert.equal(result.logs, 1);
-  assert.equal(result.deliveries, 1);
   const data = await store.ensureProductData();
   assert.equal(data.notifications.some((item) => item.id === "notification_old_retention"), false);
   assert.equal(data.notifications.some((item) => item.id === "notification_fresh_retention"), true);
   assert.equal((data.notificationLog || []).some((item) => item.id === "nlog_old_retention"), false);
   assert.equal((data.notificationLog || []).some((item) => item.id === "nlog_fresh_retention"), true);
-  assert.equal((data.notificationEmailDeliveries || []).some((item) => item.id === "delivery_old_retention"), false);
-  assert.equal((data.notificationEmailDeliveries || []).some((item) => item.id === "delivery_fresh_retention"), true);
 });

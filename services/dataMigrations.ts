@@ -30,7 +30,6 @@ const TABLE_DOMAIN: Record<(typeof PROTECTED_TABLES)[number], DataMigrationDomai
   notificationTemplates: "notifications",
   notificationBroadcasts: "notifications",
   notificationLog: "notifications",
-  notificationEmailDeliveries: "notifications",
   verificationTokens: "tokens",
   passwordResetTokens: "tokens",
   emailBindingTokens: "tokens",

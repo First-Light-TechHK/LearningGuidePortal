@@ -42,7 +42,6 @@ export const NOTIFICATION_TABLES = [
   "notificationTemplates",
   "notificationBroadcasts",
   "notificationLog",
-  "notificationEmailDeliveries",
 ] as const;
 
 const RETENTION_DAYS = 180;
@@ -56,12 +55,10 @@ export function notificationTables(data: ProductData) {
   data.notificationTemplates ||= [];
   data.notificationBroadcasts ||= [];
   data.notificationLog ||= [];
-  data.notificationEmailDeliveries ||= [];
   return {
     templates: data.notificationTemplates,
     broadcasts: data.notificationBroadcasts,
     log: data.notificationLog,
-    deliveries: data.notificationEmailDeliveries,
   };
 }
 
@@ -1172,15 +1169,11 @@ export function purgeExpiredNotificationRecordsInData(data: ProductData, now = n
   const cutoff = now.getTime() - RETENTION_DAYS * DAY_MS;
   const notificationsBefore = data.notifications.length;
   const logsBefore = (data.notificationLog || []).length;
-  const deliveriesBefore = (data.notificationEmailDeliveries || []).length;
   data.notifications = data.notifications.filter((item) => Date.parse(item.createdAt) >= cutoff);
   data.notificationLog = (data.notificationLog || []).filter((item) => Date.parse(item.occurredAt) >= cutoff);
-  const liveLogIds = new Set(data.notificationLog.map((item) => item.id));
-  data.notificationEmailDeliveries = (data.notificationEmailDeliveries || []).filter((item) => liveLogIds.has(item.logId));
   return {
     notifications: notificationsBefore - data.notifications.length,
     logs: logsBefore - data.notificationLog.length,
-    deliveries: deliveriesBefore - data.notificationEmailDeliveries.length,
   };
 }
 
