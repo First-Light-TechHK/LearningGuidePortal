@@ -382,7 +382,8 @@ export async function emitCatalogueNotification(input: CatalogueNotificationInpu
   return { ...result, channels, ...(email ? { email } : {}) };
 }
 
-export async function listLearnerNotifications(userId: string, options: LearnerListOptions = {}): Promise<LearnerListResult> {  const data = await readProductData();
+export async function listLearnerNotifications(userId: string, options: LearnerListOptions = {}): Promise<LearnerListResult> {
+  const data = await readProductData();
   const user = data.users.find((item) => item.id === userId);
   const language: NotificationLanguage = options.language || (user?.locale.toLowerCase().startsWith("zh") ? "zh" : "en");
   return listLearnerNotificationsInData(data, userId, { ...options, language });
