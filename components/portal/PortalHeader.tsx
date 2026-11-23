@@ -5,12 +5,13 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { PortalSessionResponse } from "@/contracts/portal-session";
-import { Bell, Globe } from "lucide-react";
+import { Globe } from "lucide-react";
 import Image from "next/image";
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import { PortalLanguageLink } from "@/components/portal/PortalLanguageLink";
 import { AccountMenu } from "@/components/portal/AccountMenu";
+import { NotificationBell } from "@/components/portal/NotificationBell";
 import styles from "./portal-header.module.css";
 
 type HeaderSection = "courses" | "study-groups" | "my-learning" | "subscription";
@@ -64,7 +65,7 @@ export function PortalHeader({ locale, active, signedIn: initialSignedIn = false
         <div className="portal-header-actions">
           <Suspense fallback={<span className="portal-language"><Globe className="portal-language-globe" size={14} strokeWidth={1.8} aria-hidden="true" /><span>{copy.navigation.language}</span><span className="portal-language-caret" aria-hidden="true" /></span>}><PortalLanguageLink locale={locale} label={copy.navigation.language} /></Suspense>
           {signedIn ? null : <Suspense fallback={<Link prefetch={false} className="portal-header-link" href={`/${locale}/portal/sign-in`}>{copy.signIn}</Link>}><AuthNavigationLink locale={locale} className="portal-header-link">{copy.signIn}</AuthNavigationLink></Suspense>}
-          {signedIn ? <span className="portal-header-icon" role="img" aria-label={copy.notifications}><Bell size={18} strokeWidth={1.8} aria-hidden="true" /></span> : null}
+          {signedIn ? <NotificationBell locale={locale} /> : null}
           {signedIn ? null : <Suspense fallback={<Link prefetch={false} className="portal-button portal-button-primary portal-header-cta" href={`/${locale}/portal/sign-up`}>{copy.navigation.getStarted}</Link>}><AuthNavigationLink locale={locale} mode="sign-up" className="portal-button portal-button-primary portal-header-cta">{copy.navigation.getStarted}</AuthNavigationLink></Suspense>}
           {signedIn ? <AccountMenu locale={locale} displayName={displayName} avatarUrl={avatarUrl} labels={{ myLearning: copy.myLearning, settings: messages.account.settings, notifications: copy.notifications, signOut: messages.learning.signOut }} /> : null}
         </div>
