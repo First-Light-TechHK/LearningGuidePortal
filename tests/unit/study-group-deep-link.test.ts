@@ -29,6 +29,7 @@ let clock: string;
 let published: boolean;
 const access = new Set<string>();
 const mails: Array<{ to: string; subject: string; text: string; link?: string | null }> = [];
+const notices: Array<{ userId: string; catalogue?: { templateId: string; params: Record<string, unknown>; channels?: string[] } }> = [];
 
 beforeEach(async () => {
   directory = await mkdtemp(path.join(tmpdir(), "lg-study-group-deep-link-"));
@@ -37,6 +38,7 @@ beforeEach(async () => {
   access.clear();
   access.add("host:course-1");
   mails.length = 0;
+  notices.length = 0;
   repository = createStudyGroupRepository(directory);
   service = createStudyGroupService({
     repository,
@@ -45,7 +47,7 @@ beforeEach(async () => {
     courseSummary: async (courseId) => courseId === "course-1" && published ? { id: courseId, title: "Modeling Life", slug: "modeling-life" } : null,
     accessibleCourses: async () => [],
     userProfile: async (userId) => ({ id: userId, displayName: userId, email: `${userId}@example.test`, locale: userId === "zh" ? "zh-CN" : "en-GB" }),
-    notify: async () => undefined,
+    notify: async (input) => { notices.push(input); },
     listReminders: async () => [],
     sendMail: async (input) => { mails.push(input); },
     sessionLink: (sessionId, locale) => `https://lg.example.test/${locale}/portal/study-groups/sessions/${sessionId}`,
@@ -222,13 +224,14 @@ test("an ended session says so to members and non-members alike, including one t
   }
 });
 
-test("the T-10 reminder mail carries the session's own link in the recipient's language", async () => {
+test("the T-10 reminder carries the session's own link in the recipient's language", async () => {
   const { session } = await groupWithSession("2026-09-19T02:05:00.000Z");
   await service.planToAttend({ actorUserId: "m1", sessionId: session.id }).catch(() => undefined);
   await service.dispatchDueRemindersOnRequest();
-  const hostMail = mails.find((item) => item.to === "host@example.test");
-  assert.ok(hostMail, "the Host is always reminded");
-  assert.equal(hostMail.link, `https://lg.example.test/en-GB/portal/study-groups/sessions/${session.id}`);
+  const hostNotice = notices.find((item) => item.userId === "host" && item.catalogue?.templateId === "LIVE_SESSION_REMINDER");
+  assert.ok(hostNotice, "the Host is always reminded");
+  assert.equal(hostNotice.catalogue?.params.session_link, `https://lg.example.test/en-GB/portal/study-groups/sessions/${session.id}`);
+  assert.deepEqual(hostNotice.catalogue?.channels, ["in_app", "email"]);
 });
 
 test("client helpers: the list address, the one-time ?enter=, the purchase link and when a stopped page asks again", () => {
@@ -346,15 +349,15 @@ test("what a non-member is told is a fixed set of fields: never members, the cou
   assert.equal((await service.sessionEntry({ actorUserId: "m2", sessionId: session.id })).session?.occupancy, 1);
 });
 
-test("a reminder mail to a Chinese-speaking member links the Chinese session page", async () => {
+test("a reminder to a Chinese-speaking member links the Chinese session page", async () => {
   const { group, session } = await groupWithSession("2026-09-19T02:05:00.000Z");
   access.add("zh:course-1");
   await service.joinGroup({ actorUserId: "zh", groupId: group.id });
   await service.planToAttend({ actorUserId: "zh", sessionId: session.id }).catch(() => undefined);
   await service.dispatchDueRemindersOnRequest();
-  const zhMail = mails.find((item) => item.to === "zh@example.test");
-  assert.ok(zhMail, "a member who planned is reminded");
-  assert.equal(zhMail.link, `https://lg.example.test/zh-CN/portal/study-groups/sessions/${session.id}`);
+  const zhNotice = notices.find((item) => item.userId === "zh" && item.catalogue?.templateId === "LIVE_SESSION_REMINDER");
+  assert.ok(zhNotice, "a member who planned is reminded");
+  assert.equal(zhNotice.catalogue?.params.session_link, `https://lg.example.test/zh-CN/portal/study-groups/sessions/${session.id}`);
 });
 
 test("the reminder mail puts the session link on its own labelled plain-text line and in the fixed HTML button, in the recipient's language", async () => {

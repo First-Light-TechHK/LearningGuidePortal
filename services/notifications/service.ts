@@ -30,9 +30,10 @@ import {
 import { NOTIFICATION_TEMPLATES, sampleTemplateParams, TEMPLATE_CATEGORY_ORDER } from "./templates";
 import { MissingNotificationDataError, renderTemplate, UnknownTemplateVariableError } from "./render";
 import type { LearnerListOptions, LearnerListResult } from "./core";
-import type { NotificationChannel, NotificationCopy, NotificationLanguage, NotificationTemplate } from "./types";
+import type { NotificationChannel, NotificationCopy, NotificationLanguage, NotificationLogEntry, NotificationTemplate } from "./types";
 import { EmailDeliveryError, emailDeliveryConfigured, sendHelpdeskUpdateEmail } from "../emailService";
-import { ensureProductData, editProductData, readProductData } from "../productStore";
+import { ensureProductData, editProductData, readProductData, type ProductNotification } from "../productStore";
+import { sendNotificationEmailForUser, type SendEmail, type SendNotificationEmailResult } from "./email";
 import { startNotificationScheduler } from "./scheduler";
 
 /**
@@ -294,8 +295,94 @@ export async function emitNotificationEvent(input: NotificationEventInput): Prom
   });
 }
 
-export async function listLearnerNotifications(userId: string, options: LearnerListOptions = {}): Promise<LearnerListResult> {
-  const data = await readProductData();
+export type CatalogueNotificationInput = {
+  templateId: string;
+  userId: string;
+  eventKey: string;
+  params: Record<string, unknown>;
+  /** Defaults to the template's own channels; filtered to those it supports. */
+  channels?: NotificationChannel[];
+  related?: string | null;
+  /** Live Session link carried by the reminders strip. */
+  sessionId?: string;
+  /** Refresh an unread row of the same template/ticket instead of stacking. */
+  replaceUnreadEventKeyPrefix?: string;
+  isTest?: boolean;
+  now?: string;
+  locale?: string;
+  appUrl?: string;
+  /** Test hook for the email channel; production uses the Portal SMTP path. */
+  send?: SendEmail;
+};
+
+export type CatalogueNotificationResult =
+  | {
+    created: true;
+    notification: ProductNotification;
+    log: NotificationLogEntry;
+    channels: NotificationChannel[];
+    email?: SendNotificationEmailResult;
+  }
+  | {
+    created: false;
+    reason: "duplicate" | "disabled" | "missing_data" | "unknown_template" | "unknown_user" | "invalid_template";
+    variables?: string[];
+    channels: NotificationChannel[];
+    email?: SendNotificationEmailResult;
+  };
+
+/**
+ * One template-aware send path for catalogue events that originate inside the
+ * Portal: it applies the enabled switch, renders the operator's copy (language
+ * fallback, missing data and unknown variables block the send), dedupes the
+ * event key, writes the in-app row and its log, and sends the email channel to
+ * the learner's verified address (PRD §5/§10). Study Group and HelpDesk events
+ * use it so a switch or a copy edit applies to what is actually sent.
+ */
+export async function emitCatalogueNotification(input: CatalogueNotificationInput): Promise<CatalogueNotificationResult> {
+  const template = (await listTemplates()).find((item) => item.id === input.templateId);
+  if (!template) return { created: false, reason: "unknown_template", channels: [] };
+  const requested = input.channels || template.channels;
+  const channels = requested.filter((channel) => template.channels.includes(channel));
+  // Every P0 catalogue template carries an in-app message; it anchors the
+  // frozen row. A caller asking for email only is a programming error.
+  if (!channels.includes("in_app")) return { created: false, reason: "invalid_template", channels };
+
+  const result = await editProductData((data) => createNotificationInData(data, {
+    userId: input.userId,
+    templateId: input.templateId,
+    eventKey: input.eventKey,
+    params: input.params,
+    isTest: input.isTest,
+    related: input.related || input.sessionId || null,
+    sessionId: input.sessionId,
+    replaceUnreadEventKeyPrefix: input.replaceUnreadEventKeyPrefix,
+    // This path owns the email send below; the deferred dispatcher must not
+    // mail the same row again.
+    freezeEmailParams: false,
+    now: input.now,
+  }));
+  if (!result.created) return { ...result, channels };
+
+  let email: SendNotificationEmailResult | undefined;
+  if (channels.includes("email")) {
+    email = await sendNotificationEmailForUser({
+      userId: input.userId,
+      templateId: input.templateId,
+      params: input.params,
+      notificationId: result.notification.id,
+      related: input.related || input.sessionId || null,
+      now: input.now,
+      locale: input.locale,
+      appUrl: input.appUrl,
+      send: input.send,
+      isTest: input.isTest,
+    });
+  }
+  return { ...result, channels, ...(email ? { email } : {}) };
+}
+
+export async function listLearnerNotifications(userId: string, options: LearnerListOptions = {}): Promise<LearnerListResult> {  const data = await readProductData();
   const user = data.users.find((item) => item.id === userId);
   const language: NotificationLanguage = options.language || (user?.locale.toLowerCase().startsWith("zh") ? "zh" : "en");
   return listLearnerNotificationsInData(data, userId, { ...options, language });

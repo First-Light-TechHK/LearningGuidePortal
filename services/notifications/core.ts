@@ -295,6 +295,21 @@ export type CreateNotificationInput = {
   params: Record<string, unknown>;
   isTest?: boolean;
   related?: string | null;
+  /** Live Session link carried by the reminders strip (BUG-0109). */
+  sessionId?: string;
+  /**
+   * When set, an unread, non-withdrawn row whose event key starts with this
+   * prefix is updated in place instead of stacking a second message (PRD §5
+   * HELPDESK_TICKET_REPLIED: "if an unread one for the same ticket exists, it
+   * is updated instead").
+   */
+  replaceUnreadEventKeyPrefix?: string;
+  /**
+   * Freeze the rendered variables for the deferred email dispatcher. Callers
+   * that send the email themselves in the same action pass false so the
+   * dispatcher never mails the row a second time.
+   */
+  freezeEmailParams?: boolean;
   now?: string;
 };
 
@@ -403,24 +418,49 @@ export function createNotificationInData(data: ProductData, input: CreateNotific
     throw error;
   }
 
-  const notification: ProductNotification = {
-    id: makeId("notification"),
-    userId: input.userId,
-    title: input.isTest ? `[TEST] ${rendered.title}` : rendered.title,
-    body: rendered.body,
-    readAt: null,
-    createdAt: now,
-    category: categoryForTemplate(template),
-    templateId: template.id,
-    buttonText: rendered.buttonText || undefined,
-    buttonLink: rendered.link || undefined,
-    language: rendered.language,
-    withdrawnAt: null,
-    eventKey: input.eventKey,
-    ...(input.isTest ? { isTest: true } : {}),
-  };
-  data.notifications.unshift(notification);
-  if (template.channels.includes("email")) {
+  const title = input.isTest ? `[TEST] ${rendered.title}` : rendered.title;
+  // One unread row per HelpDesk ticket: a new reply refreshes it rather than
+  // stacking a second message (PRD §5). The event key moves to the newest
+  // reply so a replay of that reply is still a duplicate.
+  const replaceable = !input.isTest && input.replaceUnreadEventKeyPrefix
+    ? data.notifications.find((item) => item.userId === input.userId
+      && !item.readAt && !item.withdrawnAt && !item.isTest
+      && item.templateId === template.id
+      && Boolean(item.eventKey?.startsWith(input.replaceUnreadEventKeyPrefix!)))
+    : undefined;
+  let notification: ProductNotification;
+  if (replaceable) {
+    replaceable.title = title;
+    replaceable.body = rendered.body;
+    replaceable.createdAt = now;
+    replaceable.category = categoryForTemplate(template);
+    replaceable.buttonText = rendered.buttonText || undefined;
+    replaceable.buttonLink = rendered.link || undefined;
+    replaceable.language = rendered.language;
+    replaceable.eventKey = input.eventKey;
+    if (input.sessionId) replaceable.sessionId = input.sessionId;
+    notification = replaceable;
+  } else {
+    notification = {
+      id: makeId("notification"),
+      userId: input.userId,
+      title,
+      body: rendered.body,
+      readAt: null,
+      createdAt: now,
+      category: categoryForTemplate(template),
+      templateId: template.id,
+      buttonText: rendered.buttonText || undefined,
+      buttonLink: rendered.link || undefined,
+      language: rendered.language,
+      withdrawnAt: null,
+      eventKey: input.eventKey,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.isTest ? { isTest: true } : {}),
+    };
+    data.notifications.unshift(notification);
+  }
+  if (template.channels.includes("email") && input.freezeEmailParams !== false) {
     // Frozen variable values for the deferred email channel. Only the three
     // P0 email templates carry this; in-app-only rows stay as they are.
     notificationEmailRow(notification).params = { ...input.params };
