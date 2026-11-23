@@ -34,7 +34,6 @@ import type { NotificationChannel, NotificationCopy, NotificationLanguage, Notif
 import { EmailDeliveryError, emailDeliveryConfigured, sendHelpdeskUpdateEmail } from "../emailService";
 import { ensureProductData, editProductData, readProductData, type ProductNotification } from "../productStore";
 import { sendNotificationEmailForUser, type SendEmail, type SendNotificationEmailResult } from "./email";
-import { startNotificationScheduler } from "./scheduler";
 
 /**
  * Application service for the notification domain. Route handlers stay thin
@@ -452,9 +451,3 @@ export async function purgeExpiredNotificationRecords() {
 }
 
 export { encodeCursor };
-
-// Next.js server runtime only: start the daily renewal reminder, the deferred
-// email dispatcher and the 180-day clean-up. Unit tests and the build never
-// see NEXT_RUNTIME=nodejs, so importing this module has no timer side effect
-// there. The internal operations route can also start it explicitly.
-if (process.env.NEXT_RUNTIME === "nodejs") startNotificationScheduler();

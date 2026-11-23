@@ -4,7 +4,6 @@ import {
   runNotificationJobsOnce,
   runNotificationRetentionJob,
   runRenewalReminderJob,
-  startNotificationScheduler,
 } from "@/services/notifications/scheduler";
 import { dispatchPendingNotificationEmails } from "@/services/notifications/email";
 
@@ -14,7 +13,7 @@ export const dynamic = "force-dynamic";
  * POST /api/internal/notifications/run
  *
  * Operations entry point for the Notification P0 schedulers (design §7). The
- * in-process timer runs them on its own; this route is the manual/observability
+ * in-process timer (started from instrumentation.ts) runs them on its own; this route is the manual/observability
  * path (the same service token as the Admin integration API).
  *
  * Body (all optional): { job?: "all" | "renewal-reminder" | "email-dispatch"
@@ -53,7 +52,6 @@ export async function POST(request: Request) {
 
   const now = typeof body.now === "string" ? body.now : undefined;
   const force = body.force === true;
-  startNotificationScheduler();
 
   if (job === "renewal-reminder") {
     return NextResponse.json({ ok: true, job, result: await runRenewalReminderJob({ now, force }) }, { headers: { "Cache-Control": "private, no-store" } });
