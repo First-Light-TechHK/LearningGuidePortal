@@ -95,6 +95,19 @@ test("PUT templates/:id saves copy, records operator audit and bumps updatedAt",
   assert.equal(stored.audit?.at(-1)?.operator, "ops@example.test");
 });
 
+test("the catalogue name is read-only: an edited title or a name in the input never renames it (REV-08)", async () => {
+  const listed = async () => (await (await templatesRoute.GET(request("/api/integration/notifications/templates", TOKEN, undefined, "GET"))).json()).templates.find((item: { id: string }) => item.id === "SUB_RENEWAL_REMINDER");
+  assert.equal((await listed()).name, "Renewal reminder (D-5)");
+  const stored = await templateById("SUB_RENEWAL_REMINDER");
+  const response = await templateRoute.PUT(request("/api/integration/notifications/templates/SUB_RENEWAL_REMINDER", TOKEN, {
+    operator: "ops@example.test", expectedUpdatedAt: stored.updatedAt, name: "Renamed by operator",
+    en: { ...stored.en, title: "A different title" },
+  }, "PUT"), params("SUB_RENEWAL_REMINDER"));
+  assert.equal(response.status, 200);
+  assert.equal((await listed()).name, "Renewal reminder (D-5)");
+  assert.equal("name" in (await templateById("SUB_RENEWAL_REMINDER")), false);
+});
+
 test("PUT collection route accepts the template id in the body", async () => {
   const before = await templateById("SUB_EXPIRED");
   const response = await templatesRoute.PUT(request("/api/integration/notifications/templates", TOKEN, {

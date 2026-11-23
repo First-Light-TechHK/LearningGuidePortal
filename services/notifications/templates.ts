@@ -21,6 +21,23 @@ function template(value: Omit<NotificationTemplate, "updatedAt" | "updatedBy">):
   return { ...value, updatedAt: null, updatedBy: null };
 }
 
+/** Fixed BackOffice catalogue names (B01). Not user-facing copy and not stored; editing a title never renames a template. */
+export const TEMPLATE_NAMES: Record<string, string> = {
+  SUB_SUCCESS: "Subscription successful",
+  SUB_RENEWAL_REMINDER: "Renewal reminder (D-5)",
+  SUB_RENEWAL_FAILED: "Renewal payment failed",
+  SUB_RENEWAL_SUCCESS: "Renewal successful",
+  SUB_UPGRADE_SUCCESS: "Upgrade successful",
+  SUB_AUTORENEW_CANCELLED: "Auto-renewal cancelled",
+  SUB_EXPIRED: "Subscription expired",
+  HELPDESK_TICKET_REPLIED: "Support ticket reply",
+  COURSE_NEW_LAUNCH: "New course published",
+  LIVE_SESSION_BOOKED: "Live Session booked",
+  LIVE_SESSION_REMINDER: "Live Session reminder",
+  LIVE_SESSION_CANCELLED: "Live Session cancelled",
+  LIVE_SESSION_RESCHEDULED: "Live Session rescheduled",
+};
+
 export const NOTIFICATION_TEMPLATES: NotificationTemplate[] = [
   template({
     id: "SUB_SUCCESS",

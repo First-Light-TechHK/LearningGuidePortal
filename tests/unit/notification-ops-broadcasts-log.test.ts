@@ -331,6 +331,20 @@ test("send log shows one row per channel for the same notification (REV-04)", as
   assert.deepEqual(after.items.map((item: { channel: string; status: string }) => `${item.channel}/${item.status}`).sort(), ["email/sent", "in_app/delivered"]);
 });
 
+test("send log names a system notification by its fixed catalogue name, not its editable title (REV-08)", async () => {
+  const user = await verifiedUser(store, "send-log-name@example.test");
+  await service.emitNotificationEvent({
+    eventType: "HELPDESK_TICKET_REPLIED", eventKey: "sendlog:name", userId: user.id,
+    params: { ticket_subject: "Name", ticket_link: "/my-learning/support/10" },
+  });
+  await store.editProductData((data) => {
+    data.notificationTemplates!.find((item) => item.id === "HELPDESK_TICKET_REPLIED")!.en.title = "Edited by an operator";
+  });
+  const body = await (await sendLogRoute.GET(request(`/api/integration/notifications/send-log?recipient=${encodeURIComponent(user.email)}`, TOKEN))).json();
+  assert.equal(body.items[0].notificationName, "Support ticket reply");
+  assert.equal(body.items[0].templateId, "HELPDESK_TICKET_REPLIED");
+});
+
 test("send log default window hides older rows; detail 404 after 180 days; purge removes them", async () => {
   const user = await verifiedUser(store, "send-log-old@example.test");
   const tenDays = new Date(Date.now() - 10 * 86400000).toISOString();

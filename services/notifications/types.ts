@@ -43,6 +43,8 @@ export type NotificationWriteMetadata = {
 /** One of the 13 fixed system-notification templates (PRD §5). */
 export type NotificationTemplate = {
   id: string;
+  /** read-only, from the code catalogue */
+  name?: string;
   category: Exclude<NotificationCategory, "announcement">;
   channels: NotificationChannel[];
   /** Subscription templates are always on and cannot be disabled in the BackOffice. */

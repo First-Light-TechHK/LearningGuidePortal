@@ -28,7 +28,7 @@ import {
   type SendLogFilters,
   type TemplateUpdateInput,
 } from "./core";
-import { NOTIFICATION_TEMPLATES, sampleTemplateParams, TEMPLATE_CATEGORY_ORDER } from "./templates";
+import { NOTIFICATION_TEMPLATES, sampleTemplateParams, TEMPLATE_CATEGORY_ORDER, TEMPLATE_NAMES } from "./templates";
 import { MissingNotificationDataError, renderTemplate, UnknownTemplateVariableError } from "./render";
 import type { LearnerListOptions, LearnerListResult } from "./core";
 import type { NotificationChannel, NotificationCopy, NotificationLanguage, NotificationLogEntry, NotificationTemplate } from "./types";
@@ -64,7 +64,7 @@ export async function listTemplates(): Promise<NotificationTemplate[]> {
   ensureNotificationTemplatesInData(data);
   return [...(data.notificationTemplates || [])].sort((left, right) =>
     TEMPLATE_CATEGORY_ORDER.indexOf(left.category) - TEMPLATE_CATEGORY_ORDER.indexOf(right.category)
-    || templateOrder(left) - templateOrder(right));
+    || templateOrder(left) - templateOrder(right)).map((row) => ({ ...row, name: TEMPLATE_NAMES[row.id] || row.id }));
 }
 
 export async function getTemplate(templateId: string): Promise<NotificationTemplate | null> {

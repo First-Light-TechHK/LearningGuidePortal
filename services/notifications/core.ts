@@ -16,7 +16,7 @@ import {
   validateTemplateCopy,
   type TemplateValidationIssue,
 } from "./render";
-import { isNotificationTemplateId, NOTIFICATION_TEMPLATES, templateSeedRows } from "./templates";
+import { isNotificationTemplateId, NOTIFICATION_TEMPLATES, TEMPLATE_NAMES, templateSeedRows } from "./templates";
 import type {
   LearnerNotificationItem,
   NotificationAuditEntry,
@@ -1065,7 +1065,7 @@ function sendLogItem(
     notificationId: entry.notificationId,
     templateId: entry.templateId || null,
     broadcastId: entry.broadcastId || null,
-    notificationName: template ? `${template.en.title || template.id} · ${template.id}` : broadcast?.titleEn || "Broadcast",
+    notificationName: template ? TEMPLATE_NAMES[template.id] || template.id : broadcast?.titleEn || "Broadcast",
     channel: entry.channel,
     status: entry.status,
     failureReason: entry.failureReason || null,
