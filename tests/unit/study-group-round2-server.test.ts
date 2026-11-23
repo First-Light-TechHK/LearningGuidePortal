@@ -33,7 +33,7 @@ type Fixture = {
   participants: { list: string[] | null | "hang" };
   providerReads: string[];
   removed: Array<{ room: string; identity: string }>;
-  notes: Array<{ userId: string; title: string; body: string; sessionId?: string; createdAt?: string }>;
+  notes: Array<{ userId: string; title: string; body: string; sessionId?: string; createdAt?: string; catalogue?: { templateId: string; eventKey: string; channels?: string[] } }>;
   mails: Array<{ to: string; text: string }>;
   logs: Array<Record<string, unknown>>;
   /** Runs inside withdrawReminders before it deletes (a racing dispatch). */
@@ -333,7 +333,7 @@ test("M10-a: a reminder names the group and the minutes really left, in both loc
   await f.service.planToAttend({ actorUserId: "m1", sessionId: soon.id });
   await f.service.dispatchDueReminders();
   assert.deepEqual(reminders(f, "host"), ['Ninety seconds in the Study Group "Round two" starts in 2 minutes.']);
-  assert.deepEqual(f.notes.filter((item) => item.userId === "m1").map((item) => [item.title, item.body]), [["直播课提醒", "学习小组“Round two”的 Ninety seconds 将在 2 分钟后开始。"]]);
+  assert.deepEqual(f.notes.filter((item) => item.userId === "m1" && item.catalogue?.templateId === "LIVE_SESSION_REMINDER").map((item) => [item.title, item.body]), [["直播课提醒", "学习小组“Round two”的 Ninety seconds 将在 2 分钟后开始。"]]);
 
   const g = await fixture();
   const other = await group(g, []);
@@ -944,7 +944,10 @@ test("r3 server 5: a KS call that outlives the answer budget settles as unavaila
 test("r3 server 7a: a dispatch that lands between the move and the withdrawal reminds once, by mail too", async () => {
   const f = await fixture();
   const created = await group(f, ["m1"]);
-  const mailsTo = (userId: string) => f.mails.filter((item) => item.to === `${userId}@example.test` && item.text.includes(" starts in ")).map((item) => item.text);
+  // The catalogue sends the email, one per event key; the module hands it the email channel.
+  const mailsTo = (userId: string) => f.notes
+    .filter((item) => item.userId === userId && item.catalogue?.templateId === "LIVE_SESSION_REMINDER" && item.catalogue.channels?.includes("email"))
+    .map((item) => item.catalogue!.eventKey);
   const session = await f.service.scheduleSession({ actorUserId: "host", groupId: created.id, title: "Raced mail", startsAt: inMinutes(f, 30), durationSeconds: 1800, maxParticipants: 4 });
   await f.service.planToAttend({ actorUserId: "m1", sessionId: session.id });
   // The move into the window is saved; the timer's dispatch lands before
@@ -952,7 +955,8 @@ test("r3 server 7a: a dispatch that lands between the move and the withdrawal re
   f.hooks.beforeWithdraw = async () => { await f.service.dispatchDueReminders(); };
   await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 6) });
   f.hooks.beforeWithdraw = undefined;
-  assert.deepEqual(mailsTo("m1"), ['Raced mail in the Study Group "Round two" starts in 6 minutes.'], "one mail for the new time, not two");
+  const firstMail = mailsTo("m1");
+  assert.equal(firstMail.length, 1, "one mail for the new time, not two");
   assert.deepEqual(reminders(f, "m1"), ['Raced mail in the Study Group "Round two" starts in 6 minutes.']);
 
   // Moved again inside the window: the earlier time's reminder goes, the
@@ -961,10 +965,9 @@ test("r3 server 7a: a dispatch that lands between the move and the withdrawal re
   f.hooks.beforeWithdraw = async () => { await f.service.dispatchDueReminders(); };
   await f.service.editSession({ actorUserId: "host", groupId: created.id, sessionId: session.id, startsAt: inMinutes(f, 8) });
   f.hooks.beforeWithdraw = undefined;
-  assert.deepEqual(mailsTo("m1"), [
-    'Raced mail in the Study Group "Round two" starts in 6 minutes.',
-    'Raced mail in the Study Group "Round two" starts in 8 minutes.'
-  ]);
+  // The withdrawn reminder row is gone with its old time; the new time has its own event key, so it mails once.
+  assert.equal(mailsTo("m1").length, 1);
+  assert.notEqual(mailsTo("m1")[0], firstMail[0], "a new Start Time is a new event key");
   assert.deepEqual(reminders(f, "m1"), ['Raced mail in the Study Group "Round two" starts in 8 minutes.']);
 });
 
@@ -991,7 +994,7 @@ test("r3 server 7a: a dispatch whose rows were claimed before a move sends nothi
     });
   };
   await f.service.dispatchDueReminders();
-  assert.deepEqual(f.mails.filter((item) => item.text.includes(" starts in ")), [], "no mail for the old time");
+  assert.deepEqual(f.notes.filter((item) => item.catalogue?.channels?.includes("email")), [], "no mail for the old time");
   assert.deepEqual(f.notes.filter((item) => item.title === "Live Session reminder"), [], "no reminder for the old time");
 });
 

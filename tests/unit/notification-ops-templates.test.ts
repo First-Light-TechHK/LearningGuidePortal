@@ -247,7 +247,10 @@ test("test send creates a [TEST] in-app message for the matching learner and is 
   assert.equal(log.isTest, true);
   assert.equal(log.status, "delivered");
   const inbox = await service.listLearnerNotifications(user.id, { filter: "all" });
-  assert.equal(inbox.items.length, 0);
+  // REV-07: the recipient sees the test message, but it is read and never counted.
+  assert.equal(inbox.items.length, 1);
+  assert.equal(inbox.items[0].isTest, true);
+  assert.equal(inbox.items[0].unread, false);
   assert.equal(inbox.unreadCount, 0);
 });
 
