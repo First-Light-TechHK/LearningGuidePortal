@@ -306,6 +306,11 @@ export type CreateNotificationInput = {
    */
   replaceUnreadEventKeyPrefix?: string;
   /**
+   * Fan-out: the keys already used (see buildSeenEventKeys), so the duplicate
+   * check is one Set lookup instead of a scan of every row per recipient.
+   */
+  seenEventKeys?: Set<string>;
+  /**
    * Freeze the rendered variables for the deferred email dispatcher. Callers
    * that send the email themselves in the same action pass false so the
    * dispatcher never mails the row a second time.
@@ -346,6 +351,14 @@ function categoryForTemplate(template: NotificationTemplate): NotificationCatego
   return template.category;
 }
 
+/** The "user + event key" pairs of every non-test message and log entry, built once for a fan-out. */
+export function buildSeenEventKeys(data: ProductData): Set<string> {
+  const seen = new Set<string>();
+  for (const item of data.notifications) if (item.eventKey && !item.isTest) seen.add(`${item.userId}\u0000${item.eventKey}`);
+  for (const entry of notificationTables(data).log) if (entry.eventKey && !entry.isTest) seen.add(`${entry.userId}\u0000${entry.eventKey}`);
+  return seen;
+}
+
 /**
  * Render + store one system notification. The same event key for the same
  * learner can only create one non-test row. Missing data records Failed
@@ -358,11 +371,15 @@ export function createNotificationInData(data: ProductData, input: CreateNotific
   if (!user) return { created: false, reason: "unknown_user" };
   const now = input.now || new Date().toISOString();
 
-  const duplicate = !input.isTest && (
-    data.notifications.some((item) => item.userId === input.userId && item.eventKey === input.eventKey && !item.isTest)
-    || notificationTables(data).log.some((entry) => entry.userId === input.userId && entry.eventKey === input.eventKey && !entry.isTest)
+  const seenKey = `${input.userId}\u0000${input.eventKey}`;
+  const duplicate = !input.isTest && (input.seenEventKeys
+    ? input.seenEventKeys.has(seenKey)
+    : data.notifications.some((item) => item.userId === input.userId && item.eventKey === input.eventKey && !item.isTest)
+      || notificationTables(data).log.some((entry) => entry.userId === input.userId && entry.eventKey === input.eventKey && !entry.isTest)
   );
   if (duplicate) return { created: false, reason: "duplicate" };
+  // Every outcome from here writes a row or a log entry carrying this event key.
+  if (!input.isTest) input.seenEventKeys?.add(seenKey);
 
   if (!template.enabled && !input.isTest) {
     // The event is consumed: switching the template back on must not send a

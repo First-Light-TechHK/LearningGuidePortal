@@ -3,6 +3,7 @@ import {
   appendNotificationLogInData,
   audienceUsers,
   broadcastDetailInData,
+  buildSeenEventKeys,
   createBroadcastDraftInData,
   createNotificationInData,
   deleteBroadcastDraftInData,
@@ -273,6 +274,7 @@ export async function emitNotificationEvent(input: NotificationEventInput): Prom
     if (!recipients.length) return { created: false, reason: "no_recipients", recipients: 0 } as const;
     const created: string[] = [];
     let lastReason: NotificationEventResult | null = null;
+    const seenEventKeys = recipients.length > 1 ? buildSeenEventKeys(data) : undefined;
     for (const user of recipients) {
       const key = recipient ? eventKey : `${eventKey}:${user.id}`;
       const result = createNotificationInData(data, {
@@ -282,6 +284,7 @@ export async function emitNotificationEvent(input: NotificationEventInput): Prom
         params,
         isTest: Boolean(input.isTest),
         now,
+        seenEventKeys,
       });
       if (result.created) created.push(result.notification.id);
       else lastReason = { created: false, reason: result.reason, recipients: 0, ...(result.variables ? { variables: result.variables } : {}) };

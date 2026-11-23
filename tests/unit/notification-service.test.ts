@@ -175,6 +175,47 @@ test("messages older than 180 days are hidden and excluded from unread counts", 
   assert.equal(listed.unreadCount, 0);
 });
 
+test("fan-out uses one Set lookup per recipient instead of scanning every row", async () => {
+  const base = await notifications.audienceCounts();
+  const users = [];
+  for (let index = 0; index < 50; index += 1) users.push(await cleanUser(`notify-fanout-${index}@example.test`));
+  const validTo = new Date(Date.now() + 30 * 86400000).toISOString();
+  await store.editProductData((data) => {
+    for (const user of users) {
+      data.subscriptions.push({
+        id: `sub_fanout_${user.id}`, userId: user.id, planId: "epicureanism-pc-6", courseId: "epicureanism",
+        state: "active", source: "purchase", validFrom: new Date().toISOString(), validTo, cancelAtPeriodEnd: false,
+      });
+    }
+  });
+  const paid = (await notifications.audienceCounts()).paid;
+  assert.equal(paid, base.paid + 50);
+  const params = { course_title: "Stoicism", category_name: "Philosophy", course_link: "/portal/courses/stoicism" };
+  const eventKey = "course:fanout:v1";
+  // One paid user already has this launch notification (fan-out keys carry the user id).
+  const first = await notifications.emitNotificationEvent({ eventType: "COURSE_NEW_LAUNCH", eventKey: `${eventKey}:${users[0].id}`, userId: users[0].id, params });
+  assert.equal(first.created, true);
+  // Count the row scans of the duplicate check (a `.some` whose predicate reads eventKey).
+  let scans = 0;
+  const originalSome = Array.prototype.some;
+  Array.prototype.some = function some(this: unknown[], predicate: Parameters<typeof originalSome>[0], thisArg?: unknown) {
+    if (String(predicate).includes("eventKey")) scans += 1;
+    return originalSome.call(this, predicate, thisArg);
+  } as typeof originalSome;
+  let fanOut: Awaited<ReturnType<typeof notifications.emitNotificationEvent>>;
+  try {
+    fanOut = await notifications.emitNotificationEvent({ eventType: "COURSE_NEW_LAUNCH", eventKey, params });
+  } finally {
+    Array.prototype.some = originalSome;
+  }
+  assert.equal(fanOut.created, true);
+  assert.equal((fanOut as { recipients: number }).recipients, paid - 1);
+  assert.equal(scans, 0, "the duplicate check must not scan data.notifications per recipient");
+  const again = await notifications.emitNotificationEvent({ eventType: "COURSE_NEW_LAUNCH", eventKey, params });
+  assert.equal(again.created, false);
+  assert.equal((again as { reason: string }).reason, "duplicate");
+});
+
 test("audience counts: all registered users versus paid subscribers with live access", async () => {
   const user = await cleanUser("notify-audience@example.test");
   const before = await notifications.audienceCounts();
