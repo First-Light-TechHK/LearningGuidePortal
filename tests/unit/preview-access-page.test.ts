@@ -58,6 +58,19 @@ test("video previews choose access from the title row, share the cutoff modal an
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       await page.screenshot({ path: `${output}/${locale}-title-${width}.png`, fullPage: true });
     }
+    // BUG-0353: the preview title must render like the entitled (subscribed) one.
+    const titleStyle = (element: Element) => {
+      const style = getComputedStyle(element);
+      return { fontSize: style.fontSize, lineHeight: style.lineHeight, fontWeight: style.fontWeight, textAlign: style.textAlign, margin: style.margin };
+    };
+    for (const width of [1300, 1440]) {
+      await page.setViewportSize({ width, height: 1024 });
+      await mount("title-parity-preview");
+      const previewTitle = await page.getByRole("heading", { name: "Looking closely", exact: true }).evaluate(titleStyle);
+      await mount("title-parity-entitled", { entitled: true });
+      const entitledTitle = await page.getByRole("heading", { name: "Looking closely", exact: true }).evaluate(titleStyle);
+      assert.deepEqual(previewTitle, entitledTitle, `${locale}/${width}: preview title renders like the subscribed title`);
+    }
     await page.setViewportSize({ width: 1440, height: 1024 });
     await mount("preview");
 
