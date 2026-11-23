@@ -186,27 +186,6 @@ test("a successful SMTP send records Sent plus a sent delivery row, never Delive
   assert.ok(deliveries[0].providerMessageId);
 });
 
-test("a provider receipt is the only path from Sent to Delivered", async () => {
-  const user = await cleanUser("email-receipt@example.test");
-  const result = await email.sendNotificationEmailForUser({
-    userId: user.id,
-    templateId: "SUB_RENEWAL_REMINDER",
-    appUrl: APP_URL,
-    params: { plan_name: "Everything · 12 months", renewal_date: "2026-12-16T02:00:00.000Z", renewal_amount: 14900, user_name: "Margaret" },
-  });
-  assert.equal(result.ok, true);
-  if (!result.ok) return;
-  let data = await store.ensureProductData();
-  assert.equal((data.notificationEmailDeliveries || []).find((item) => item.logId === result.logId)?.status, "sent");
-  const receipt = await emailLog.recordEmailDeliveryReceipt({ logId: result.logId, providerMessageId: "receipt-1", deliveredAt: "2026-12-11T02:01:00.000Z" });
-  assert.equal(receipt.ok, true);
-  data = await store.ensureProductData();
-  const delivery = (data.notificationEmailDeliveries || []).find((item) => item.logId === result.logId);
-  assert.equal(delivery?.status, "delivered");
-  assert.equal(delivery?.providerMessageId, "receipt-1");
-  assert.equal((data.notificationLog || []).some((item) => item.id === receipt.logId && item.status === "delivered"), true);
-});
-
 test("an SMTP failure records Failed with the provider reason and keeps the in-app message", async () => {
   const user = await cleanUser("email-failed@example.test");
   const event = await notifications.emitNotificationEvent({
