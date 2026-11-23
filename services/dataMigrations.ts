@@ -4,6 +4,7 @@ import { dataMigrations, type DataChange } from "../db/data-migrations";
 import { DATA_MIGRATION_ID, type DataMigration, type DataMigrationContext, type DataMigrationDomain } from "../db/data-migrations/types";
 import { PROTECTED_TABLES, createMemoryOrm, ormFromProductData, type MigrationOrm } from "./migrationOrm";
 import { compileOrmOps, recordOrm, type OrmPlan } from "./ormRuntime";
+import { ensureNotificationTemplatesInOrm } from "./notifications/core";
 import type { ProductData } from "./productStore";
 
 export type DataMigrationReport = {
@@ -26,6 +27,10 @@ const TABLE_DOMAIN: Record<(typeof PROTECTED_TABLES)[number], DataMigrationDomai
   studyEvents: "studyEvents",
   conversations: "conversations",
   notifications: "notifications",
+  notificationTemplates: "notifications",
+  notificationBroadcasts: "notifications",
+  notificationLog: "notifications",
+  notificationEmailDeliveries: "notifications",
   verificationTokens: "tokens",
   passwordResetTokens: "tokens",
   emailBindingTokens: "tokens",
@@ -136,6 +141,10 @@ export async function applyOrmMigrationsWithPlan(
     if (changes.some((change) => change.action === "add" || change.action === "update")) report.applied.push(migration.id);
     else report.skipped.push(migration.id);
   }
+  // Notification P0: the 13 default templates are fixed. When a product
+  // aggregate is in play, insert any missing row through the same ORM plan,
+  // without touching an operator's edits or reporting it as a migration change.
+  if (data) ensureNotificationTemplatesInOrm(recorded.orm);
   const plan = compileOrmOps(recorded.ops, compileOptions);
   report.sql = plan.sql.length;
   report.objects = plan.objects.length;

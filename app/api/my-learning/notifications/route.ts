@@ -1,11 +1,33 @@
 import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
+import { currentProductUserFromRequest } from "@/services/productAuth";
+import { listLearnerNotifications } from "@/services/notifications/service";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const user = await currentProductUser();
+/**
+ * GET /api/my-learning/notifications?filter=all|unread&limit=20&cursor=
+ * → { ok, items, unreadCount, nextCursor } (PRD §9; design §3).
+ */
+export async function GET(request: Request) {
+  const user = await currentProductUserFromRequest(request);
   if (!user) return NextResponse.json({ ok: false, error: "Sign in is required." }, { status: 401 });
-  // D2.5 ML-FR-019: placeholder only — do not expose an inbox or unread count.
-  return NextResponse.json({ ok: true, placeholder: true, notifications: [], unreadCount: 0 });
+
+  const url = new URL(request.url);
+  const filter = url.searchParams.get("filter") || "all";
+  if (filter !== "all" && filter !== "unread") {
+    return NextResponse.json({ ok: false, error: "filter must be all or unread." }, { status: 400 });
+  }
+  const rawLimit = url.searchParams.get("limit");
+  const limit = rawLimit === null ? 20 : Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+    return NextResponse.json({ ok: false, error: "limit must be between 1 and 50." }, { status: 400 });
+  }
+  const cursor = url.searchParams.get("cursor");
+
+  try {
+    const result = await listLearnerNotifications(user.id, { filter, limit, cursor });
+    return NextResponse.json({ ok: true, ...result }, { headers: { "Cache-Control": "private, no-store", Vary: "Cookie" } });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Notifications could not be loaded." }, { status: 500 });
+  }
 }

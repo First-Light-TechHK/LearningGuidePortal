@@ -54,6 +54,10 @@ export const PRODUCT_TABLES = [
   "studyEvents",
   "conversations",
   "notifications",
+  "notificationTemplates",
+  "notificationBroadcasts",
+  "notificationLog",
+  "notificationEmailDeliveries",
   "verificationTokens",
   "passwordResetTokens",
   "emailBindingTokens",
@@ -63,7 +67,7 @@ export const PRODUCT_TABLES = [
 
 export const PRODUCT_DOCS = ["portalContent", "paymentSettings"] as const;
 
-export const PROTECTED_TABLES = ["users", "sessions", "accounts", "orders", "quotes", "subscriptions", "entitlements", "studyRecords", "studyEvents", "conversations", "notifications", "verificationTokens", "passwordResetTokens", "emailBindingTokens", "stripeEvents"] as const;
+export const PROTECTED_TABLES = ["users", "sessions", "accounts", "orders", "quotes", "subscriptions", "entitlements", "studyRecords", "studyEvents", "conversations", "notifications", "notificationTemplates", "notificationBroadcasts", "notificationLog", "notificationEmailDeliveries", "verificationTokens", "passwordResetTokens", "emailBindingTokens", "stripeEvents"] as const;
 
 function asRows<T extends Identified>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : [];

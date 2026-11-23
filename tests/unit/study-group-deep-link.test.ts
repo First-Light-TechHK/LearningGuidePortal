@@ -357,7 +357,7 @@ test("a reminder mail to a Chinese-speaking member links the Chinese session pag
   assert.equal(zhMail.link, `https://lg.example.test/zh-CN/portal/study-groups/sessions/${session.id}`);
 });
 
-test("the reminder mail puts the session link on its own labelled line, plain text, in the recipient's language", async () => {
+test("the reminder mail puts the session link on its own labelled plain-text line and in the fixed HTML button, in the recipient's language", async () => {
   const env = { ...process.env };
   const sent: Array<Record<string, unknown>> = [];
   const create = mock.method(nodemailer, "createTransport", () => ({
@@ -374,9 +374,20 @@ test("the reminder mail puts the session link on its own labelled line, plain te
     assert.equal(sent.length, 3);
     assert.equal(sent[0].text, `Lesson 1 starts in 10 minutes.\n\nEnter Live Session: ${link}`);
     assert.equal(sent[1].text, `Lesson 1 将在 10 分钟后开始。\n\n进入直播课: ${link.replace("/en-GB/", "/zh-CN/")}`);
-    // No link configured: the reminder goes out unchanged.
+    // No link configured: the reminder text goes out unchanged.
     assert.equal(sent[2].text, "Lesson 1 starts in 10 minutes.");
-    for (const message of sent) assert.equal(message.html, undefined);
+    const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const message of sent) {
+      // Notification P0 fixed layout (design §6): every reminder email now
+      // carries the shared brand/body/button/footer shell.
+      assert.match(String(message.html), /data-email-layout="notification-p0"/);
+      assert.match(String(message.html), /Learning Guide/);
+    }
+    assert.match(String(sent[0].html), new RegExp(`href="${escape(link)}"`));
+    assert.match(String(sent[0].html), /Enter Live Session/);
+    assert.match(String(sent[1].html), new RegExp(`href="${escape(link.replace("/en-GB/", "/zh-CN/"))}"`));
+    assert.match(String(sent[1].html), /进入直播课/);
+    assert.doesNotMatch(String(sent[2].html), /lg\.example\.test/);
   } finally {
     create.mock.restore();
     info.mock.restore();
