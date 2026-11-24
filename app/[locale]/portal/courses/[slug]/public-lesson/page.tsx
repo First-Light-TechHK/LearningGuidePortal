@@ -3,7 +3,7 @@ import { resolveLessonEntry } from "@/services/lessonEntryPolicy";
 import { nextLessonHref } from "@/lib/lessonContinuation";
 import { notFound, redirect } from "next/navigation";
 import { localeFrom } from "@/lib/i18n/config";
-import { checkEntitlement, getLearningOverview, getProductCourse, getCourseLearningModeSelection, listPublishedCourses, publicFirstLesson } from "@/services/productStore";
+import { checkEntitlement, getLearningOverview, getProductCourse, getCourseLearningModeSelection, listPreviewCourseRecommendations, publicFirstLesson } from "@/services/productStore";
 import { currentProductUser } from "@/services/productAuth";
 import { PortalHeader } from "@/components/portal/PortalHeader";
 import { type TrialGate } from "@/components/portal/LessonContentPlayer";
@@ -46,16 +46,12 @@ export default async function PublicLessonPage({ params, searchParams }: { param
   const overview = await getLearningOverview(user.id);
   const record = overview?.courses.find(item => item.courseId === course.id);
   const entry = bookmarkSnapshot ? resolveLessonEntry({ lessonId: lesson.id, snapshot: bookmarkSnapshot, completed: Boolean(record?.completedLessonIds.includes(lesson.id)), courseMode, preferredCourseMode, availableModes: lessonLearningModes(lesson), languageContinuation: resume === "1", switchingMode: modeSwitch === "1", requestedMode: isCourseLearningMode(viewMode) ? viewMode : null }) : { preferredMode: preferredCourseMode || (isCourseLearningMode(viewMode) ? viewMode : courseMode), initialContentId: contentId || null, bookmarkRestore: "position" as const };
-  const publishedCourses = await listPublishedCourses();
-  const recommendationCourses = publishedCourses.slice(0, 2);
-  const recommendations = recommendationCourses
-    .map(item => ({
-      title: item.title,
-      href: `/${locale}/portal/courses/${item.id}`,
-      image: item.cover || item.thumbnailPath || courseImageFor(item.slug || item.id),
-      category: item.category
-    }));
-  for (const recommendation of recommendations) recommendation.image = await signCourseMediaUrl(recommendation.image || "");
+  const recommendationCourses = access.allowed ? [] : await listPreviewCourseRecommendations(course);
+  const recommendations = await Promise.all(recommendationCourses.map(async item => ({
+    title: item.title,
+    href: `/${locale}/portal/courses/${item.id}`,
+    image: await signCourseMediaUrl(item.cover || item.thumbnailPath || courseImageFor(item.slug || item.id))
+  })));
   const trialGate: TrialGate | undefined = access.allowed ? undefined : {
     pricingHref: `/${locale}/subscription?courseId=${encodeURIComponent(course.id)}`,
     recommendations,

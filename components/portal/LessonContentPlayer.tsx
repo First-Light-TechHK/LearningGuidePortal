@@ -20,7 +20,7 @@ import { textExhibitCardIds } from '@/lib/textExhibitLayout';
 import { getMessages } from '@/lib/i18n/messages';
 import { PortalDialog } from './PortalDialog';
 
-type TrialRecommendation = { title: string; href: string; image?: string | null; category?: string | null };
+type TrialRecommendation = { title: string; href: string; image?: string | null };
 export type TrialGate = { pricingHref: string; recommendations: TrialRecommendation[]; videoLimitSeconds?: number };
 
 export function TrialLimitModal({ gate, locale, onClose }: { gate: TrialGate; locale: LessonLocale; onClose: () => void }) {

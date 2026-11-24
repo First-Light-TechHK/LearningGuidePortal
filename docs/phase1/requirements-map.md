@@ -1,5 +1,7 @@
 # Phase 1：七份 PRD 实施地图
 
+Visitor / Trial Related courses (2026-11-24): `services/productStore.ts::listPreviewCourseRecommendations` selects up to two other published Courses for the Public First Lesson dialog. Courses from the current category appear first, followed by Courses from other categories if slots remain. The public Lesson page passes these recommendations to the shared preview dialog. Coverage: `preview-course-recommendations` and `text-preview-route`.
+
 Persistent Course learning mode (2026-11-19): the learner's last explicit Course choice takes priority across Course detail, My Learning, direct Study links, locale navigation, the Lesson outline and Next lesson. A single-mode Lesson uses its available mode and retains the Course preference for the next Lesson. Entry restores the selected mode's own current-version bookmark or starts that mode at the beginning. Implementation: productStore, lessonEntryPolicy, overviewDisplay and PreviewLessonView. Coverage includes the bookmark/store, Overview, Lesson route and multi-Lesson browser regressions.
 
 Lesson navigation (2026-11-19): the Study outline and completion continuation keep the mode active in `PreviewLessonView` whenever the destination offers it, with fallback for single-mode Lessons. Explicit outline links resume the chosen mode's own valid bookmark through the existing entry policy. `useLessonBookmarks` skips writes during passive video restoration and revalidates revisions after a concurrent stale-bookmark rejection. Browser and bookmark API regressions cover both locales.

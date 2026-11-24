@@ -1280,6 +1280,19 @@ export async function listPublishedCourses() {
   return data.courses.filter((course) => course.status === "published");
 }
 
+export async function listPreviewCourseRecommendations(course: Pick<ProductCourse, "id" | "categoryId" | "category">) {
+  const sameCategory: ProductCourse[] = [];
+  const otherCategories: ProductCourse[] = [];
+  for (const candidate of await listPublishedCourses()) {
+    if (candidate.id === course.id) continue;
+    const matchesCategory = course.categoryId && candidate.categoryId
+      ? candidate.categoryId === course.categoryId
+      : Boolean(course.category) && candidate.category === course.category;
+    (matchesCategory ? sameCategory : otherCategories).push(candidate);
+  }
+  return [...sameCategory, ...otherCategories].slice(0, 2);
+}
+
 export async function getProductCourse(slug: string) {
   const data = await ensureProductData();
   return data.courses.find((course) => course.slug === slug || course.id === slug) || null;
