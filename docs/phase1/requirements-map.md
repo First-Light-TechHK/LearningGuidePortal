@@ -1,5 +1,7 @@
 # Phase 1：七份 PRD 实施地图
 
+My Subscription order visibility (2026-11-24): the account menu opens `account/my-learning/subscription`, which omits the pending-order section and pending payment-history entries. The existing `PendingOrders` component runs on `account/my-learning/subscription/orders` for order recovery links and unresolved Checkout returns. Paid returns continue to My Subscription. Coverage: `subscription-order-routes`, `subscription-records-page` and `pending-orders-page`.
+
 Pending subscription orders (2026-11-24, Purchase / Order Management / Payment Management / Subscription Management): [rules and scenario matrix](domain-model.md#待支付订阅订单规则2026-11-24). `services/productStore.ts` classifies overlaps and reserves the order. `services/orderPaymentService.ts` verifies, resumes or closes owned provider payments. The quote/Checkout routes, `PurchasePanel` and `SubscriptionSelection` resume identical orders. `stripeWebhookService` closes safely cancellable upgrades after a second paid Category takes effect. `stripe-payment.spec.ts` covers the API and Stripe-fixture lifecycle. No SQL migration.
 
 Visitor / Trial Related courses (2026-11-24): `services/productStore.ts::listPreviewCourseRecommendations` selects up to two other published Courses for the Public First Lesson dialog. Courses from the current category appear first, followed by Courses from other categories if slots remain. The public Lesson page passes these recommendations to the shared preview dialog. Coverage: `preview-course-recommendations` and `text-preview-route`.

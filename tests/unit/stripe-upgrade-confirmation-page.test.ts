@@ -51,7 +51,7 @@ test("Stripe upgrade confirmation distinguishes new credit cycles from legacy pr
     await page.getByRole("alert").waitFor();
     assert.equal(requests.length, 1);
     assert.equal(await page.getByRole("alert").textContent(), copy.paymentErrors.upgrade_in_progress);
-    assert.equal(await page.getByRole("link", { name: copy.orderManagement.viewOrders }).getAttribute("href"), `/${locale}/account/my-learning/subscription?orderId=order-blocked#order-order-blocked`);
+    assert.equal(await page.getByRole("link", { name: copy.orderManagement.viewOrders }).getAttribute("href"), `/${locale}/account/my-learning/subscription/orders?orderId=order-blocked`);
     assert.deepEqual(requests[0], { quoteId: "quote-native", locale, consents: { renewal: true, terms: true, refund: true } });
     reject = false; await submit.click();
     await page.waitForURL(`**/${locale}/account/my-learning/subscription?orderId=order-native`);

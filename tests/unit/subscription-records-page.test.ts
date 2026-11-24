@@ -185,7 +185,10 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await card("everything").locator('img[src="/test-product.png"]').waitFor();
     await mount("pending-upgrade", [science], [{ ...order(science, "pending-upgrade", "pending"), kind: "upgrade", quoteId: "quote-pending", upgradeProration: { subscriptionId: science.stripeSubscriptionId } }]);
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
-    assert.equal(await page.locator(`a[href="/${locale}/account/my-learning/subscription?orderId=pending-upgrade#order-pending-upgrade"]`).count(), 1);
+    assert.equal(await page.getByRole("link", { name: copy.orderManagement.viewOrders }).count(), 0);
+    assert.equal(await card("science").locator(`a[href="/${locale}/subscription?upgradeFrom=science"]`).count(), 1);
+    await card("science").getByRole("button", { name: copy.subscriptionDesign.paymentHistory }).click();
+    assert.equal(await card("science").getByText(copy.subscriptionDesign.noHistory).isVisible(), true);
     const longOrders = ["paid", "refunded", "failed", "pending", "canceled"].map((status, index) => ({
       ...order(science, `long-${index}`, status, "2026-09-28"), amountMinor: 12345678,
       servicePeriodStart: "2026-09-28", servicePeriodEnd: "2027-09-28",
@@ -196,7 +199,8 @@ test("Subscription products start collapsed, expand independently, preserve bill
     for (const width of [1440, 1366, 1280, 1024]) {
       await page.setViewportSize({ width, height: 1024 });
       const table = card("science").getByRole("table");
-      assert.equal(await table.locator("tbody tr").count(), 5);
+      assert.equal(await table.locator("tbody tr").count(), 4);
+      assert.equal(await table.locator('[data-status="pending"]').count(), 0);
       assert.equal(await table.evaluate(element => {
         const wrapper = element.parentElement!;
         return wrapper.scrollWidth > wrapper.clientWidth + 1 || Array.from(element.querySelectorAll("th,td")).some(cell => cell.scrollWidth > cell.clientWidth + 1);
