@@ -114,20 +114,14 @@
 }
 @media(max-width:700px) { .layout > .tools { margin:0 20px 20px; } }
 
-/* Keep the preview purchase entry beside a responsive Lesson heading. */
-.heading[data-preview="true"] > h1 { min-width:0; }
-@media(min-width:1300px) {
-  .heading[data-preview="true"] > h1 { font-size:clamp(24px,calc(2vw - 2px),28px); line-height:1.3; }
-}
-
 /* Long reading sidebars stay beside the article and scroll within the viewport. */
 @media(min-width:701px) {
   .textLayout > .sidebar { display:flex; flex-direction:column; min-height:0; max-height:calc(100dvh - var(--reading-top-inset,0px) - 24px); overflow:hidden; }
   .textLayout > .sidebar > :not(.outline) { flex-shrink:0; }
-  .textLayout > .sidebar > .outline { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+  .textLayout > .sidebar > .outline { min-height:0; overflow-y:auto; scrollbar-width:thin; }
   .textLayout > .sidebar > .outline > .lesson { flex-shrink:0; }
 }
 @media(min-width:1201px) {
-  .textLayout > .tools { max-height:calc(100dvh - var(--reading-top-inset,0px) - 24px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+  .textLayout > .tools { max-height:calc(100dvh - var(--reading-top-inset,0px) - 24px); overflow-y:auto; scrollbar-width:thin; }
   .textLayout > .tools > .toolTooltip { top:0; bottom:auto; }
 }
