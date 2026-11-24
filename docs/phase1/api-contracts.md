@@ -235,6 +235,14 @@ Authorised Lesson access includes all active `LessonContent` knowledge points be
 | PATCH | `/api/my-learning/notifications/:id` | `{ read: boolean }` | 只能改当前 User 的一条通知 |
 | PATCH | `/api/my-learning/settings` | nickname、locale、avatar key | 复用字段校验；avatar 先 S3 上传再保存 key |
 
+### Notification Center：Backoffice 广播测试发送
+
+仅 Backoffice 服务端用服务令牌调用（无令牌 401，不对浏览器开放）。
+
+| Method | Path | Request | Server action |
+|---|---|---|---|
+| POST | `/api/integration/notifications/broadcasts/test` | operator、operatorEmail、titleEn、bodyEn、titleZh?、bodyZh?、buttonText?、buttonLink?、language? | 把屏幕上的内容（已保存或未保存）以 `[TEST]` 站内消息发给 operatorEmail 对应的 User；不保存广播、不计入任何统计，发送日志标记 Test；找不到该 User 返回 404 `no_learner`；内容校验失败返回 400 |
+
 ## AI Tutor
 
 ```ts
