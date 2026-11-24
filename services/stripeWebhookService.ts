@@ -1,13 +1,32 @@
 import { processLegacyStripeEvent } from "./stripeLegacyWebhookService";
 import type Stripe from "stripe";
-import { applyVerifiedStripeEvent, isLegacyStripeSubscription, isSnapshotStripeCheckout, readProductData } from "./productStore";
+import { applyVerifiedStripeEvent, isLegacyStripeSubscription, isSnapshotStripeCheckout, readProductData, stripeCategoryOwner } from "./productStore";
 import { getStripe } from "./stripeClient";
 import { reconcileStripeUpgradeInvoice } from "./stripeUpgradePayment";
 import { reconcileStripeCheckout } from "./stripeCheckoutPayment";
 import { reconcileStripeRefund } from "./stripeRefundPayment";
+import { closeUpgradesAfterSecondCategory } from "./orderPaymentService";
 
 const identifier = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id;
 const iso = (value: number | null | undefined) => value ? new Date(value * 1000).toISOString() : undefined;
+
+async function closeStaleUpgrades(categoryBuyerId: string | undefined) {
+  if (categoryBuyerId && !await closeUpgradesAfterSecondCategory(categoryBuyerId)) throw new Error("Pending upgrade payment could not be closed yet.");
+}
+
+async function reconcileCheckout(event: { id: string; type: string }, sessionId: string) {
+  const result = await reconcileStripeCheckout(event, sessionId);
+  if (!("categoryBuyerId" in result)) return result;
+  const { categoryBuyerId, ...response } = result;
+  await closeStaleUpgrades(categoryBuyerId);
+  return response;
+}
+
+async function processLegacyPayment(event: Stripe.Event, subscriptionId?: string) {
+  const result = await processLegacyStripeEvent(event);
+  if (subscriptionId) await closeStaleUpgrades(await stripeCategoryOwner(subscriptionId));
+  return result;
+}
 
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
@@ -26,12 +45,15 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   }
   const object = event.data.object as unknown as { metadata?: Record<string, string> };
   if (["charge.refunded", "charge.refund.updated", "refund.created", "refund.updated", "refund.failed"].includes(event.type)) return reconcileStripeRefund(event);
-  if (event.type.startsWith("checkout.session.") && object.metadata?.app !== "learning_guide" && !await isSnapshotStripeCheckout((event.data.object as Stripe.Checkout.Session).id)) return processLegacyStripeEvent(event);
-  if (["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired"].includes(event.type)) return reconcileStripeCheckout(event, (event.data.object as Stripe.Checkout.Session).id);
+  if (event.type.startsWith("checkout.session.") && object.metadata?.app !== "learning_guide" && !await isSnapshotStripeCheckout((event.data.object as Stripe.Checkout.Session).id)) {
+    const session = event.data.object as Stripe.Checkout.Session;
+    return processLegacyPayment(event, session.payment_status === "paid" ? identifier(session.subscription) : undefined);
+  }
+  if (["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired"].includes(event.type)) return reconcileCheckout(event, (event.data.object as Stripe.Checkout.Session).id);
   if (["invoice.paid", "invoice.payment_failed", "invoice.voided"].includes(event.type)) {
     const incoming = event.data.object as Stripe.Invoice;
     const incomingSubscription = identifier(incoming.parent?.subscription_details?.subscription) || identifier((incoming as unknown as { subscription?: string }).subscription);
-    if (incomingSubscription && await isLegacyStripeSubscription(incomingSubscription)) return processLegacyStripeEvent(event);
+    if (incomingSubscription && await isLegacyStripeSubscription(incomingSubscription)) return processLegacyPayment(event, event.type === "invoice.paid" ? incomingSubscription : undefined);
     let invoice: Stripe.Invoice;
     try {
       invoice = await stripe.invoices.retrieve((event.data.object as Stripe.Invoice).id);
@@ -46,11 +68,11 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     const subscriptionId = identifier(invoice.parent?.subscription_details?.subscription) || identifier(legacy.subscription);
     if (!subscriptionId) return { ignored: true };
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    if (subscription.metadata.app !== "learning_guide") return processLegacyStripeEvent(event);
+    if (subscription.metadata.app !== "learning_guide") return processLegacyPayment(event, invoice.status === "paid" ? subscriptionId : undefined);
     // An invoice can arrive before Checkout: reconcile the trusted Checkout first.
     const sessions = await stripe.checkout.sessions.list({ subscription: subscriptionId, limit: 1 });
     if (!sessions.data[0]) throw new Error("Checkout not available yet.");
-    await reconcileStripeCheckout({ ...event, id: "checkout:" + sessions.data[0].id, type: "checkout.session.completed" }, sessions.data[0].id);
+    await reconcileCheckout({ ...event, id: "checkout:" + sessions.data[0].id, type: "checkout.session.completed" }, sessions.data[0].id);
     if (invoice.currency !== "usd") throw new Error("Invoice currency mismatch.");
     const line = invoice.lines.data.find(item => item.pricing?.price_details?.price === subscription.items.data[0]?.price.id) || invoice.lines.data[0];
     if (!line || invoice.lines.has_more) throw new Error("Invoice period unavailable.");
@@ -60,6 +82,7 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
       amountMinor: invoice.amount_paid, currency: invoice.currency, status: invoice.status || undefined, billingReason: invoice.billing_reason,
       subscriptionStatus: subscription.status, cancelAtPeriodEnd: subscription.cancel_at_period_end,
       paymentIntentId, periodStart: iso(line.period.start), periodEnd: iso(line.period.end) });
+    if (invoice.status === "paid") await closeStaleUpgrades(await stripeCategoryOwner(subscriptionId));
     return result;
   }
   if (["customer.subscription.pending_update_applied", "customer.subscription.pending_update_expired"].includes(event.type)) {

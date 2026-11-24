@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const result = body.kind === "upgrade"
       ? await createUpgradeQuote(user.id, body.subscriptionId || "")
       : await createQuote(user.id, body.planId || "", body.kind === "trial" ? "trial" : "purchase");
-    return NextResponse.json({ ok: true, quote: result.quote, plan: result.plan });
+    return NextResponse.json({ ok: true, quote: result.quote, plan: result.plan, ...(result.resumePending && { resumePending: true }) });
   } catch (error) {
     return paymentFailure(error, user.locale);
   }

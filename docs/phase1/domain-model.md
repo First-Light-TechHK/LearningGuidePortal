@@ -1,5 +1,25 @@
 # Phase 1：数据设计
 
+## 待支付订阅订单规则（2026-11-24）
+
+适用于同一账户的 Stripe 订阅购买和 Category → Everything 升级。免费试用的 Stripe 支付方式设置沿用独立的试用规则，DEV Demo 模拟付款也沿用原流程。
+
+| 已有待支付订单 | 用户操作或支付事件 | 系统处理 |
+|---|---|---|
+| 分类 A | 购买分类 B | 保留两笔订单，均可出现在「我的订阅」。 |
+| 分类 A，6 个月 | 再买分类 A，6 个月，价格相同 | Stripe 确认原支付页可继续时直接复用，保留原订单号。 |
+| 分类 A，6 个月 | 改买 12 个月，或同套餐有新价格 | 确认旧单关闭后，按已确认的新报价创建订单。 |
+| 一笔或多笔分类订单 | 购买 Everything | 核验所有重叠单，确认旧单关闭后再创建 Everything 订单。 |
+| 升级 | 再次点击同一个升级方案 | 套餐、周期、价格及升级来源和抵扣快照均相同，且原支付页可继续时复用。 |
+| 升级 | 确认购买其他分类 | 核验并关闭旧升级单，随后创建分类订单。原有订阅继续按其当前状态提供权限。 |
+| 升级 | 第二个分类付款生效 | 对旧升级单发起 Stripe 核验。可关闭时关闭，处理中或支付状态尚未确认时保留并同步。再次升级时使用当前资格和价格。现有规则下，同时拥有两个有效付费分类没有 Everything 升级资格。 |
+| 已含优惠券的升级 | Stripe Checkout 到期且未付款后再次升级 | 旧单进入过期历史。新报价复核源订阅和优惠券后，新订单自动应用仍有效且符合条件的抵扣。 |
+
+- 浏览报价只计算当前价格和是否有可复用候选。用户确认付款后才会关闭有冲突的旧单。15 分钟报价有效期和 Stripe Checkout 的有效期独立计算。Stripe 仍允许付款时，可从原订单继续付款。关闭网页不会取消订单。
+- Stripe 验证订单归属、原 Checkout 或历史升级 Invoice、金额和价格后，才会复用或尝试关单。多个重叠订单先全部核验。任何一笔处理中、无法确定状态或关单未确认时，保留该订单，并阻止创建新单。若核验发现已经付款，先同步原订单，使这次替换停止，再由用户重新报价。
+- Checkout 过期与明确取消分别保留在历史记录里。服务端在创建新订单时再次检查待支付冲突，避免多标签或多进程同时落下重叠订单。原订单 Checkout 仍用原订单号作 Stripe 幂等键。
+- 升级抵扣仍由后端校验并自动应用。6 个月抵扣 US$39，12 个月抵扣 US$78，仅首张账单生效，续费按 Everything 原价。普通订阅仍按套餐价格结算。
+
 Persistent Course learning mode (2026-11-19): the existing per-Course, per-context User preference and formal Study selectedMode represent the last explicit selection. The formal selectedMode recovers known choices where older automatic bookmark writes changed the User preference. Checkpoints continue recording actual mode and position without changing the chosen preference. Existing values and both mode bookmarks are retained. No migration is required.
 
 Completed Lesson bookmark resume (2026-11-14): accepted completion remains irreversible and independent of the existing per-mode bookmarks. Reviewing a completed Lesson may update its latest position; subsequent entry restores the valid bookmark without clearing completion. No schema, migration or historical-data rewrite. Supersedes the earlier completed-Lesson entry-from-start rule.

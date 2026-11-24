@@ -73,11 +73,19 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
     submitting.current = true; setPendingAction("purchase"); setBusy(true); setError("");
     try {
       const quoteResponse = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "purchase" }) });
-      const quoteData = await quoteResponse.json() as { quote?: { id: string }; error?: string; code?: string; blockingOrderId?: string };
+      const quoteData = await quoteResponse.json() as { quote?: { id: string }; resumePending?: boolean; error?: string; code?: string; blockingOrderId?: string };
       setBlockingOrderId(quoteData.blockingOrderId || null);
       if (quoteResponse.status === 401) { signInForPlan(); return; }
       if (!quoteResponse.ok || !quoteData.quote) throw new Error(quoteData.code === "already_subscribed" || quoteData.code === "upgrade_unavailable" ? messages.paymentErrors[quoteData.code] : quoteData.error || "Price calculation failed.");
-      window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteData.quote.id)}`);
+      let destination = `/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteData.quote.id)}`;
+      if (quoteData.resumePending) {
+        const response = await fetch("/api/purchase/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quoteData.quote.id, locale, resumeOnly: true }) });
+        const result = await response.json() as { checkoutUrl?: string | null; error?: string; blockingOrderId?: string };
+        setBlockingOrderId(result.blockingOrderId || null);
+        if (!response.ok) throw new Error(result.error || messages.paymentErrors.payment_unavailable);
+        destination = result.checkoutUrl || destination;
+      }
+      window.location.assign(destination);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Checkout failed."); submitting.current = false; setPendingAction(null); setBusy(false); }
   }
 

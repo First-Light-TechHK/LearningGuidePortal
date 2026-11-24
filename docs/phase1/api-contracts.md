@@ -181,6 +181,8 @@ Google 和 WeChat 回调必须在服务端校验 state、code、issuer/provider 
 
 ## Purchase / Payment / Subscription
 
+Pending subscription orders (2026-11-24): `POST /api/subscription/quote` may return `resumePending: true` for an owned Checkout candidate with the same terms. `POST /api/purchase/checkout` with `{quoteId, locale, resumeOnly: true}` verifies the existing payment and returns `{ok:true, checkoutUrl: string|null}`. This operation creates no order and requests no cancellation of an open payment. The ordinary Checkout POST still requires the three consents. It checks all overlaps, confirms closure of superseded payments and reserves the new order transactionally. Unknown or still-open conflicts return the existing `payment_pending` / `upgrade_in_progress` conflict with an owned `blockingOrderId`. A payment that completes during conflict resolution is reconciled and the request returns 409 `quote_expired` for a fresh quote. See [pending subscription order rules](domain-model.md#待支付订阅订单规则2026-11-24).
+
 ```ts
 // POST /api/subscription/quote
 type QuoteRequest = {

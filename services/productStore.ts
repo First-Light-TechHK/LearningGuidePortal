@@ -18,6 +18,7 @@ import { isBusinessEmail, normaliseEmail } from "@/lib/emailValidation";
 import { configuredStripePrice } from "./stripePrices";
 import { resolveSubscriptionPrice } from "./stripePriceService";
 import { productTransaction } from "@/repositories/productTransactionRepository";
+import { isDeepStrictEqual } from "node:util";
 import { hasIndependentEmailBindingHistory } from "@/repositories/emailBindingRepository";
 import type { EmailBindingIdentity, EmailBindingResult } from "@/contracts/emailBinding";
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "crypto";
@@ -564,9 +565,60 @@ function alreadySubscribedToPlan(data: ProductData, userId: string, plan: Produc
 
 function assertPlanPurchaseAllowed(data: ProductData, userId: string, plan: ProductPlan) {
   if (alreadySubscribedToPlan(data, userId, plan)) throw new PaymentError("already_subscribed");
-  const pendingUpgrade = data.orders.find(order => order.userId === userId && (order.upgradeProration || order.upgradeCredit) && order.status === "pending");
-  if (["category", "everything"].includes(planScope(plan).scope) && pendingUpgrade) throw new PaymentError("upgrade_in_progress", 409, undefined, pendingUpgrade.id);
   if (planScope(plan).scope === "everything" && subscriptionCoverage(data.subscriptions, data.plans, userId).categoryIds.length >= 2) throw new PaymentError("upgrade_unavailable");
+}
+
+function pendingStripeCheckoutConflicts(data: ProductData, userId: string, plan: ProductPlan, quoteId: string) {
+  const target = planScope(plan);
+  return data.orders.filter(order => {
+    if (order.userId !== userId || order.status !== "pending" || order.paymentMode !== "stripe"
+      || order.kind === "trial_activation" || order.quoteId === quoteId) return false;
+    const other = order.planSnapshot || data.plans.find(item => item.id === order.planId);
+    if (!other) return true;
+    const scope = planScope(other);
+    if (scope.scope !== "course" && target.scope !== "course"
+      && (order.kind === "upgrade" || target.scope === "everything" || scope.scope === "everything")) return true;
+    if (other.device !== plan.device) return false;
+    return target.scope === "everything" || scope.scope === "everything"
+      || target.scope === scope.scope && target.scopeId === scope.scopeId
+      || data.courses.some(course => planCoversCourse(plan, course) && planCoversCourse(other, course));
+  });
+}
+
+export function matchesStripeCheckoutQuote(order: ProductOrder, quote: ProductQuote) {
+  return (order.kind || "purchase") === quote.kind && order.planId === quote.planId
+    && order.amountMinor === quote.amountMinor && order.currency === quote.currency
+    && Boolean(quote.price && order.price?.stripePriceId === quote.price.stripePriceId && order.price.termMonths === quote.price.termMonths)
+    && (!order.planSnapshot || !quote.planSnapshot || order.planSnapshot.device === quote.planSnapshot.device
+      && isDeepStrictEqual(planScope(order.planSnapshot), planScope(quote.planSnapshot)))
+    && (order.sourceSubscriptionId || null) === (quote.sourceSubscriptionId || null)
+    && isDeepStrictEqual(order.upgradeCredit, quote.upgradeCredit) && isDeepStrictEqual(order.upgradeProration, quote.upgradeProration);
+}
+
+export async function listStripeCheckoutConflicts(userId: string, quote: ProductQuote, plan: ProductPlan) {
+  const data = await ensureProductData();
+  if (quote.kind === "upgrade") upgradeCalculation(data, userId, quote.sourceSubscriptionId || "");
+  else assertPlanPurchaseAllowed(data, userId, plan);
+  return pendingStripeCheckoutConflicts(data, userId, plan, quote.id);
+}
+
+export async function listPendingUpgradesAfterSecondCategory(userId: string) {
+  const data = await ensureProductData();
+  if (subscriptionCoverage(data.subscriptions, data.plans, userId).categoryIds.length < 2) return [];
+  return data.orders.filter(order => order.userId === userId && order.kind === "upgrade" && order.status === "pending" && order.paymentMode === "stripe");
+}
+
+export async function stripeCategoryOwner(subscriptionId: string) {
+  const data = await ensureProductData();
+  const subscription = data.subscriptions.find(item => item.stripeSubscriptionId === subscriptionId && item.source === "purchase");
+  if (!subscription) return undefined;
+  const scope = subscription.scope || data.plans.find(item => item.id === subscription.planId)?.scope;
+  return scope === "category" ? subscription.userId : undefined;
+}
+
+function canResumeQuotedCheckout(data: ProductData, quote: ProductQuote, plan: ProductPlan) {
+  const conflicts = pendingStripeCheckoutConflicts(data, quote.userId, plan, quote.id);
+  return conflicts.length === 1 && Boolean(conflicts[0].stripeCheckoutSessionId) && matchesStripeCheckoutQuote(conflicts[0], quote);
 }
 
 async function saveData(data: ProductData) {
@@ -1521,7 +1573,7 @@ export async function createQuote(userId: string, planId: string, kind: "purchas
     const offer = withPlanAiPoints(data.plans).find(item => item.id === planId)!;
     const quote: ProductQuote = { price, planSnapshot: { ...offer }, id: id("quote"), userId, planId, amountMinor: kind === "trial" ? 0 : plan.amountMinor, currency: plan.currency, kind, expiresAt, createdAt };
     data.quotes.unshift(quote);
-    return { quote, plan: offer };
+    return { quote, plan: offer, resumePending: kind === "purchase" && Boolean(price) && canResumeQuotedCheckout(data, quote, offer) };
   });
 }
 
@@ -1619,14 +1671,12 @@ export async function createUpgradeQuote(userId: string, subscriptionId: string)
     const current = upgradeCalculation(data, userId, subscriptionId);
     if (current.paidOrder.id !== upgradeCredit.sourceOrderId || current.source.stripeSubscriptionId !== upgradeCredit.sourceStripeSubscriptionId
       || current.source.stripeCustomerId !== upgradeCredit.customerId || current.target.id !== preliminary.target.id) throw new PaymentError("quote_expired");
-    const blocking = data.orders.find(order => order.userId === userId && order.status === "pending" && order.kind === "upgrade");
-    if (blocking) throw new PaymentError("upgrade_in_progress", 409, undefined, blocking.id);
     const quote: ProductQuote = { id: id("quote"), userId, planId: current.target.id, kind: "upgrade", sourceSubscriptionId: subscriptionId,
       price, upgradeCredit, creditMinor: upgradeCredit.creditMinor, amountMinor: upgradeCredit.amountDueMinor, currency: "usd",
       planSnapshot: { ...current.target, amountMinor: price.amountMinor, currency: "usd" }, createdAt: now(),
       expiresAt: new Date(Math.min(Date.now() + QUOTE_MINUTES * 60000, upgradeCredit.sourcePeriodEnd * 1000)).toISOString() };
     data.quotes.unshift(quote);
-    return { quote, plan: quote.planSnapshot!, sourcePlan: current.sourcePlan };
+    return { quote, plan: quote.planSnapshot!, sourcePlan: current.sourcePlan, resumePending: canResumeQuotedCheckout(data, quote, quote.planSnapshot!) };
   });
 }
 
@@ -1634,13 +1684,15 @@ export async function getQuoteForUser(userId: string, quoteId: string) {
   const data = await ensureProductData();
   const quote = data.quotes.find((item) => item.id === quoteId && item.userId === userId);
   if (!quote) return null;
-  const resumable = (quote.upgradeProration || quote.upgradeCredit) && data.orders.some(order => order.userId === userId && order.quoteId === quote.id && (order.upgradeProration || order.upgradeCredit) && ["pending", "paid"].includes(order.status));
+  const stripeOrder = data.orders.find(order => order.userId === userId && order.quoteId === quote.id && order.paymentMode === "stripe");
+  const resumable = stripeOrder && ["pending", "paid"].includes(stripeOrder.status)
+    && (quote.upgradeProration || quote.upgradeCredit || quote.kind === "purchase" && stripeOrder.stripeCheckoutSessionId);
   if (new Date(quote.expiresAt) <= new Date() && !resumable) return null;
   const plan = quote.planSnapshot || withPlanAiPoints(data.plans).find((item) => item.id === quote.planId);
   const source = quote.kind === "upgrade" ? data.subscriptions.find(item => item.id === quote.sourceSubscriptionId && item.userId === userId) : undefined;
   const sourcePlan = source ? withPlanAiPoints(data.plans).find(item => item.id === source.planId) : undefined;
-  const upgradeOrder = (quote.upgradeProration || quote.upgradeCredit) ? data.orders.find(order => order.userId === userId && order.quoteId === quote.id && order.paymentMode === "stripe" && (order.upgradeProration || order.upgradeCredit)) : undefined;
-  return plan ? { quote, plan, sourceSubscription: source, sourcePlan, upgradeOrder } : null;
+  const upgradeOrder = quote.upgradeProration || quote.upgradeCredit ? stripeOrder : undefined;
+  return plan ? { quote, plan, sourceSubscription: source, sourcePlan, upgradeOrder, purchaseOrder: quote.kind === "purchase" ? stripeOrder : undefined } : null;
 }
 
 export async function completeDemoCheckout(userId: string, quoteId: string) {
@@ -1849,8 +1901,7 @@ export async function createPendingStripeOrder(userId: string, quoteId: string) 
     const existing = data.orders.find((item) => item.userId === userId && item.quoteId === quote.id && item.paymentMode === "stripe");
     if (existing?.status !== "paid") assertPlanPurchaseAllowed(data, userId, plan);
     if (existing) return { order: existing, plan };
-    const pending = data.orders.find(item => item.userId === userId && item.paymentMode === "stripe" && item.status === "pending" && item.kind === "purchase"
-      && (() => { const other = item.planSnapshot || data.plans.find(p => p.id === item.planId); return other && other.device === plan.device && sameScope(other, plan); })());
+    const pending = pendingStripeCheckoutConflicts(data, userId, plan, quote.id)[0];
     if (pending) throw new PaymentError("payment_pending", 409, undefined, pending.id);
     if (!quote.price) throw new PaymentError("quote_expired");
     const order: ProductOrder = { id: id("order"), userId, planId: plan.id, quoteId: quote.id, amountMinor: quote.amountMinor, currency: quote.currency, status: "pending", paymentMode: "stripe", kind: "purchase", price: quote.price, planSnapshot: quote.planSnapshot, stripeCheckoutSessionId: null, stripeSubscriptionId: null, stripePaymentIntentId: null, createdAt: now() };
@@ -1870,7 +1921,7 @@ export async function createPendingStripeUpgradeOrderFromQuote(userId: string, q
     if (new Date(quote.expiresAt) <= new Date() && !existing?.upgradeProration && !existing?.upgradeCredit) throw new PaymentError("quote_expired");
     upgradeCalculation(data, userId, quote.sourceSubscriptionId || "", Boolean(existing?.upgradeProration));
     if (existing) return { order: existing, plan };
-    const blocking = data.orders.find(item => item.userId === userId && item.status === "pending"
+    const blocking = quote.upgradeCredit ? pendingStripeCheckoutConflicts(data, userId, plan, quote.id)[0] : data.orders.find(item => item.userId === userId && item.status === "pending"
       && (item.sourceSubscriptionId === quote.sourceSubscriptionId && item.kind === "upgrade" && (item.upgradeProration || item.upgradeCredit)
         || item.kind === "purchase" && ["category", "everything"].includes((item.planSnapshot || data.plans.find(plan => plan.id === item.planId))?.scope || "")));
     if ((quote.upgradeProration || quote.upgradeCredit) && blocking) throw new PaymentError("upgrade_in_progress", 409, undefined, blocking.id);

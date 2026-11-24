@@ -1,14 +1,24 @@
 import type { ProductUser, ProductOrder } from "./productStore";
-import { attachStripeCheckoutSession, createPendingDemoOrder, createPendingDemoTrialOrder, createPendingDemoTrialOrderFromQuote, createPendingStripeOrder, createPendingStripeTrialOrderFromQuote, createQuote, getQuoteForUser, prepareStripeCheckout } from "./productStore";
+import { attachStripeCheckoutSession, createPendingDemoOrder, createPendingDemoTrialOrder, createPendingDemoTrialOrderFromQuote, createPendingStripeOrder, createPendingStripeTrialOrderFromQuote, createPendingStripeUpgradeOrderFromQuote, createQuote, getQuoteForUser, prepareStripeCheckout } from "./productStore";
 import { createHostedCheckout, createHostedTrialCheckout, getStripe } from "./stripeClient";
 import { validateSubscriptionPrice } from "./stripePriceService";
-import { PaymentError } from "@/contracts/payment";
+import { PaymentError, type StripePriceSnapshot } from "@/contracts/payment";
 import { appEnvironment, isProductionEnvironment, paymentMode, publicAppOrigin, runtimeConfiguration } from "./runtimeConfig";
 import { startStripeUpgradePayment } from "./stripeUpgradePayment";
-import { startCreditUpgradePayment } from "./stripeCreditUpgradePayment";
+import { assertCreditUpgradeQuoteCurrent, createCreditUpgradeCheckout } from "./stripeCreditUpgradePayment";
+import { closeUpgradesAfterSecondCategory, resolvePendingStripePayment } from "./orderPaymentService";
 import type { HostedOrderReceipt } from "@/contracts/order-receipt";
 
-export type CheckoutRequest = { quoteId?: string; planId?: string; courseId?: string; locale?: "en-GB" | "zh-CN"; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
+export type CheckoutRequest = { quoteId?: string; planId?: string; courseId?: string; locale?: "en-GB" | "zh-CN"; resumeOnly?: boolean; consents?: { renewal?: boolean; terms?: boolean; refund?: boolean } };
+
+async function verifySubscriptionCheckoutPrice(price: StripePriceSnapshot | undefined) {
+  if (!price) throw new PaymentError("quote_expired");
+  // The Quote pins a specific Price even if its lookup key has moved.
+  const remote = await getStripe().prices.retrieve(price.stripePriceId);
+  validateSubscriptionPrice(remote, price.termMonths);
+  if (remote.unit_amount !== price.amountMinor || remote.currency !== price.currency) throw new PaymentError("quote_expired");
+  return price;
+}
 
 // Resolve only identities recorded on the authenticated user's paid Order.
 export async function stripeOrderReceipt(order: Pick<ProductOrder, "id" | "userId" | "status" | "kind" | "paymentMode" | "amountMinor" | "currency" | "stripeInvoiceId" | "stripePaymentIntentId" | "stripeCheckoutSessionId" | "stripeSubscriptionId">): Promise<HostedOrderReceipt | null> {
@@ -107,7 +117,20 @@ export async function startPayment(user: ProductUser, body: CheckoutRequest, req
   if (!quoted || (trial ? quoted.quote.kind !== "trial" : quoted.quote.kind === "trial")) throw new PaymentError("quote_expired");
   const upgrade = quoted.quote.kind === "upgrade";
   if (upgrade) {
-    if (mode === "stripe" && quoted.quote.upgradeCredit) return startCreditUpgradePayment(user.id, quoted, origin, locale);
+    if (mode === "stripe" && quoted.quote.upgradeCredit) {
+      await closeUpgradesAfterSecondCategory(user.id);
+      await assertCreditUpgradeQuoteCurrent(quoted);
+      const existing = await resolvePendingStripePayment(user.id, quoted.quote, quoted.plan, quoted.upgradeOrder, locale);
+      if (existing) return existing;
+      const pending = await createPendingStripeUpgradeOrderFromQuote(user.id, quoted.quote.id);
+      const order = await prepareStripeCheckout(user.id, pending.order.id, origin, locale);
+      if (order.status === "paid" || order.stripeCheckoutSessionId) {
+        const current = await resolvePendingStripePayment(user.id, quoted.quote, quoted.plan, order, locale);
+        if (current) return current;
+        throw new PaymentError("quote_expired");
+      }
+      return createCreditUpgradeCheckout(order);
+    }
     if (mode !== "stripe" || !quoted.quote.upgradeProration) throw new PaymentError("quote_expired");
     return startStripeUpgradePayment(user.id, quoted, origin, locale);
   }
@@ -116,17 +139,21 @@ export async function startPayment(user: ProductUser, body: CheckoutRequest, req
       : await createPendingDemoOrder(user.id, quoted.quote.id);
     return { order: pending.order, checkoutUrl: `/${locale}/portal/payment/checkout?orderId=${encodeURIComponent(pending.order.id)}` };
   }
-  const price = quoted.quote.price;
-  if (!price) throw new PaymentError("quote_expired");
-  // Retrieve the pinned ID, not a lookup key that could have been transferred since quoting.
-  const remotePrice = await getStripe().prices.retrieve(price.stripePriceId);
-  validateSubscriptionPrice(remotePrice, price.termMonths);
-  if (remotePrice.unit_amount !== price.amountMinor || remotePrice.currency !== price.currency) throw new PaymentError("quote_expired");
+  const price = await verifySubscriptionCheckoutPrice(quoted.quote.price);
+  if (!trial) {
+    const existing = await resolvePendingStripePayment(user.id, quoted.quote, quoted.plan, quoted.purchaseOrder, locale);
+    if (existing) return existing;
+  }
   const pending = trial ? await createPendingStripeTrialOrderFromQuote(user.id, quoted.quote.id)
     : await createPendingStripeOrder(user.id, quoted.quote.id);
   const order = await prepareStripeCheckout(user.id, pending.order.id, origin, locale);
   if (order.status === "paid") return { order, checkoutUrl: `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(order.id)}` };
   if (order.stripeCheckoutSessionId) {
+    if (!trial) {
+      const existing = await resolvePendingStripePayment(user.id, quoted.quote, quoted.plan, order, locale);
+      if (existing) return existing;
+      throw new PaymentError("quote_expired");
+    }
     const session = await getStripe().checkout.sessions.retrieve(order.stripeCheckoutSessionId);
     if (session.status === "expired") throw new PaymentError("quote_expired");
     if (session.status === "complete") return { order, checkoutUrl: `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(order.id)}` };
@@ -136,4 +163,15 @@ export async function startPayment(user: ProductUser, body: CheckoutRequest, req
   const session = trial ? await createHostedTrialCheckout(input) : await createHostedCheckout(input);
   await attachStripeCheckoutSession(user.id, order.id, session.id);
   return { order: { ...order, stripeCheckoutSessionId: session.id }, checkoutUrl: session.url };
+}
+
+export async function resumePendingPayment(user: ProductUser, body: CheckoutRequest, request: Request) {
+  checkoutRequestOrigin(request);
+  if (paymentMode() !== "stripe" || !runtimeConfiguration().payment.configured) throw new PaymentError("payment_unavailable", 503);
+  const quoted = await getQuoteForUser(user.id, body.quoteId || "");
+  if (!quoted || (quoted.quote.kind !== "purchase" && !quoted.quote.upgradeCredit)) throw new PaymentError("quote_expired");
+  if (quoted.quote.upgradeCredit) await assertCreditUpgradeQuoteCurrent(quoted);
+  else await verifySubscriptionCheckoutPrice(quoted.quote.price);
+  const result = await resolvePendingStripePayment(user.id, quoted.quote, quoted.plan, quoted.upgradeOrder || quoted.purchaseOrder, body.locale === "zh-CN" ? "zh-CN" : "en-GB", true);
+  return { checkoutUrl: result?.checkoutUrl ?? null };
 }
