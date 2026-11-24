@@ -27,7 +27,7 @@
 }
 .bellButton:focus-visible { outline: 2px solid var(--lg-blue); outline-offset: 4px; border-radius: 8px; }
 .badge {
-  position: absolute; top: -4px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  position: absolute; top: -4px; left: calc(100% - 10px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
   background: var(--ntf-badge); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
   box-shadow: 0 0 0 2px #fff;
 }
