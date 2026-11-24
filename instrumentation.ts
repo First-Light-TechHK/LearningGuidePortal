@@ -8,5 +8,7 @@ export async function register() {
     startHelpdeskBackgroundJobs();
     const { startUpgradeCancellationJobs } = await import("./services/stripeCreditUpgradePayment");
     startUpgradeCancellationJobs();
+    const { startNotificationScheduler } = await import("./services/notifications/scheduler");
+    startNotificationScheduler();
   }
 }

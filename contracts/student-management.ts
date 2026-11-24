@@ -106,10 +106,13 @@ export type StudentActionInput =
   | { action: "deactivate" | "activate"; actor: StaffActor; reason: string }
   | { action: "change_email"; actor: StaffActor; email: string; reason: string; exemption: { reference: string } | null }
   | { action: "resend_verification" | "send_password_link"; actor: StaffActor };
+/** Mail result for one action: sent when the send settled, null while it is still in flight (BUG-0358/0359). */
+export type StudentActionEmail = { sent: boolean | null; pending?: true };
 export type StudentActionResponse = {
   student: StudentDetails;
-  /** null: the action sends no mail. sent false: the change was saved but the mail did not go out (PRD 8, no false success). */
-  email: { sent: boolean } | null;
+  /** null: the action sends no mail. sent false: the mail did not go out (PRD 8, no false success).
+   * sent null + pending: the change was saved and the mail is still being sent in the background. */
+  email: StudentActionEmail | null;
 };
 
 export type OverridesInput = { actor: StaffActor; reason: string; expectedVersion: string; overrides: Partial<Record<FeatureKey, OverrideValue>> };

@@ -884,7 +884,7 @@
   "account": {
     "overview": "Overview",
     "subscription": "My Subscription",
-    "notifications": "Notification Center",
+    "notifications": "Notifications",
     "settings": "Personal settings",
     "help": "Help Center / FAQ",
     "menu": "Account menu",
@@ -893,11 +893,26 @@
     "contactAction": "Contact support"
   },
   "notificationsPage": {
-    "title": "Notification centre",
+    "title": "Notifications",
+    "intro": "Updates about your subscription, study groups and Learning Guide.",
+    "dropdownTitle": "Notifications",
+    "bellLabel": "Notifications",
+    "bellLabelUnread": "Notifications, {count} unread",
+    "unreadCount": "{count} unread",
+    "unreadTag": "Unread",
+    "filterLabel": "Filter notifications",
+    "filterAll": "All",
+    "filterUnread": "Unread ({count})",
     "markRead": "Mark as read",
     "markUnread": "Mark as unread",
-    "empty": "Notification centre is being prepared.",
-    "placeholder": "Notifications are not active in the current test release.",
+    "empty": "You have no notifications yet.",
+    "emptyUnread": "You're all caught up.",
+    "loading": "Loading…",
+    "loadError": "Notifications could not be loaded.",
+    "updateError": "The notification could not be updated. Please try again.",
+    "retry": "Try again",
+    "showing": "Showing {shown} of {total}",
+    "loadMore": "Load more",
     "viewAll": "View all notifications"
   },
   "settingsPage": {

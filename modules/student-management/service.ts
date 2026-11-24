@@ -48,7 +48,13 @@ export const studentManagementHooks = {
   evictFromLiveSessions: async (userId: string): Promise<void> => {
     const { studyGroupService } = await import("@/modules/group-study/runtime");
     await studyGroupService().evictUser({ userId });
-  }
+  },
+  /**
+   * Single dispatch point for mail this module sends. The default hands the
+   * send straight to emailService; tests replace it to hold or fail a delivery
+   * without touching SMTP (BUG-0358/0359).
+   */
+  sendEmail: async (send: () => Promise<unknown>): Promise<unknown> => send()
 };
 
 /**
@@ -295,8 +301,40 @@ function emailUnavailable(): never {
   throw new StudentProblem("email_unavailable", "Email delivery is not configured in this environment.");
 }
 
-async function trySend(send: () => Promise<unknown>) {
-  try { await send(); return true; } catch { return false; }
+/**
+ * BUG-0358/0359: SMTP can take 20s while the Backoffice abandons the request at
+ * 8s. State changes and token issuing finish before the response; mail waits at
+ * most this long, then the response says "pending" and delivery continues.
+ */
+export const EMAIL_SEND_BUDGET_MS = 4_000;
+
+type EmailSendResult = { sent: boolean } | { sent: null; pending: true };
+
+function logStudentEmail(event: string, detail: Record<string, unknown>) {
+  console.info(JSON.stringify({ type: "student_management", event, ...detail }));
+}
+
+/** Never rejects: a failed delivery is a result, and its outcome is logged exactly once. */
+function observeEmail(send: () => Promise<unknown>, action: string, userId: string): Promise<boolean> {
+  return (async () => {
+    let ok = false;
+    try { await studentManagementHooks.sendEmail(send); ok = true; } catch { ok = false; }
+    logStudentEmail("email.send", { action, userId, ok });
+    return ok;
+  })();
+}
+
+/** Bounded wait: settled mail reports sent true/false, a slower send reports pending and keeps running. */
+async function boundedEmailSend(send: () => Promise<unknown>, action: string, userId: string): Promise<EmailSendResult> {
+  const delivery = observeEmail(send, action, userId);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), EMAIL_SEND_BUDGET_MS); });
+  try {
+    const result = await Promise.race([delivery, expired]);
+    return result === "timeout" ? { sent: null, pending: true } : { sent: result };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function cooldown(error: unknown): never {
@@ -368,19 +406,20 @@ export async function runStudentAction(userId: string, input: StudentActionInput
         return { student: details(data, user), previousEmail: previous, locale: user.locale === "zh-CN" ? "zh-CN" as const : "en-GB" as const };
       });
       if (!configured) return { student, email: { sent: false } };
-      let sent: boolean;
-      if (input.exemption) {
-        sent = await trySend(() => sendHelpdeskUpdateEmail({ to: input.email, subject: locale === "zh-CN" ? "Learning Guide 账号邮箱已更新" : "Your Learning Guide email was updated", text: locale === "zh-CN" ? "您好：\n\n您的 Learning Guide 账号联系邮箱已由客服更新为这个地址。如果这不是您申请的，请联系我们。\n\nLearning Guide" : "Hello,\n\nOur support team updated the contact email of your Learning Guide account to this address. If you did not ask for this, please contact us.\n\nLearning Guide" }));
-      } else {
-        // The change is already saved: a failure here is reported as not sent (the drawer offers Resend), never as an error.
-        const token = await issueEmailVerificationToken(userId).catch(() => null);
-        sent = token !== null && await trySend(() => sendVerificationEmail({ to: input.email, url: verifyUrl(origin, locale, token), locale }));
-      }
       if (previousEmail) {
-        // Best effort, and it never says the new address (PRD 5.2).
-        await trySend(() => sendHelpdeskUpdateEmail({ to: previousEmail, subject: locale === "zh-CN" ? "Learning Guide 账号邮箱已更改" : "Your Learning Guide email was changed", text: locale === "zh-CN" ? "您好：\n\n您的 Learning Guide 账号联系邮箱已由客服更改，此地址不再用于登录。如果这不是您申请的，请联系我们。\n\nLearning Guide" : "Hello,\n\nOur support team changed the contact email of your Learning Guide account. This address is no longer used to sign in. If you did not ask for this, please contact us.\n\nLearning Guide" }));
+        // Best effort, and it never says the new address (PRD 5.2); it never delays the response.
+        void observeEmail(() => sendHelpdeskUpdateEmail({ to: previousEmail, subject: locale === "zh-CN" ? "Learning Guide 账号邮箱已更改" : "Your Learning Guide email was changed", text: locale === "zh-CN" ? "您好：\n\n您的 Learning Guide 账号联系邮箱已由客服更改，此地址不再用于登录。如果这不是您申请的，请联系我们。\n\nLearning Guide" : "Hello,\n\nOur support team changed the contact email of your Learning Guide account. This address is no longer used to sign in. If you did not ask for this, please contact us.\n\nLearning Guide" }), "change_email.previous_notice", userId);
       }
-      return { student, email: { sent } };
+      let email: EmailSendResult;
+      if (input.exemption) {
+        email = await boundedEmailSend(() => sendHelpdeskUpdateEmail({ to: input.email, subject: locale === "zh-CN" ? "Learning Guide 账号邮箱已更新" : "Your Learning Guide email was updated", text: locale === "zh-CN" ? "您好：\n\n您的 Learning Guide 账号联系邮箱已由客服更新为这个地址。如果这不是您申请的，请联系我们。\n\nLearning Guide" : "Hello,\n\nOur support team updated the contact email of your Learning Guide account to this address. If you did not ask for this, please contact us.\n\nLearning Guide" }), "change_email", userId);
+      } else {
+        // The change is already saved: a delivery problem is reported as not sent (the drawer offers Resend), never as an error.
+        // The verification token is minted before the response; only the SMTP wait is bounded.
+        const token = await issueEmailVerificationToken(userId).catch(() => null);
+        email = token === null ? { sent: false } : await boundedEmailSend(() => sendVerificationEmail({ to: input.email, url: verifyUrl(origin, locale, token), locale }), "change_email", userId);
+      }
+      return { student, email };
     }
     case "resend_verification": {
       if (!emailDeliveryConfigured()) emailUnavailable();
@@ -392,13 +431,14 @@ export async function runStudentAction(userId: string, input: StudentActionInput
       if (user.emailVerifiedAt) throw new StudentProblem("validation_failed", "This email is already verified.");
       const token = await issueEmailVerificationToken(userId, true).catch(cooldown);
       const locale = user.locale === "zh-CN" ? "zh-CN" : "en-GB";
-      if (!(await trySend(() => sendVerificationEmail({ to: user.email!, url: verifyUrl(origin, locale, token), locale })))) throw new StudentProblem("email_delivery_failed", "The verification email could not be sent. Try again.");
+      // The token is issued above; a delivery problem is a result, not a failed action.
+      const email = await boundedEmailSend(() => sendVerificationEmail({ to: user.email!, url: verifyUrl(origin, locale, token), locale }), "resend_verification", userId);
       const student = await editProductData((current) => {
         const target = findLearner(current, userId);
-        recordEvent(current, { userId, action: "email.verification_sent", actor: input.actor, before: null, after: { email: target.email } });
+        recordEvent(current, { userId, action: "email.verification_sent", actor: input.actor, before: null, after: { email: target.email, emailSent: email.sent } });
         return details(current, target);
       });
-      return { student, email: { sent: true } };
+      return { student, email };
     }
     case "send_password_link": {
       if (!emailDeliveryConfigured()) emailUnavailable();
@@ -413,13 +453,14 @@ export async function runStudentAction(userId: string, input: StudentActionInput
       const token = await issuePasswordResetToken(userId).catch(cooldown);
       const locale = user.locale === "zh-CN" ? "zh-CN" : "en-GB";
       const url = `${origin}/${locale}/portal/reset-password?${new URLSearchParams({ token, returnTo: `/${locale}/account/my-learning` })}`;
-      if (!(await trySend(() => sendPasswordResetEmail({ to: user.email!, url, locale })))) throw new StudentProblem("email_delivery_failed", "The password email could not be sent. Try again.");
+      // The token is issued above; a delivery problem is a result, not a failed action.
+      const email = await boundedEmailSend(() => sendPasswordResetEmail({ to: user.email!, url, locale }), "send_password_link", userId);
       const student = await editProductData((current) => {
         const target = findLearner(current, userId);
-        recordEvent(current, { userId, action: link.kind === "reset" ? "password.reset_link_sent" : "password.setup_link_sent", actor: input.actor, before: null, after: { email: target.email } });
+        recordEvent(current, { userId, action: link.kind === "reset" ? "password.reset_link_sent" : "password.setup_link_sent", actor: input.actor, before: null, after: { email: target.email, emailSent: email.sent } });
         return details(current, target);
       });
-      return { student, email: { sent: true } };
+      return { student, email };
     }
   }
 }

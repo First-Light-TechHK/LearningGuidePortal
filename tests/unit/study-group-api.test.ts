@@ -473,7 +473,7 @@ test("the reminders view requires a session and returns only current reminders",
   assert.equal(body.ok, true);
   assert.equal(body.data.some((item: { body: string }) => item.body === "Weimar 1933 starts in 10 minutes."), true);
   // The reminder names its session, so the sidebar can offer Enter now (deep links 2026-10-30).
-  assert.match(body.data.find((item: { sessionId?: string }) => item.sessionId === sessionId)?.body ?? "", /^Weimar 1933 in the Study Group "Reminder group" starts in/);
+  assert.match(body.data.find((item: { sessionId?: string }) => item.sessionId === sessionId)?.body ?? "", /^Weimar 1933 in Reminder group starts at /);
   assert.equal(body.data.some((item: { body: string }) => item.body === "Not a reminder."), false);
   // Cancelling the Session withdraws the pending reminder from view and storage.
   const cancelled = await call(postCancelSession, `http://localhost/api/study-groups/sessions/${sessionId}/cancel`, {}, token, { sessionId });

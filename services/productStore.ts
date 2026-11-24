@@ -52,6 +52,17 @@ import { applyDataMigrations } from "./dataMigrations";
 import { isValidAccountName, normaliseName, validateAccountName } from "@/lib/nameValidation";
 import { CourseLearningModeError, isCourseLearningMode, isCourseLearningModeContext, type CourseLearningMode, type CourseLearningModeContext, type CourseLearningModePreferences, type CourseLearningModeResult, type CourseLearningModeSelection } from "@/contracts/course-learning-mode";
 import { availableLessonMode, lessonLearningModes } from "@/lib/previewLessonPresentation";
+import { createNotificationInData, ensureNotificationTemplatesInData, recordLegacyNotificationInData } from "./notifications/core";
+import type { NotificationBroadcast, NotificationLogEntry, NotificationTemplate } from "./notifications/types";
+
+/** A notification that cannot be written must never undo or fail a payment step. */
+function notifySafely(data: ProductData, input: Parameters<typeof createNotificationInData>[1]) {
+  try { return createNotificationInData(data, input); }
+  catch (error) {
+    console.error(JSON.stringify({ type: "notifications.hook_failed", templateId: input.templateId, error: error instanceof Error ? error.name : "unknown" }));
+    return null;
+  }
+}
 
 const scrypt = promisify(scryptCallback);
 function productDir() { return path.join(systemRoot(), "learning_guide"); }
@@ -274,6 +285,18 @@ export type ProductNotification = {
   body: string;
   readAt: string | null;
   createdAt: string;
+  // Notification P0 fields (design §2). Older rows keep the bare shape above.
+  /** Subscription | Support | Course | Study group | Announcement (PRD §9.2). */
+  category?: "subscription" | "support" | "course" | "study_group" | "announcement";
+  templateId?: string;
+  broadcastId?: string;
+  buttonText?: string;
+  buttonLink?: string;
+  language?: "en" | "zh";
+  withdrawnAt?: string | null;
+  /** Unique per learner; the same event key never creates a second message. */
+  eventKey?: string;
+  isTest?: boolean;
   // Set on T-10 reminder rows so the reminders view can be checked against
   // the Live Session's current state (BUG-0109). Rows written before this
   // linkage existed carry no sessionId and are never shown as pending
@@ -325,6 +348,9 @@ export type ProductData = {
   studyEvents: ProductStudyEvent[];
   conversations: ProductConversation[];
   notifications: ProductNotification[];
+  notificationTemplates?: NotificationTemplate[];
+  notificationBroadcasts?: NotificationBroadcast[];
+  notificationLog?: NotificationLogEntry[];
   stripeEvents: Array<{ id: string; type: string; processedAt: string }>;
   verificationTokens: ProductToken[];
   passwordResetTokens: ProductToken[];
@@ -438,6 +464,9 @@ function defaultData(): ProductData {
     studyEvents: [],
     conversations: [],
     notifications: [],
+    notificationTemplates: [],
+    notificationBroadcasts: [],
+    notificationLog: [],
     stripeEvents: [],
     verificationTokens: [],
     emailBindingTokens: [],
@@ -466,6 +495,19 @@ function planScope(plan: ProductPlan): NormalisedPlanScope {
   if (plan.scope === "category") return { scope: "category", scopeId: plan.scopeId || plan.category || null };
   if (plan.scope === "everything" || plan.courseId === "*") return { scope: "everything", scopeId: "*" };
   return { scope: "course", scopeId: plan.scopeId || plan.courseId };
+}
+
+/** PRD §13.2 plan_name example: "Everything · 12 months" (device is not part of the copy). */
+export function planDisplayName(plan: ProductPlan) {
+  return plan.name.replace(/\s*·\s*(PC|Mobile)\s*·/i, " · ").trim();
+}
+
+/** scope_name example: "European History" / "Everything". */
+export function planScopeName(plan: ProductPlan, data: ProductData) {
+  const scope = planScope(plan);
+  if (scope.scope === "everything") return "Everything";
+  if (scope.scope === "category") return scope.scopeId || "All courses";
+  return data.courses.find((course) => course.id === scope.scopeId)?.title || scope.scopeId || "Course";
 }
 
 function planCoversCourse(plan: ProductPlan, course: ProductCourse) {
@@ -640,6 +682,10 @@ export async function readProductAggregate() {
     if (!current.accounts) current.accounts = [];
     current.catalogueMigrations ||= [];
     current.dataMigrations ||= [];
+    current.notificationTemplates ||= [];
+    current.notificationBroadcasts ||= [];
+    current.notificationLog ||= [];
+    ensureNotificationTemplatesInData(current);
     current.users.forEach((user) => { user.areasOfInterest ||= []; });
     current.courses.forEach((course) => { course.category ||= "European Humanities"; course.thumbnailPath ??= null; });
     current.plans.forEach((plan) => {
@@ -677,6 +723,7 @@ export async function readProductAggregate() {
 export async function ensureProductData() {
   const current = await readProductAggregate();
   await applyDataMigrations(current);
+  ensureNotificationTemplatesInData(current);
   bindLegacyEntitlements(current);
   return current;
 }
@@ -1737,7 +1784,12 @@ function fulfilDemoPurchase(data: ProductData, userId: string, order: ProductOrd
     });
     data.entitlements = data.entitlements.filter((item) => !(item.userId === userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
-    data.notifications.unshift({ id: id("notification"), userId, title: "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
+    notifySafely(data, {
+      userId,
+      templateId: "SUB_SUCCESS",
+      eventKey: `${order.id}:SUB_SUCCESS`,
+      params: { plan_name: planDisplayName(plan), scope_name: planScopeName(plan, data), valid_to: subscription.validTo, ai_points: plan.aiPoints },
+    });
     return { order, subscription, entitlement };
 }
 
@@ -1769,7 +1821,20 @@ function fulfilUpgrade(data: ProductData, userId: string, order: ProductOrder, t
   const entitlement = entitlementForPlan(userId, targetPlan, "purchase", subscription.validTo, subscription.id);
   data.subscriptions.unshift(subscription);
   data.entitlements.unshift(entitlement);
-  data.notifications.unshift({ id: id("notification"), userId, title: "Subscription upgraded", body: "Your PC Everything access is now available.", readAt: null, createdAt: now() });
+  const sourcePlan = data.plans.find((plan) => plan.id === source.planId);
+  notifySafely(data, {
+    userId,
+    templateId: "SUB_UPGRADE_SUCCESS",
+    eventKey: `${order.id}:SUB_UPGRADE_SUCCESS`,
+    params: {
+      old_scope_name: sourcePlan ? planScopeName(sourcePlan, data) : "Previous plan",
+      new_scope_name: planScopeName(targetPlan, data),
+      amount_paid: order.amountMinor,
+      renewal_amount: targetPlan.amountMinor,
+      new_valid_to: subscription.validTo,
+      ai_points: targetPlan.aiPoints,
+    },
+  });
   return { order, subscription, entitlement };
 }
 
@@ -1991,7 +2056,12 @@ export async function convertStripeTrial(input: { subscriptionId: string; invoic
     data.entitlements = data.entitlements.filter((item) => !(item.userId === trial.userId && item.state === "active" && entitlementOverlapsPlan(data, item, plan)));
     data.entitlements.unshift(entitlement);
     data.orders.unshift(order);
-    data.notifications.unshift({ id: id("notification"), userId: trial.userId, title: "Subscription active", body: "Your trial has converted and course access continues.", readAt: null, createdAt: now() });
+    notifySafely(data, {
+      userId: trial.userId,
+      templateId: "SUB_SUCCESS",
+      eventKey: `${order.id}:SUB_SUCCESS`,
+      params: { plan_name: planDisplayName(plan), scope_name: planScopeName(plan, data), valid_to: subscription.validTo, ai_points: plan.aiPoints },
+    });
     return order;
   });
 }
@@ -2033,7 +2103,12 @@ export async function applyStripePaidInvoice(input: { subscriptionId: string; in
     }
     const order: ProductOrder = { id: id("order"), userId: subscription.userId, planId: plan.id, quoteId: `invoice_${input.invoiceId}`, amountMinor: input.amountMinor, currency: plan.currency, servicePeriodStart: start, servicePeriodEnd: end, status: "paid", paymentMode: "stripe", kind: "purchase", stripeCheckoutSessionId: null, stripeSubscriptionId: input.subscriptionId, stripePaymentIntentId: input.paymentIntentId || null, stripeInvoiceId: input.invoiceId, lastStripeStatus: "paid", lastSyncedAt: now(), createdAt: now() };
     data.orders.unshift(order);
-    data.notifications.unshift({ id: id("notification"), userId: subscription.userId, title: "Subscription renewed", body: "Your subscription payment was successful and course access continues.", readAt: null, createdAt: now() });
+    notifySafely(data, {
+      userId: subscription.userId,
+      templateId: "SUB_RENEWAL_SUCCESS",
+      eventKey: `${subscription.id}:${input.invoiceId}:SUB_RENEWAL_SUCCESS`,
+      params: { plan_name: planDisplayName(plan), new_valid_to: end, renewal_amount: input.amountMinor, ai_points: plan.aiPoints },
+    });
     return order;
   });
 }
@@ -2060,6 +2135,7 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === subscriptionId && item.source === "purchase" && item.state !== "expired");
     if (!subscription) return null;
     if (subscription.state === "grace") return subscription;
+    const periodEnd = subscription.validTo;
     const graceEnd = new Date();
     graceEnd.setUTCDate(graceEnd.getUTCDate() + TRIAL_DAYS);
     subscription.state = "grace";
@@ -2067,7 +2143,18 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
     subscription.validTo = graceEnd.toISOString();
     const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription) && item.state === "active");
     if (entitlement) entitlement.validTo = subscription.validTo;
-    data.notifications.unshift({ id: id("notification"), userId: subscription.userId, title: "Payment requires attention", body: "Your course access remains available while payment is resolved.", readAt: null, createdAt: now() });
+    const plan = data.plans.find((item) => item.id === subscription.planId);
+    notifySafely(data, {
+      userId: subscription.userId,
+      templateId: "SUB_RENEWAL_FAILED",
+      eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
+      params: {
+        plan_name: plan ? planDisplayName(plan) : "subscription",
+        scope_name: plan ? planScopeName(plan, data) : "",
+        renewal_amount: plan?.amountMinor ?? 0,
+        grace_end_date: graceEnd.toISOString(),
+      },
+    });
     return subscription;
   });
 }
@@ -2196,11 +2283,18 @@ function cancelSubscriptionInData(data: ProductData, userId: string, subscriptio
       subscription.state = "trial_canceled";
       const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription) && item.validTo === subscription.validTo);
       if (entitlement) entitlement.state = "expired";
+      data.notifications.unshift({ id: id("notification"), userId, title: "Subscription updated", body: "Trial access has ended.", readAt: null, createdAt: now() });
     } else {
       subscription.state = "cancel_at_period_end";
       subscription.cancelAtPeriodEnd = true;
+      const plan = data.plans.find((item) => item.id === subscription.planId);
+      notifySafely(data, {
+        userId,
+        templateId: "SUB_AUTORENEW_CANCELLED",
+        eventKey: `${subscription.id}:${subscription.validTo}:SUB_AUTORENEW_CANCELLED`,
+        params: { plan_name: plan ? planDisplayName(plan) : "subscription", valid_to: subscription.validTo },
+      });
     }
-    data.notifications.unshift({ id: id("notification"), userId, title: "Subscription updated", body: subscription.source === "trial" ? "Trial access has ended." : "Your subscription will end at the current period.", readAt: null, createdAt: now() });
     return subscription;
 }
 
@@ -2221,7 +2315,7 @@ function resumeSubscriptionInData(data: ProductData, userId: string, subscriptio
     subscription.cancelAtPeriodEnd = false;
     const entitlement = data.entitlements.find((item) => entitlementMatchesSubscription(item, subscription) && item.validTo === subscription.validTo);
     if (entitlement && subscription.source === "trial") entitlement.state = "active";
-    data.notifications.unshift({ id: id("notification"), userId, title: "Subscription resumed", body: "Your course access remains available until the current period ends.", readAt: null, createdAt: now() });
+    // PRD §5: turning auto-renewal back on sends no notification.
     return subscription;
 }
 
@@ -2641,6 +2735,18 @@ const STUDY_GROUP_REMINDER_TITLES = new Set(["Live Session reminder", "直播课
 // Session are shown; older unlinked rows had nowhere to point.
 const STUDY_GROUP_RESCHEDULE_TITLES = new Set(["Live Session rescheduled", "直播课时间已更改"]);
 
+// Notification P0 rows carry their template id; rows written before the
+// catalogue route keep the exact per-locale titles. Both count as the strip's
+// reminder / rescheduled notices, and neither withdraws a booked or cancelled
+// notice.
+function isStudyGroupReminderRow(item: { title: string; templateId?: string }) {
+  return item.templateId === "LIVE_SESSION_REMINDER" || STUDY_GROUP_REMINDER_TITLES.has(item.title);
+}
+
+function isStudyGroupRescheduleRow(item: { title: string; templateId?: string }) {
+  return item.templateId === "LIVE_SESSION_RESCHEDULED" || STUDY_GROUP_RESCHEDULE_TITLES.has(item.title);
+}
+
 export type StudyGroupReminderKind = "reminder" | "rescheduled";
 
 export async function listStudyGroupReminders(
@@ -2653,7 +2759,7 @@ export async function listStudyGroupReminders(
   const seenSessionIds = new Set<string>();
   const pendingReminderFor = async (sessionId: string) => {
     for (const row of data.notifications) {
-      if (row.userId !== userId || row.sessionId !== sessionId || !STUDY_GROUP_REMINDER_TITLES.has(row.title)) continue;
+      if (row.userId !== userId || row.sessionId !== sessionId || !isStudyGroupReminderRow(row)) continue;
       if (await isPendingReminder({ body: row.body, createdAt: row.createdAt, sessionId, kind: "reminder" })) return true;
     }
     return false;
@@ -2661,9 +2767,9 @@ export async function listStudyGroupReminders(
   for (const item of data.notifications) {
     if (reminders.length >= 5) break;
     if (item.userId !== userId) continue;
-    const kind: StudyGroupReminderKind | null = STUDY_GROUP_REMINDER_TITLES.has(item.title)
+    const kind: StudyGroupReminderKind | null = isStudyGroupReminderRow(item)
       ? "reminder"
-      : STUDY_GROUP_RESCHEDULE_TITLES.has(item.title) && item.sessionId ? "rescheduled" : null;
+      : isStudyGroupRescheduleRow(item) && item.sessionId ? "rescheduled" : null;
     if (!kind) continue;
     // One row per Session. A pending T-10 reminder replaces the moved Start
     // Time's notice whichever was written last: a move inside the reminder
@@ -2695,6 +2801,9 @@ export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyA
   return editData((data) => {
     const remaining = data.notifications.filter((item) => {
       if (!item.sessionId || !sessionIds.has(item.sessionId)) return true;
+      // Only the reminder and moved-time notices are withdrawn here; a booked
+      // or cancelled notice for the same Session is a different message.
+      if (!isStudyGroupReminderRow(item) && !isStudyGroupRescheduleRow(item)) return true;
       if (input.userId && item.userId !== input.userId) return true;
       if (sentBefore !== null && !(Date.parse(item.createdAt) < sentBefore)) return true;
       return false;
@@ -2706,11 +2815,7 @@ export async function withdrawStudyGroupReminders(input: { sessionIds: ReadonlyA
 }
 
 export async function recordUserNotification(userId: string, title: string, body: string, sessionId?: string, copies?: ProductNotification["copies"]) {
-  return editData((data) => {
-    const notification: ProductNotification = { id: id("notification"), userId, title, body, readAt: null, createdAt: now(), ...(sessionId ? { sessionId } : {}), ...(copies ? { copies } : {}) };
-    data.notifications.unshift(notification);
-    return notification;
-  });
+  return editData((data) => recordLegacyNotificationInData(data, { userId, title, body, sessionId, copies }));
 }
 
 /** The language the user last chose (the header switch, Settings). Mail and the AI Tutor use it. */
@@ -2937,7 +3042,20 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           listAmountMinor: credit.listAmountMinor, taxAmountMinor: event.taxAmountMinor || 0,
           servicePeriodStart: event.periodStart, servicePeriodEnd: event.periodEnd, lastStripeStatus: "paid", lastSyncedAt: now(),
           upgradeCancellation: { state: "pending", attempts: 0, nextAttemptAt: now() } });
-        data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Subscription upgraded", body: "Your new Everything subscription is active.", readAt: null, createdAt: now() });
+        const sourcePlan = data.plans.find(item => item.id === source.planId);
+        notifySafely(data, {
+          userId: order.userId,
+          templateId: "SUB_UPGRADE_SUCCESS",
+          eventKey: `${order.id}:SUB_UPGRADE_SUCCESS`,
+          params: {
+            old_scope_name: sourcePlan ? planScopeName(sourcePlan, data) : "Previous plan",
+            new_scope_name: planScopeName(plan, data),
+            amount_paid: event.amountMinor,
+            renewal_amount: plan.amountMinor,
+            new_valid_to: event.periodEnd,
+            ai_points: plan.aiPoints,
+          },
+        });
       }
       data.stripeEvents.push({ id: event.id, type: event.type, processedAt: now() });
       return { duplicate: false };
@@ -2973,7 +3091,16 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           subscription = subscriptionForPlan(order.userId, plan, event.trial ? "trial" : "purchase", event.periodStart, event.periodEnd, { stripeSubscriptionId: event.subscriptionId, stripeCustomerId: event.customerId });
           data.subscriptions.unshift(subscription);
           data.entitlements.push(entitlementForPlan(order.userId, plan, subscription.source, event.periodEnd, subscription.id));
-          data.notifications.unshift({ id: id("notification"), userId: order.userId, title: event.trial ? "Trial activated" : "Purchase complete", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
+          if (event.trial) {
+            data.notifications.unshift({ id: id("notification"), userId: order.userId, title: "Trial activated", body: "Your course access is now available in My Learning.", readAt: null, createdAt: now() });
+          } else {
+            notifySafely(data, {
+              userId: order.userId,
+              templateId: "SUB_SUCCESS",
+              eventKey: `${order.id}:SUB_SUCCESS`,
+              params: { plan_name: planDisplayName(plan), scope_name: planScopeName(plan, data), valid_to: event.periodEnd, ai_points: plan.aiPoints },
+            });
+          }
         }
         order.stripeCheckoutSessionId = event.sessionId;
         order.stripeSubscriptionId = event.subscriptionId;
@@ -2993,7 +3120,8 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
           if (!event.periodStart || !event.periodEnd) throw new Error("Invoice period is missing.");
           const plan = data.plans.find(item => item.id === subscription!.planId);
           if (!plan) throw new Error("Plan not found.");
-          if (subscription.source === "trial") {
+          const wasTrial = subscription.source === "trial";
+          if (wasTrial) {
             data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.state = "expired"; });
             subscription.source = "purchase";
           }
@@ -3018,22 +3146,62 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
             entitlement.state = "active";
             entitlement.validTo = event.periodEnd;
           }
+          if (wasTrial) {
+            notifySafely(data, {
+              userId: subscription.userId,
+              templateId: "SUB_SUCCESS",
+              eventKey: `${paid.id}:SUB_SUCCESS`,
+              params: { plan_name: planDisplayName(plan), scope_name: planScopeName(plan, data), valid_to: event.periodEnd!, ai_points: plan.aiPoints },
+            });
+          } else if (event.billingReason !== "subscription_create") {
+            notifySafely(data, {
+              userId: subscription.userId,
+              templateId: "SUB_RENEWAL_SUCCESS",
+              eventKey: `${subscription.id}:${event.invoiceId}:SUB_RENEWAL_SUCCESS`,
+              params: { plan_name: planDisplayName(plan), new_valid_to: event.periodEnd!, renewal_amount: event.amountMinor!, ai_points: plan.aiPoints },
+            });
+          }
         }
       } else if (!subscription.supersededBy && event.status === "open" && event.periodEnd && new Date(event.periodEnd) > new Date(subscription.validTo)) {
         // Stable grace boundary; retries must never extend access again.
+        const periodEnd = subscription.validTo;
         const end = new Date(new Date(event.periodStart || subscription.validTo).getTime() + TRIAL_DAYS * 86400000).toISOString();
         subscription.state = "grace";
         subscription.graceEndsAt = end;
         subscription.validTo = end;
         data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.validTo = end; });
+        if (subscription.source === "purchase") {
+          const plan = data.plans.find(item => item.id === subscription!.planId);
+          notifySafely(data, {
+            userId: subscription.userId,
+            templateId: "SUB_RENEWAL_FAILED",
+            eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
+            params: {
+              plan_name: plan ? planDisplayName(plan) : "subscription",
+              scope_name: plan ? planScopeName(plan, data) : "",
+              renewal_amount: plan?.amountMinor ?? event.amountMinor ?? 0,
+              grace_end_date: end,
+            },
+          });
+        }
       }
     }
     if ((event.action === "subscription" || event.subscriptionStatus) && subscription && !subscription.supersededBy) {
       const remoteStatus = event.subscriptionStatus || event.status;
       subscription.cancelAtPeriodEnd = Boolean(event.cancelAtPeriodEnd);
       if (["canceled", "unpaid", "incomplete_expired", "paused"].includes(remoteStatus || "")) {
+        const expiredDate = subscription.validTo;
         subscription.state = "expired";
         data.entitlements.filter(item => entitlementMatchesSubscription(item, subscription!)).forEach(item => { item.state = "expired"; });
+        if (subscription.source === "purchase") {
+          const plan = data.plans.find(item => item.id === subscription!.planId);
+          notifySafely(data, {
+            userId: subscription.userId,
+            templateId: "SUB_EXPIRED",
+            eventKey: `${subscription.id}:SUB_EXPIRED:${expiredDate}`,
+            params: { plan_name: plan ? planDisplayName(plan) : "subscription", expired_date: expiredDate },
+          });
+        }
       } else if (["active", "trialing"].includes(remoteStatus || "") && subscription.state !== "trial_canceled" && subscription.state !== "grace") {
         // An update alone never grants or extends paid access.
         subscription.state = event.cancelAtPeriodEnd ? "cancel_at_period_end" : subscription.state === "expired" ? "expired" : "active";
