@@ -267,6 +267,19 @@ test("test send creates a [TEST] in-app message for the matching learner and is 
   assert.equal(inbox.unreadCount, 0);
 });
 
+test("an in-app test message links to this site, not to the sample domain (R-04)", async () => {
+  const user = await verifiedUser(store, "ops-test-link@example.test");
+  for (const [id, language, path] of [["SUB_RENEWAL_REMINDER", "en", "/en-GB/my-learning/subscription"], ["SUB_RENEWAL_REMINDER", "zh", "/zh-CN/my-learning/subscription"]] as const) {
+    const response = await testRoute.POST(request(`/api/integration/notifications/templates/${id}/test`, TOKEN, {
+      channel: "in_app", language, operatorEmail: user.email, operator: "ops@example.test",
+    }), params(id));
+    const body = await response.json();
+    const data = await store.ensureProductData();
+    const notification = data.notifications.find((item) => item.id === body.notificationId)!;
+    assert.equal(notification.buttonLink, path);
+  }
+});
+
 test("test send accepts unsaved copy and a language, and errors for a missing learner account", async () => {
   const user = await verifiedUser(store, "ops-test-unsaved@example.test");
   const response = await testRoute.POST(request("/api/integration/notifications/templates/SUB_RENEWAL_FAILED/test", TOKEN, {

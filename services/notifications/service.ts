@@ -134,6 +134,8 @@ export async function sendTemplateTest(input: TemplateTestInput): Promise<Templa
     zh: input.copy?.zh ?? template.zh,
   };
   const params = { ...sampleTemplateParams(template.id), ...(input.params || {}) };
+  // An in-app test lives on this site, so its button stays site-relative instead of using the sample domain.
+  if (input.channel === "in_app" && !input.params?.app_url) delete params.app_url;
   let rendered;
   try {
     rendered = renderTemplate(working, {
