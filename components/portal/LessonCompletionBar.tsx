@@ -67,7 +67,6 @@ export function LessonCompletionBar({ onCompleted, locale, courseId, lessonId, l
   const showBar = visible || completed || initialCompleted;
   return <>{showBar && <section className={`${styles.bar} ${actionOnly ? styles.actionOnly : ""}`} aria-label={copy.label} data-completed={completed || initialCompleted}>
     {completed || initialCompleted ? <span className={styles.completed}><Image src="/portal/lesson-complete/check-filled.svg" width={16} height={16} alt=""/>{messages.learning.completed}</span> : <>
-      <Image src="/portal/lesson-complete/check-circle.svg" width={16} height={16} alt=""/>
       {!actionOnly && <><span className={styles.percent}>{percent}%</span><span className={styles.divider} aria-hidden="true"/></>}
       <button type="button" className={styles.complete} disabled={busy} onClick={() => void complete()}>{busy ? messages.learning.processing : copy.markComplete}</button>
     </>}
