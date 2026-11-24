@@ -18,11 +18,15 @@
 // E2/E3/E5). Existing secrets are reused, never overwritten; missing ones fall back to
 // the source environment's values exactly like UAT mirrored SIT.
 //
-// Course-only partition (owner 2026-11-16, revised 2026-11-19; Admin
-// deploy/sandbox.example.env §三, docs/sandbox/provisioning-request.md §3.1): the
-// Sandbox Portal serves course browsing/login/payment/storage/session only. AI Tutor,
-// Helpdesk, Study Group/LiveKit and catalogue-pull integration variables are neither
-// written to the Sandbox nor read or copied out of the source environment.
+// Sandbox open-all (owner 2026-11-24): Sandbox is no longer a course-only partition.
+// AI Tutor, Helpdesk, Study Group/LiveKit and catalogue-pull integration variables are
+// treated like SIT/UAT: non-secret values are copied from the source template, and
+// secret values are reused from learning-guide/sandbox/* when pre-created (an existing
+// Sandbox secret always wins). Environment-specific *_BASE_URL values are never copied:
+// every one is set to a Sandbox origin (sandboxBaseUrls), and KS_TUTOR_API_KEY reuses the
+// Admin Sandbox admin_api_key. Provider keys that are still absent are simply not
+// written, so the feature degrades (Helpdesk 503, AI endpoints unavailable); the script
+// never fabricates a key and never fails the provision because a key arrives later.
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, mkdtempSync, cpSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
@@ -37,6 +41,22 @@ const region = 'ap-southeast-1';
 
 const sandboxOrigin = 'https://sandbox.ilovelearningguide.com';
 const sandboxAdminOrigin = 'https://admin.sandbox.ilovelearningguide.com';
+
+// A Sandbox service may only ever call itself. These are the only values an
+// environment-specific *_BASE_URL may take in the Sandbox tier; deployVariablesFor
+// drops every inherited *_BASE_URL first, then the tier applies this table. A key
+// missing from the table fails the module-load invariant below (fail closed) instead
+// of silently inheriting a UAT/SIT address. Semantics follow deploy/sandbox.example.env
+// (LearningGuideAdmin): Admin-facing URLs point at the Sandbox Admin host, Portal-facing
+// URLs at the Sandbox Portal host.
+const sandboxBaseUrls = Object.freeze({
+  ADMIN_PORTAL_BASE_URL: sandboxAdminOrigin,
+  KS_TUTOR_BASE_URL: sandboxAdminOrigin,
+  ADMIN_HELPDESK_BASE_URL: sandboxAdminOrigin,
+  PORTAL_HELPDESK_BASE_URL: sandboxOrigin,
+  PORTAL_STUDENTS_BASE_URL: sandboxOrigin,
+  PORTAL_NOTIFICATIONS_BASE_URL: sandboxOrigin
+});
 
 export const tiers = {
   uat: {
@@ -60,7 +80,7 @@ export const tiers = {
     releaseHint: 'scripts/release-uat.mjs',
     // No cross-namespace secrets: every secret lives in learning-guide/uat/*.
     sharedSecrets: {},
-    // UAT keeps today's OpenRouter site header; Sandbox never gets OPENROUTER_*.
+    // UAT keeps today's OpenRouter site header; Sandbox sets its own origin below.
     deployVariables: { OPENROUTER_SITE_URL: 'https://uat.ilovelearningguide.com' }
   },
   sandbox: {
@@ -89,27 +109,44 @@ export const tiers = {
     // Sandbox never copies SIT curriculum: content arrives through authoring and packages.
     seedCurriculumFromSit: false,
     releaseHint: 'the Sandbox release workflow',
-    // Course-only partition (owner 2026-11-16, revised 2026-11-19): AI Tutor,
-    // Helpdesk, Study Group/LiveKit and catalogue-pull credentials are not part of
-    // the Sandbox Portal. Keys matching this pattern are never written to the tier,
-    // never read from the source environment, and never attached as existing
-    // Sandbox secrets. Keep it aligned with Admin deploy/sandbox.example.env §三.
-    disabledKeyPattern: /^(OPENROUTER_|KS_TUTOR_|ADMIN_HELPDESK_|PORTAL_HELPDESK_|PORTAL_STUDENTS_|LIVEKIT_|STUDY_GROUP_|PORTAL_INTEGRATION_)/,
+    // Sandbox open-all (owner 2026-11-24): no disabled-key pattern. AI Tutor,
+    // Helpdesk, Study Group/LiveKit and catalogue-pull variables flow through exactly
+    // like SIT/UAT; a value the source/operator does not provide is skipped and the
+    // feature degrades, never fabricated.
+    // Environment-specific *_BASE_URL values are the one exception: they are never
+    // inherited (ownsBaseUrls + sandboxBaseUrls below), so Sandbox cannot call UAT.
     // Portal authenticates to Admin with the Admin Sandbox AUTH_TOKEN (provisioning
-    // request §3.1/§3.3 pairing; course catalogue projection /api/portal/v1/**).
-    // It must reference the Admin Sandbox namespace, never a copied UAT token, or
-    // every Portal -> Admin catalogue call answers 401.
+    // request §3.1/§3.3 pairing; course catalogue projection /api/portal/v1/** and the
+    // learner runtime /api/user/**). It must reference the Admin Sandbox namespace,
+    // never a copied UAT token, or every Portal -> Admin call answers 401; KS_TUTOR_API_KEY
+    // is the same Admin token because /api/user/** validates X-API-Key against AUTH_TOKEN.
     sharedSecrets: {
-      ADMIN_PORTAL_API_TOKEN: 'learning-guide/admin/sandbox/admin_api_key'
+      ADMIN_PORTAL_API_TOKEN: 'learning-guide/admin/sandbox/admin_api_key',
+      KS_TUTOR_API_KEY: 'learning-guide/admin/sandbox/admin_api_key'
     },
+    // Sandbox owns every base URL; see deployVariablesFor. Inherited UAT/SIT addresses
+    // are dropped before the tier variables below are applied.
+    ownsBaseUrls: true,
     deployVariables: {
       // ADMIN_HOSTS defaults to the admin.ilovelearningguide.com hosts; Sandbox must
       // serve its own admin host and route every Admin call to the Sandbox Admin.
       ADMIN_HOSTS: new URL(sandboxAdminOrigin).hostname,
-      ADMIN_PORTAL_BASE_URL: sandboxAdminOrigin
+      // Like UAT, Sandbox sends its own origin as the OpenRouter site header once the
+      // AI Tutor key is configured. Not a key: it cannot make AI work by itself.
+      OPENROUTER_SITE_URL: sandboxOrigin,
+      ...sandboxBaseUrls
     }
   }
 };
+
+// Fail closed at load time: every Sandbox base URL must be the Sandbox origin defined
+// above. A missing/renamed key would otherwise let the service start with no address
+// (or, worse, a future edit could reintroduce a UAT value) without an obvious failure.
+for (const [key, value] of Object.entries(sandboxBaseUrls)) {
+  if (!/_BASE_URL$/.test(key) || tiers.sandbox.deployVariables[key] !== value) {
+    throw new Error(`Sandbox ${key} must be fixed to ${value}; inherited source addresses are not allowed`);
+  }
+}
 
 export function keyDisabledFor(tier, key) {
   return Boolean(tier.disabledKeyPattern?.test(key));
@@ -118,22 +155,33 @@ export function keyDisabledFor(tier, key) {
 /**
  * Runtime variables copied from the source service template into the new service.
  * Secret values never travel as plain variables, fixed deployment keys are set
- * explicitly below, and a tier's disabled keys (Sandbox course-only partition)
- * are dropped before they can reach the environment.
+ * explicitly below, and a tier's disabled keys (if it declares any) are dropped
+ * before they can reach the environment. A tier that owns its base URLs
+ * (ownsBaseUrls, currently Sandbox) also drops every inherited *_BASE_URL, so an
+ * environment-specific address is always taken from the tier table, never the source.
  */
 const SECRET_OR_FIXED_KEY = /(SECRET|PASSWORD|TOKEN|DATABASE_URL|SMTP_PASS|OPENROUTER_API_KEY|WECHAT_APP_ID|APP_VERSION|APP_ENV|NEXT_PUBLIC_APP_URL|OPENROUTER_SITE_URL|DATA_S3_|STORAGE_BACKEND)/;
+const ENVIRONMENT_BASE_URL = /_BASE_URL$/;
 export function deployVariablesFor(tier, runtimeVariables) {
   return Object.fromEntries(
-    Object.entries(runtimeVariables).filter(([key]) => !SECRET_OR_FIXED_KEY.test(key) && !keyDisabledFor(tier, key))
+    Object.entries(runtimeVariables).filter(([key]) =>
+      !SECRET_OR_FIXED_KEY.test(key)
+      && !keyDisabledFor(tier, key)
+      && !(tier.ownsBaseUrls && ENVIRONMENT_BASE_URL.test(key))
+    )
   );
 }
 
 /**
  * Source credential keys copied into the tier namespace (existing secrets are reused).
- * A disabled tier key is skipped, so Sandbox never copies AI/Helpdesk credentials out
- * of UAT while UAT keeps its existing OpenRouter secret.
+ * Every tier copies the same keys: Sandbox is no longer a course-only partition, so an
+ * AI/Helpdesk credential the source provides is copied like UAT; one it does not
+ * provide is skipped below and the feature degrades.
  */
 const CREDENTIAL_KEYS = ['GOOGLE_CLIENT_SECRET','WECHAT_APP_ID','WECHAT_APP_SECRET','OPENROUTER_API_KEY','STRIPE_SECRET_KEY','SMTP_PASS','DOCUMENTS_AWS_ACCESS_KEY_ID','DOCUMENTS_AWS_SECRET_ACCESS_KEY'];
+// Provider credentials that may legitimately be absent (AI Tutor key added by ops
+// later, optional document storage). Missing ones are skipped, never fabricated.
+const OPTIONAL_SOURCE_CREDENTIALS = new Set(['OPENROUTER_API_KEY','DOCUMENTS_AWS_ACCESS_KEY_ID','DOCUMENTS_AWS_SECRET_ACCESS_KEY']);
 export function credentialCopyKeysFor(tier) {
   return CREDENTIAL_KEYS.filter((key) => !keyDisabledFor(tier, key));
 }
@@ -210,7 +258,7 @@ const source = aws('apprunner', 'describe-service', { ServiceArn: sourceEnvironm
 const config = source.SourceConfiguration.CodeRepository.CodeConfiguration.CodeConfigurationValues;
 const original = { ...config.RuntimeEnvironmentVariables };
 for (const [key, arn] of Object.entries(config.RuntimeEnvironmentSecrets || {})) {
-  // Disabled keys are never read out of the source environment (course-only Sandbox).
+  // Disabled keys (if a tier declares any) are never read out of the source environment.
   if (keyDisabledFor(tier, key)) continue;
   original[key] = aws('secretsmanager', 'get-secret-value', { SecretId: arn }).SecretString;
 }
@@ -233,7 +281,7 @@ if (!existingSession) secret('SESSION_SECRET', randomBytes(48).toString('hex'));
 else secretArns.SESSION_SECRET = existingSession.ARN;
 for (const key of credentialCopyKeysFor(tier)) {
   if (!original[key]) {
-    if (key.startsWith('DOCUMENTS_AWS_')) continue;
+    if (OPTIONAL_SOURCE_CREDENTIALS.has(key)) continue;
     throw new Error(`Source credential missing: ${key}`);
   }
   secret(key, original[key]);
@@ -374,7 +422,7 @@ if (process.argv.includes('--deploy')) {
   // Ensure every secret key used by the source template is present in this tier.
   for (const key of Object.keys(config.RuntimeEnvironmentSecrets || {})) {
     if (tier.sharedSecrets[key]) continue;
-    // An existing Sandbox-namespace secret for a disabled module is left unattached.
+    // An existing tier-namespace secret for a disabled key is left unattached.
     if (keyDisabledFor(tier, key)) continue;
     if (!secretArns[key]) {
       const Name = `${tier.secretNamespace}/${key.toLowerCase()}`;

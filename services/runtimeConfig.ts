@@ -101,9 +101,11 @@ export function runtimeConfiguration() {
   if (production && !google) required.push("GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET");
   if (production && !wechat) required.push("WECHAT_APP_ID + WECHAT_APP_SECRET");
   if (emailVerification && !email) required.push("SMTP_HOST + SMTP_USER + SMTP_PASS");
-  // Course-only Sandbox (owner partition 2026-11-16/19): the Sandbox Portal is
-  // deployed without the AI Tutor / OpenRouter configuration, so OpenRouter must
-  // not gate readiness there. Every other managed environment keeps the check.
+  // Sandbox open-all (owner 2026-11-24): Sandbox may carry the AI Tutor / OpenRouter
+  // configuration and it takes effect when present (see aiTutor below). Provider keys
+  // are installed by ops after provisioning, so a missing key must degrade the AI
+  // Tutor rather than gate /api/health (App Runner's health check) and take the whole
+  // Sandbox down. SIT/UAT/PROD keep the hard readiness requirement.
   if (production && appEnvironment() !== "SANDBOX" && !openRouter) required.push("OPENROUTER_API_KEY");
   if ((google || wechat) && !sessionSecret) required.push("SESSION_SECRET (at least 32 characters)");
   return {

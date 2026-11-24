@@ -110,9 +110,9 @@ test("SANDBOX is managed: HTTPS, session and verification checks cannot be skipp
       assert.ok(missing.includes(item), `missing ${JSON.stringify(item)} in ${JSON.stringify(missing)}`);
     }
 
-    // Course-only Sandbox (owner partition 2026-11-16/19): the Sandbox Portal is
-    // deployed without the AI Tutor / OpenRouter configuration, so OpenRouter must
-    // never gate readiness there.
+    // Sandbox open-all (owner 2026-11-24): AI config is allowed but optional. A
+    // missing OpenRouter key degrades the AI Tutor; it must not gate readiness,
+    // because /api/health is App Runner's health check and ops installs keys later.
     assert.equal(missing.includes("OPENROUTER_API_KEY"), false, JSON.stringify(missing));
   });
 });
@@ -146,10 +146,19 @@ test("a fully configured SANDBOX reports ready with every managed requirement pr
     assert.equal(configuration.managed, true);
     assert.equal(configuration.storage, "postgresql+s3");
     assert.equal(configuration.payment.configured, true);
-    // Ready without OpenRouter: the Sandbox runs the course-only partition and the
-    // AI Tutor is reported as absent, not as a readiness failure.
+    // Ready without OpenRouter: AI/Helpdesk config is optional in Sandbox, so the
+    // AI Tutor is reported as absent (degraded), not as a readiness failure.
     assert.equal(configuration.aiTutor, "missing");
     assert.equal(runtimeConfiguration().missing.includes("OPENROUTER_API_KEY"), false);
+  });
+});
+
+test("SANDBOX uses the AI Tutor configuration when it is provided, like SIT/UAT", () => {
+  withEnvironment({ ...sandboxConfiguration(), OPENROUTER_API_KEY: "sk-or-test-only" }, () => {
+    const configuration = runtimeConfiguration();
+    assert.equal(configuration.aiTutor, "configured");
+    assert.equal(configuration.ready, true);
+    assert.equal(configuration.missing.includes("OPENROUTER_API_KEY"), false);
   });
 });
 
@@ -159,7 +168,7 @@ test("other managed environments still require OpenRouter", () => {
     assert.equal(configuration.managed, true);
     assert.ok(
       configuration.missing.includes("OPENROUTER_API_KEY"),
-      "removing the Sandbox requirement must not waive it for UAT/SIT/PROD"
+      "Sandbox's optional AI config must not waive the requirement for UAT/SIT/PROD"
     );
   });
 });
