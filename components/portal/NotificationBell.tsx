@@ -85,7 +85,17 @@ function NotificationBellContent({ locale }: { locale: Locale }) {
   const showLoading = !loaded && !failed;
   // A failed refresh while data is shown replaces the list; the badge keeps its last value.
 
-  return <div className={s.bell} onKeyDown={(event) => { if (event.key === "Escape" && open) { setOpen(false); trigger.current?.focus(); } }}>
+  function onKeyDown(event: React.KeyboardEvent) {
+    if (!open) return;
+    if (event.key === "Escape") { setOpen(false); trigger.current?.focus(); return; }
+    if (event.key !== "Tab" || !panel.current?.contains(event.target as Node)) return;
+    // The dropdown library closes the panel on every Tab. Keep it open while focus moves inside, and close it at either end.
+    event.nativeEvent.stopPropagation();
+    const stops = panel.current.querySelectorAll("a, button");
+    if (event.target === stops[event.shiftKey ? 0 : stops.length - 1]) { event.preventDefault(); setOpen(false); trigger.current?.focus(); }
+  }
+
+  return <div className={s.bell} onKeyDown={onKeyDown}>
     <Dropdown
       trigger={["click"]} open={open} placement="bottomRight" destroyOnHidden
       align={{ offset: [shift, 12] }} classNames={{ root: s.dropdownRoot }}

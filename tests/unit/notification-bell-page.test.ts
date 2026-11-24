@@ -126,6 +126,77 @@ test("Escape closes the panel and returns focus to the bell; the unread event up
   await page.close();
 });
 
+test("the 99+ badge does not cover the avatar at width 390 (R-07)", async () => {
+  for (const width of [390, 1440]) {
+    const { page } = await open("en-GB", { unreadCount: 120, items: rows(), fail: false }, width);
+    await settle(page);
+    const box = await page.evaluate(() => {
+      const badge = document.querySelector("[class*='badge']")!.getBoundingClientRect();
+      const avatar = document.querySelector(".account-menu-trigger")!.getBoundingClientRect();
+      return { badgeRight: badge.right, avatarLeft: avatar.left, badgeLeft: badge.left, width: innerWidth };
+    });
+    assert.ok(box.badgeRight <= box.avatarLeft, `badge clears the avatar at ${width} ${JSON.stringify(box)}`);
+    assert.ok(box.badgeRight <= box.width, `badge stays on screen at ${width}`);
+    await page.close();
+  }
+});
+
+test("five rows show in full when a title wraps to two lines, and the panel stays within the viewport (R-06)", async () => {
+  const body = "A body that runs on for more than one line so that the two-line preview is used in every row of the dropdown panel.";
+  const wrapped = rows().map((row, index) => ({ ...row, body, ...(index === 1 ? { title: "A title that is long enough to wrap onto a second line inside the dropdown panel" } : {}) }));
+  for (const height of [900, 600]) {
+    const { page } = await open("en-GB", { unreadCount: 3, items: wrapped, fail: false });
+    await page.setViewportSize({ width: 1440, height });
+    await bell(page).click();
+    const panel = page.getByRole("region", { name: "Notifications" });
+    await panel.locator("li").nth(4).waitFor();
+    await settle(page);
+    const metrics = await page.evaluate(() => {
+      const list = document.querySelector("section[aria-label] ul")!;
+      const box = document.querySelector("section[aria-label]")!.getBoundingClientRect();
+      return { hidden: list.scrollHeight - list.clientHeight, bottom: box.bottom, height: innerHeight };
+    });
+    assert.ok(metrics.bottom <= metrics.height, `the panel fits the viewport ${JSON.stringify(metrics)}`);
+    if (height === 900) assert.equal(metrics.hidden, 0, `all five rows are fully visible ${JSON.stringify(metrics)}`);
+    await page.close();
+  }
+});
+
+test("keyboard: Enter opens, focus enters the first row, Tab walks the rows and View all, Escape returns to the bell (R-03)", async () => {
+  const { page } = await open("en-GB", { unreadCount: 3, items: rows(), fail: false });
+  await settle(page);
+  await bell(page).focus();
+  await page.keyboard.press("Enter");
+  const panel = page.getByRole("region", { name: "Notifications" });
+  await panel.locator("li").nth(4).waitFor();
+  await settle(page);
+  const active = () => page.evaluate(() => { const element = document.activeElement; return { inPanel: Boolean(element?.closest("section[aria-label]")), text: element?.textContent ?? "" }; });
+  const first = await active();
+  assert.ok(first.inPanel && first.text.includes(TITLES[0]), `focus is in the first row ${JSON.stringify(first)}`);
+  for (let index = 1; index < 5; index += 1) {
+    await page.keyboard.press("Tab");
+    const row = await active();
+    assert.ok(row.inPanel && row.text.includes(TITLES[index]), `Tab reaches row ${index + 1} ${JSON.stringify(row)}`);
+  }
+  await page.keyboard.press("Tab");
+  const footer = await active();
+  assert.ok(footer.inPanel && footer.text.includes("View all notifications"), `Tab reaches View all ${JSON.stringify(footer)}`);
+  assert.equal(await panel.count(), 1, "the panel is still open while focus is inside it");
+  await page.keyboard.press("Escape");
+  await panel.waitFor({ state: "hidden" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-haspopup")), "true");
+
+  // Tab past the last stop closes the panel and hands focus back to the bell.
+  await page.keyboard.press("Enter");
+  await panel.locator("li").nth(4).waitFor();
+  await settle(page);
+  for (let index = 0; index < 5; index += 1) await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await panel.waitFor({ state: "hidden" });
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-haspopup")), "true");
+  await page.close();
+});
+
 test("empty and error states render their texts in both locales, and nothing scrolls sideways at 390", async () => {
   for (const [locale, empty, error, retry] of [["en-GB", "You have no notifications yet.", "Notifications could not be loaded.", "Try again"], ["zh-CN", "你还没有通知。", "通知加载失败。", "重试"]] as const) {
     const none = await open(locale, { unreadCount: 0, items: [], fail: false }, 390);

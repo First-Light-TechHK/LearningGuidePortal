@@ -31,13 +31,14 @@
   background: var(--ntf-badge); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
   box-shadow: 0 0 0 2px #fff;
 }
-@media (max-width: 900px) { .bellButton { min-width: 2.75rem; min-height: 2.75rem; } }
+/* The badge grows to the right: leave room so "99+" does not cover the avatar. */
+@media (max-width: 900px) { .bell { margin-right: 14px; } .bellButton { min-width: 2.75rem; min-height: 2.75rem; } }
 
 /* ---------- Dropdown panel ---------- */
 
 .dropdownRoot { z-index: 1100; }
 .panel {
-  display: flex; flex-direction: column; width: min(440px, calc(100vw - 24px)); max-height: min(680px, calc(100dvh - 96px));
+  display: flex; flex-direction: column; width: min(440px, calc(100vw - 24px)); max-height: min(720px, calc(100dvh - 96px));
   overflow: hidden; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; box-shadow: 0 12px 30px #1018281f;
 }
 .panelHeader {
