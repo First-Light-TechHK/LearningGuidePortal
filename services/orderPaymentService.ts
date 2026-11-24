@@ -1,11 +1,13 @@
 import type Stripe from "stripe";
 import { OrderManagementError, type ManagedOrder, type OrderAction, type OrderActionResult, type PaymentReview } from "@/contracts/order-management";
+import { PaymentError } from "@/contracts/payment";
 import { getStripe } from "./stripeClient";
 import { validateCreditCheckoutIdentity } from "./stripeCreditUpgradePayment";
 import { reconcileStripeCheckout } from "./stripeCheckoutPayment";
 import { reconcileStripeUpgradeInvoice, validateInvoice } from "./stripeUpgradePayment";
 import { getOrderForUser, listOrdersForUser, recordOrderPaymentReview, updateDemoOrderStatus, attachStripeUpgradeInvoice,
-  type ProductOrder, type ProductPlan } from "./productStore";
+  listPendingUpgradesAfterSecondCategory, listStripeCheckoutConflicts, matchesStripeCheckoutQuote,
+  type ProductOrder, type ProductPlan, type ProductQuote } from "./productStore";
 
 type OwnedOrder = ProductOrder & { plan: ProductPlan | null };
 const identity = (value: string | { id: string } | null | undefined) => typeof value === "string" ? value : value?.id;
@@ -59,16 +61,32 @@ async function invoiceProcessing(invoiceId: string) {
   return states.some(payment => ["processing", "succeeded", "requires_capture"].includes(payment.status));
 }
 
+async function checkoutProcessing(session: Stripe.Checkout.Session) {
+  const stripe = getStripe();
+  const payment = typeof session.payment_intent === "string" ? await stripe.paymentIntents.retrieve(session.payment_intent) : session.payment_intent;
+  if (payment && ["processing", "succeeded", "requires_capture"].includes(payment.status)) return true;
+  if (!session.subscription || session.mode !== "subscription") return false;
+  const subscription = typeof session.subscription === "string" ? await stripe.subscriptions.retrieve(session.subscription) : session.subscription;
+  const invoice = typeof subscription.latest_invoice === "string" ? await stripe.invoices.retrieve(subscription.latest_invoice) : subscription.latest_invoice;
+  if (!invoice) throw new IdentityMismatch();
+  return invoice.status === "paid" || await invoiceProcessing(invoice.id);
+}
+
 /** These actions always operate on the account-owned provider identity, never a Quote or client price. */
 export async function manageOrderPayment(userId: string, orderId: string, action: OrderAction,
-  options?: { locale?: "en-GB" | "zh-CN"; actor?: { id: string; role: "operator" } }): Promise<OrderActionResult> {
+  options?: { locale?: "en-GB" | "zh-CN"; actor?: { id: string; role: "operator" }; resumeOnly?: boolean }): Promise<OrderActionResult> {
   const actor = options?.actor;
   let order = await getOrderForUser(userId, orderId);
   if (!order) throw new OrderManagementError("not_found", 404);
   if (order.status !== "pending") return { order: projectManagedOrder(order) };
+  if (order.kind === "upgrade" && action !== "cancel" && (await listPendingUpgradesAfterSecondCategory(userId)).some(item => item.id === orderId)) {
+    if (options?.resumeOnly) return { order: { ...projectManagedOrder(order), canResume: false, canCancel: false } };
+    action = "cancel";
+  }
   const review: PaymentReview = { state: "unavailable", checkedAt: new Date().toISOString(), expiresAt: null, providerStatus: null, reason: null };
   let checkoutUrl: string | undefined;
   let closureRequested = false;
+  let categoryBuyerId: string | undefined;
   try {
     if (order.paymentMode === "demo") {
       if (action === "cancel") { closureRequested = true; await updateDemoOrderStatus(userId, orderId, "canceled", "customer_canceled"); }
@@ -123,10 +141,7 @@ export async function manageOrderPayment(userId: string, orderId: string, action
       validateCheckout(order, session);
       review.providerStatus = session.status;
       review.expiresAt = deadline(session.expires_at);
-      const payment = session.status === "open" && session.payment_status === "unpaid"
-        ? typeof session.payment_intent === "string" ? await stripe.paymentIntents.retrieve(session.payment_intent) : session.payment_intent : null;
-      const processing = payment && ["processing", "succeeded", "requires_capture"].includes(payment.status);
-      if (session.status === "open" && session.payment_status === "unpaid" && !processing) {
+      if (session.status === "open" && session.payment_status === "unpaid" && !await checkoutProcessing(session)) {
         review.state = "awaiting_payment";
         if (action === "cancel") {
           closureRequested = true;
@@ -137,14 +152,12 @@ export async function manageOrderPayment(userId: string, orderId: string, action
           review.providerStatus = session.status;
           if (session.status !== "open" || session.payment_status !== "unpaid") review.state = session.status === "complete" && session.payment_status !== "unpaid" ? "synchronising" : "processing";
           // Re-read a processing intent if completion started while cancellation was in flight.
-          if (session.status === "open" && session.payment_intent) {
-            const currentPayment = typeof session.payment_intent === "string" ? await stripe.paymentIntents.retrieve(session.payment_intent) : session.payment_intent;
-            if (["processing", "succeeded", "requires_capture"].includes(currentPayment.status)) review.state = "processing";
-          }
+          if (session.status === "open" && await checkoutProcessing(session)) review.state = "processing";
         } else if (action === "resume") checkoutUrl = hostedUrl(session.url, "checkout");
       } else review.state = session.status === "complete" && session.payment_status !== "unpaid" ? "synchronising" : "processing";
       try {
-        await reconcileStripeCheckout({ id: `order-review:${order.id}:${session.id}:${session.status}:${session.payment_status}`, type: "order.checkout.retrieved" }, session.id);
+        const result = await reconcileStripeCheckout({ id: `order-review:${order.id}:${session.id}:${session.status}:${session.payment_status}`, type: "order.checkout.retrieved" }, session.id);
+        if ("categoryBuyerId" in result) categoryBuyerId = result.categoryBuyerId;
       } catch {
         if (session.status !== "complete" || session.payment_status === "unpaid") throw new IdentityMismatch();
         review.state = "synchronising"; review.reason = "fulfilment_pending";
@@ -159,6 +172,66 @@ export async function manageOrderPayment(userId: string, orderId: string, action
   await recordOrderPaymentReview(userId, orderId, review, action, actor?.id || userId, actor ? "operator" : "learner", closureRequested);
   order = await getOrderForUser(userId, orderId);
   if (!order) throw new OrderManagementError("not_found", 404);
+  if (categoryBuyerId) await closeUpgradesAfterSecondCategory(categoryBuyerId);
   const projected = projectManagedOrder(order);
   return { order: projected, ...(checkoutUrl && projected.canResume ? { checkoutUrl } : {}) };
+}
+
+export async function closeUpgradesAfterSecondCategory(userId: string) {
+  const results = await Promise.all((await listPendingUpgradesAfterSecondCategory(userId))
+    .map(order => manageOrderPayment(userId, order.id, "cancel")));
+  return results.every(({ order }) => order.status !== "pending");
+}
+
+function closedUnpaid(order: ManagedOrder) {
+  return order.status === "canceled" || order.status === "failed";
+}
+
+/** Resolve owned conflicts using Stripe before the store reserves a new order. */
+export async function resolvePendingStripePayment(userId: string, quote: ProductQuote, plan: ProductPlan,
+  ownOrder: ProductOrder | undefined, locale: "en-GB" | "zh-CN", resumeOnly = false) {
+  const paidResult = (order: ProductOrder) => ({ order, checkoutUrl: `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(order.id)}` });
+  if (ownOrder?.status === "paid") return paidResult(ownOrder);
+  const conflicts = await listStripeCheckoutConflicts(userId, quote, plan);
+  const blockingError = (id: string) => new PaymentError(quote.kind === "upgrade" ? "upgrade_in_progress" : "payment_pending", 409, undefined, id);
+  if (ownOrder && ownOrder.status !== "pending") throw new PaymentError("quote_expired");
+  const pending = ownOrder ? [ownOrder, ...conflicts] : conflicts;
+  const matching = pending.find(order => matchesStripeCheckoutQuote(order, quote));
+  const superseded = pending.filter(order => order.id !== matching?.id);
+  if (resumeOnly && (!matching?.stripeCheckoutSessionId || superseded.length)) return null;
+
+  const open = [];
+  for (const order of superseded) {
+    const checked = (await manageOrderPayment(userId, order.id, "check")).order;
+    if (closedUnpaid(checked)) continue;
+    if (checked.status === "paid" || checked.status === "refunded") throw new PaymentError("quote_expired", 409, undefined, order.id);
+    if (checked.state !== "awaiting_payment") throw blockingError(order.id);
+    open.push(order);
+  }
+
+  let resume: Awaited<ReturnType<typeof manageOrderPayment>> | undefined;
+  if (matching?.stripeCheckoutSessionId) {
+    resume = await manageOrderPayment(userId, matching.id, "resume", { locale, resumeOnly });
+    if (resume.order.status === "paid") {
+      const paid = await getOrderForUser(userId, matching.id);
+      if (paid) return paidResult(paid);
+    }
+    if (!resume.checkoutUrl && !closedUnpaid(resume.order)) throw blockingError(matching.id);
+    if (!resume.checkoutUrl && matching.id === ownOrder?.id) throw new PaymentError("quote_expired");
+  } else if (matching && matching.id !== ownOrder?.id) {
+    throw blockingError(matching.id);
+  }
+
+  for (const order of open) {
+    const closed = (await manageOrderPayment(userId, order.id, "cancel")).order;
+    if (closed.status === "paid" || closed.status === "refunded") throw new PaymentError("quote_expired", 409, undefined, order.id);
+    if (!closedUnpaid(closed)) throw blockingError(order.id);
+  }
+  if (resume?.checkoutUrl && matching) {
+    const order = await getOrderForUser(userId, matching.id);
+    if (order?.status === "paid") return paidResult(order);
+    if (order?.status === "pending") return { order, checkoutUrl: resume.checkoutUrl };
+    throw new PaymentError("quote_expired");
+  }
+  return null;
 }

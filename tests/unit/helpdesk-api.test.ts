@@ -272,7 +272,7 @@ test("submit with a screenshot -> card -> agent reply -> learner reply -> resolu
   assert.equal(agentImage.headers.get("cache-control"), "private, no-store");
 
   const notifications = (await store.readProductAggregate()).notifications.filter((item) => item.userId === learnerId);
-  assert.equal(notifications.filter((item) => item.body.includes(ticket.number)).length, 1, "a public agent reply adds one in-app notification");
+  assert.equal(notifications.filter((item) => item.templateId === "HELPDESK_TICKET_REPLIED").length, 1, "a public agent reply adds one in-app notification");
 
   let view = await (await routes.ticket.GET(learnerRequest(`/api/helpdesk/tickets/${ticket.id}`, { cookie: learnerCookie }), ctx({ id: ticket.id }))).json();
   assert.equal(view.status, "WAITING_USER");

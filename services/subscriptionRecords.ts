@@ -28,7 +28,7 @@ export function subscriptionListRecords(subscriptions: Subscription[], orders: O
   const at = now.getTime();
   const stateOf = (s: Subscription | null) => !s ? "unavailable" as const : ["active", "cancel_at_period_end", "grace"].includes(s.state)
     && Date.parse(s.state === "grace" ? s.graceEndsAt || s.validTo : s.validTo) <= at ? "expired" as const : s.state;
-  const records = groupSubscriptionRecords(subscriptions, orders);
+  const records = groupSubscriptionRecords(subscriptions, orders.filter(order => order.status !== "pending"));
   const merged = new Set<string>();
   // An upgrade is the continuation of the original product's billing history.
   // Keep the original Category payment in Everything, without a duplicate past card.

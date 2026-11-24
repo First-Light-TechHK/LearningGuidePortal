@@ -52,7 +52,7 @@ test.beforeAll(async () => {
       billing_scheme: "per_unit", transform_quantity: null, recurring: { interval: mapping.termMonths === 6 ? "month" : "year", interval_count: mapping.termMonths === 6 ? 6 : 1, usage_type: "licensed" } } as Stripe.Price);
   }
   // These fixtures continue exercising already-issued proration upgrades. New credit upgrades are tested separately below.
-  store = { ...productStore, createUpgradeQuote: productStore.createProrationUpgradeQuote };
+  store = { ...productStore, createUpgradeQuote: async (...args) => ({ ...await productStore.createProrationUpgradeQuote(...args), resumePending: false }) };
   for (const [months,key,env] of [[6,"lg_upgrade_60","STRIPE_PRICE_UPGRADE_SIX_MONTHS"],[12,"lg_upgrade_120","STRIPE_PRICE_UPGRADE_ONE_YEAR"]] as const) {
     process.env[env]=key;
     catalog.set(key,{id:"price_"+key,active:true,lookup_key:key,type:"one_time",currency:"usd",unit_amount:months===6?6000:12000,billing_scheme:"per_unit",transform_quantity:null,recurring:null,livemode:false} as Stripe.Price);
@@ -68,7 +68,14 @@ test.beforeAll(async () => {
     expect(input.success_url).toBe(`${checkoutOrigin}/en-GB/account/my-learning/subscription?orderId=${encodeURIComponent(String(input.metadata?.orderId))}`);
     requests.push({ input, options });
     const id = "cs_" + options?.idempotencyKey;
-    if (!sessions.has(id)) sessions.set(id, { id, url: "https://checkout.stripe.test/" + id, status: "open", payment_status: "unpaid", mode: input.mode, metadata: input.metadata, currency: "usd" } as Stripe.Checkout.Session);
+    const line = [...catalog.values()].find(price => price.id === input.line_items?.[0].price);
+    const coupon = input.discounts?.[0]?.coupon;
+    const discount = coupon === "coupon39" ? 3900 : coupon === "coupon78" ? 7800 : 0;
+    const amount = input.metadata?.kind === "trial_activation" ? 0 : line?.unit_amount ?? 0;
+    if (!sessions.has(id)) sessions.set(id, { id, url: "https://checkout.stripe.com/" + id, status: "open", payment_status: "unpaid", mode: input.mode, metadata: input.metadata, currency: "usd",
+      customer: input.customer, amount_subtotal: amount, amount_total: amount - discount, total_details: { amount_discount: discount, amount_tax: 0, amount_shipping: 0 },
+      discounts: coupon ? [{ coupon, promotion_code: null }] : [], line_items: { has_more: false, data: [{ quantity: 1, price: line }] }
+    } as unknown as Stripe.Checkout.Session);
     return sessions.get(id);
   }) as typeof stripe.checkout.sessions.create;
   stripe.checkout.sessions.retrieve = (async (id: string) => sessions.get(id)) as typeof stripe.checkout.sessions.retrieve;
@@ -292,7 +299,7 @@ test("DEV checkout accepts the actual loopback origin with a different configure
   const local = new Request("http://127.0.0.1:3011/api/purchase/checkout", { method: "POST", headers: { origin: "http://127.0.0.1:3011" } });
   const result = await payment.startPayment(buyer, { quoteId: quote.id, consents: consent }, local);
   expect(result.order.checkoutOrigin).toBe("http://127.0.0.1:3011");
-  expect(result.checkoutUrl).toContain("https://checkout.stripe.test/");
+  expect(result.checkoutUrl).toContain("https://checkout.stripe.com/");
   const foreign = new Request(local.url, { method: "POST", headers: { origin: "https://attacker.invalid" } });
   await expect(payment.startPayment(buyer, { quoteId: quote.id, consents: consent }, foreign)).rejects.toMatchObject({ code: "origin_mismatch", status: 403 });
 });
@@ -306,13 +313,14 @@ test("quote pins price ID even after lookup key transfer and expires safely", as
   expect((await store.getQuoteForUser(result.buyer.id, result.quote.id))?.plan.amountMinor).toBe(9900);
   data.quotes.find((item: { id: string }) => item.id === result.quote.id).expiresAt = "2000-01-01T00:00:00Z";
   await writeFile(file, JSON.stringify(data));
+  expect((await payment.startPayment(result.buyer, { quoteId: result.quote.id, consents: consent }, request())).order.id).toBe(result.order.id);
+  sessions.get(result.order.stripeCheckoutSessionId!)!.status = "expired";
   await expect(payment.startPayment(result.buyer, { quoteId: result.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "quote_expired" });
 });
 
 test("paid scope blocks both terms and stale Checkout retries, while a different category and paid retry remain valid", async () => {
   const result = await checkout("science-pc-6");
   const stale = await store.createQuote(result.buyer.id, "science-pc-12");
-  await expect(payment.startPayment(result.buyer, { quoteId: stale.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "payment_pending", blockingOrderId: result.order.id });
   // Historical deployments could create competing attempts before the pending-order guard.
   const historical = { ...result.order, id: "order_historical_competing", quoteId: stale.quote.id, planId: stale.quote.planId, price: stale.quote.price, planSnapshot: stale.quote.planSnapshot, amountMinor: stale.quote.amountMinor, stripeCheckoutSessionId: "cs_historical_competing" };
   const file = path.join(directory, "data/knowledge_system/learning_guide/product.json"), data = JSON.parse(await readFile(file, "utf8"));
@@ -452,12 +460,102 @@ test("fresh upgrade quotes remain payable after JSONB field reordering while cha
 async function purchaseCheckoutRoute() {
   const bundle = await build({ entryPoints: [path.join(cwd, "app/api/purchase/checkout/route.ts")], bundle: true, write: false, platform: "node", format: "cjs", external: ["next/server"], plugins: [{ name: "checkout-session", setup(b) {
     b.onResolve({ filter: /services\/(productAuth|paymentService|paymentHttp)$/ }, args => ({ path: args.path, namespace: "mock-checkout" }));
-    b.onLoad({ filter: /.*/, namespace: "mock-checkout" }, args => ({ contents: args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.stripeUpgradeCheckoutApi.user}" : args.path.endsWith("paymentHttp") ? "export const paymentFailure=(...args)=>globalThis.stripeUpgradeCheckoutApi.paymentFailure(...args)" : "export const startPayment=(...args)=>globalThis.stripeUpgradeCheckoutApi.payment.startPayment(...args)" }));
+    b.onLoad({ filter: /.*/, namespace: "mock-checkout" }, args => ({ contents: args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.stripeUpgradeCheckoutApi.user}" : args.path.endsWith("paymentHttp") ? "export const paymentFailure=(...args)=>globalThis.stripeUpgradeCheckoutApi.paymentFailure(...args)" : "export const startPayment=(...args)=>globalThis.stripeUpgradeCheckoutApi.payment.startPayment(...args); export const resumePendingPayment=(...args)=>globalThis.stripeUpgradeCheckoutApi.payment.resumePendingPayment(...args)" }));
   } }] });
   const routeModule = { exports: {} as { POST: (request: Request) => Promise<Response> } };
   new Function("require", "module", "exports", bundle.outputFiles[0].text)(createRequire(path.join(cwd, "package.json")), routeModule, routeModule.exports);
   return routeModule.exports;
 }
+
+test("pending purchases preserve different Categories, resume the same Checkout and replace overlapping plans", async () => {
+  const first = await checkout("science-pc-6");
+  const buyer = first.buyer;
+  const start = (quoteId: string) => payment.startPayment(buyer, { quoteId, consents: consent }, request());
+  const other = await start((await store.createQuote(buyer.id, "chinese-humanities-pc-6")).quote.id);
+  expect((await orderPayments.listManagedOrders(buyer.id)).filter(order => order.status === "pending")).toHaveLength(2);
+  const same = await store.createQuote(buyer.id, "science-pc-6");
+  expect(same.resumePending).toBe(true);
+  const count = requests.length;
+  const state = { user: null as typeof buyer | null, payment, paymentFailure };
+  (globalThis as any).stripeUpgradeCheckoutApi = state;
+  try {
+    const route = await purchaseCheckoutRoute();
+    const resume = (origin = "https://payment.example.test") => route.POST(new Request(request().url, { method: "POST", headers: { origin }, body: JSON.stringify({ quoteId: same.quote.id, resumeOnly: true }) }));
+    expect((await resume()).status).toBe(401);
+    state.user = await user();
+    expect(await (await resume()).json()).toMatchObject({ ok: false, code: "quote_expired" });
+    state.user = buyer;
+    expect((await resume("https://foreign.invalid")).status).toBe(403);
+    expect(await (await resume()).json()).toEqual({ ok: true, checkoutUrl: first.checkoutUrl });
+  } finally { delete (globalThis as any).stripeUpgradeCheckoutApi; }
+  expect((await start(same.quote.id)).order.id).toBe(first.order.id);
+  expect(requests).toHaveLength(count);
+  const longer = await start((await store.createQuote(buyer.id, "science-pc-12")).quote.id);
+  expect(longer.order.id).not.toBe(first.order.id);
+  expect(sessions.get(first.order.stripeCheckoutSessionId!)!.status).toBe("expired");
+  expect(sessions.get(other.order.stripeCheckoutSessionId!)!.status).toBe("open");
+  const everything = await start((await store.createQuote(buyer.id, "everything-pc-6")).quote.id);
+  expect(everything.order.planId).toBe("everything-pc-6");
+  expect(sessions.get(longer.order.stripeCheckoutSessionId!)!.status).toBe("expired");
+  expect(sessions.get(other.order.stripeCheckoutSessionId!)!.status).toBe("expired");
+  expect((await orderPayments.listManagedOrders(buyer.id)).filter(order => order.status === "pending")).toHaveLength(1);
+});
+
+test("a new price replaces its old Checkout even when the plan and term match", async () => {
+  const original = await checkout("science-pc-6"), oldPrice = catalog.get("science-pc-6")!;
+  catalog.set("science-pc-6", { ...oldPrice, id: "price_science_changed", unit_amount: 4250 });
+  try {
+    const next = await store.createQuote(original.buyer.id, "science-pc-6");
+    expect(next.resumePending).toBe(false);
+    expect(await payment.resumePendingPayment(original.buyer, { quoteId: next.quote.id }, request())).toEqual({ checkoutUrl: null });
+    expect(sessions.get(original.order.stripeCheckoutSessionId!)!.status).toBe("open");
+    const replacement = await payment.startPayment(original.buyer, { quoteId: next.quote.id, consents: consent }, request());
+    expect(replacement.order).toMatchObject({ status: "pending", amountMinor: 4250 });
+    expect((await store.getOrderForUser(original.buyer.id, original.order.id))?.status).toBe("canceled");
+  } finally { catalog.set("science-pc-6", oldPrice); }
+});
+
+test("two simultaneous quoted purchases reserve one order before Stripe resolves", async () => {
+  const buyer = await user();
+  const [first, second] = await Promise.all([store.createQuote(buyer.id, "science-pc-6"), store.createQuote(buyer.id, "science-pc-6")]);
+  const start = (quoteId: string) => payment.startPayment(buyer, { quoteId, consents: consent }, request());
+  const before = requests.length, create = stripe.checkout.sessions.create;
+  let release!: () => void, markEntered!: () => void;
+  const entered = new Promise<void>(resolve => { markEntered = resolve; });
+  const paused = new Promise<void>(resolve => { release = resolve; });
+  stripe.checkout.sessions.create = (async (...args: Parameters<typeof create>) => { markEntered(); await paused; return create(...args); }) as typeof create;
+  const starting = start(first.quote.id);
+  try {
+    await Promise.race([entered, starting]);
+    await expect(start(second.quote.id)).rejects.toMatchObject({ code: "payment_pending" });
+  } finally { stripe.checkout.sessions.create = create; release(); }
+  const initial = await starting;
+  expect((await start(second.quote.id)).order.id).toBe(initial.order.id);
+  expect(requests).toHaveLength(before + 1);
+});
+
+test("processing, unknown and concurrently paid Checkouts block replacement without canceling another order", async () => {
+  const first = await checkout("science-pc-6"), buyer = first.buyer;
+  const start = (quoteId: string) => payment.startPayment(buyer, { quoteId, consents: consent }, request());
+  const other = await start((await store.createQuote(buyer.id, "chinese-humanities-pc-6")).quote.id);
+  const before = requests.length, quote = (await store.createQuote(buyer.id, "everything-pc-6")).quote;
+  const session = sessions.get(first.order.stripeCheckoutSessionId!)!;
+  const otherSession = sessions.get(other.order.stripeCheckoutSessionId!)!;
+  session.payment_intent = { id: "pi_processing_replacement", status: "processing" } as Stripe.PaymentIntent;
+  await expect(start(quote.id)).rejects.toMatchObject({ code: "payment_pending", blockingOrderId: first.order.id });
+  session.payment_intent = null;
+  sessions.delete(session.id);
+  try { await expect(start(quote.id)).rejects.toMatchObject({ code: "payment_pending", blockingOrderId: first.order.id }); }
+  finally { sessions.set(session.id, session); }
+  expect(otherSession.status).toBe("open");
+  const expire = stripe.checkout.sessions.expire;
+  stripe.checkout.sessions.expire = (async () => { paidSession(other.order); throw new Error("payment completed"); }) as typeof expire;
+  try { await expect(start(quote.id)).rejects.toMatchObject({ code: "quote_expired", blockingOrderId: other.order.id }); }
+  finally { stripe.checkout.sessions.expire = expire; }
+  expect(requests).toHaveLength(before);
+  expect(session.status).toBe("open");
+  expect((await store.getOrderForUser(buyer.id, other.order.id))?.status).toBe("paid");
+});
 
 test("upgrade Continue API accepts both DEV website hosts behind a proxy without changing the billing period", async () => {
   const state = { user: null as Awaited<ReturnType<typeof user>> | null, payment, paymentFailure };
@@ -558,7 +656,7 @@ test("declined or authentication-required upgrade keeps Category, reserves one i
   try { upgraded = await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request()); } finally { upgradePaymentPending = false; }
   expect(upgraded.checkoutUrl).toContain("https://invoice.stripe.test/");
   const invoice = invoices.get(upgraded.order.stripeInvoiceId!)!, count = updates.length;
-  await expect(store.createQuote(result.buyer.id, "science-pc-6")).rejects.toMatchObject({ code: "upgrade_in_progress" });
+  expect((await store.createQuote(result.buyer.id, "science-pc-6")).resumePending).toBe(false);
   await expect(store.createUpgradeQuote(result.buyer.id, result.source.id)).rejects.toMatchObject({ code: "upgrade_in_progress" });
   expect((await payment.startPayment(result.buyer, { quoteId: quote.id, consents: consent }, request())).checkoutUrl).toBe(upgraded.checkoutUrl);
   expect(updates).toHaveLength(count);
@@ -927,11 +1025,13 @@ test("order cancellation closes the provider Checkout once, keeps history and al
   const result = await checkout("science-pc-6"); recoverySession(result);
   const expire = stripe.checkout.sessions.expire;
   stripe.checkout.sessions.expire = (async () => { throw new Error("temporary cancellation failure"); }) as typeof expire;
-  try { expect((await orderPayments.manageOrderPayment(result.buyer.id, result.order.id, "cancel")).order.status).toBe("pending"); }
+  const second = await store.createQuote(result.buyer.id, "science-pc-12");
+  try {
+    expect((await orderPayments.manageOrderPayment(result.buyer.id, result.order.id, "cancel")).order.status).toBe("pending");
+    await expect(payment.startPayment(result.buyer, { quoteId: second.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "payment_pending", blockingOrderId: result.order.id });
+  }
   finally { stripe.checkout.sessions.expire = expire; }
   expect((await store.listOperatorOrders({ search: result.order.id }))[0].activities.find(item => item.action === "cancel_payment")).toMatchObject({ result: "failed", reason: "payment_still_open" });
-  const second = await store.createQuote(result.buyer.id, "science-pc-12");
-  await expect(payment.startPayment(result.buyer, { quoteId: second.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "payment_pending", blockingOrderId: result.order.id });
   const outcomes = await Promise.all([orderPayments.manageOrderPayment(result.buyer.id, result.order.id, "cancel"), orderPayments.manageOrderPayment(result.buyer.id, result.order.id, "cancel")]);
   expect(outcomes.every(item => item.order.status === "canceled")).toBe(true);
   expect((await orderPayments.manageOrderPayment(result.buyer.id, result.order.id, "cancel")).order.state).toBe("canceled");
@@ -1273,7 +1373,24 @@ test("credit upgrade expiry leaves Category unchanged and releases its reservati
   expect((await store.getOrderForUser(result.buyer.id, pending.order.id))?.status).toBe("canceled");
   expect((await store.getLearningOverview(result.buyer.id)).subscriptions.find(s => s.id === result.source.id)?.state).toBe("active");
   expect(result.subscription.status).toBe("active");
-  expect((await productStore.createUpgradeQuote(result.buyer.id, result.source.id)).quote.upgradeCredit).toBeDefined();
+  const retry = await productStore.createUpgradeQuote(result.buyer.id, result.source.id);
+  const replacement = await payment.startPayment(result.buyer, { quoteId: retry.quote.id, consents: consent }, request());
+  expect(replacement.order.id).not.toBe(pending.order.id);
+  expect(replacement.order.upgradeCredit?.couponId).toBe(pending.order.upgradeCredit?.couponId);
+  expect(requests.at(-1)!.input.discounts).toEqual([{ coupon: "coupon39" }]);
+});
+
+test("a missed upgrade expiry Webhook releases the order on the next payment attempt", async () => {
+  const source = await creditSource();
+  const first = await productStore.createUpgradeQuote(source.buyer.id, source.source.id);
+  const order = await payment.startPayment(source.buyer, { quoteId: first.quote.id, consents: consent }, request());
+  creditSession(order.order).status = "expired";
+  const retry = await productStore.createUpgradeQuote(source.buyer.id, source.source.id);
+  expect(retry.resumePending).toBe(true);
+  const next = await payment.startPayment(source.buyer, { quoteId: retry.quote.id, consents: consent }, request());
+  expect(next.order.id).not.toBe(order.order.id);
+  expect(next.order.upgradeCredit?.couponId).toBe(order.order.upgradeCredit?.couponId);
+  expect((await store.getOrderForUser(source.buyer.id, order.order.id))?.status).toBe("canceled");
 });
 
 test("credit upgrade persists cancellation retry without losing paid access or creating a second subscription", async () => {
@@ -1318,13 +1435,62 @@ test("credit upgrade rejects forged ownership, coupon, unpaid completion and inv
   expect((await send("checkout.session.completed", "evt_credit_guard", paid.session.id)).status).toBe(200);
 });
 
-test("credit upgrade reserves one source across different simultaneous quotes", async () => {
+test("credit upgrade reuses one Checkout across different quotes", async () => {
   const result = await creditSource();
   const [one, two] = await Promise.all([productStore.createUpgradeQuote(result.buyer.id, result.source.id), productStore.createUpgradeQuote(result.buyer.id, result.source.id)]);
   const first = await payment.startPayment(result.buyer, { quoteId: one.quote.id, consents: consent }, request());
-  await expect(payment.startPayment(result.buyer, { quoteId: two.quote.id, consents: consent }, request())).rejects.toMatchObject({ code: "upgrade_in_progress" });
+  const count = requests.length;
+  expect((await productStore.createUpgradeQuote(result.buyer.id, result.source.id)).resumePending).toBe(true);
+  expect(await payment.resumePendingPayment(result.buyer, { quoteId: two.quote.id }, request())).toEqual({ checkoutUrl: first.checkoutUrl });
+  expect((await payment.startPayment(result.buyer, { quoteId: two.quote.id, consents: consent }, request())).order.id).toBe(first.order.id);
+  expect(requests).toHaveLength(count);
   const session = creditSession(first.order); session.status = "expired";
   expect((await send("checkout.session.expired", "evt_credit_release", session.id)).status).toBe(200);
+});
+
+test("buying another Category closes a pending coupon upgrade before starting the purchase", async () => {
+  const source = await creditSource();
+  const { quote } = await productStore.createUpgradeQuote(source.buyer.id, source.source.id);
+  const pending = await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request());
+  const session = creditSession(pending.order);
+  const newQuote = await store.createQuote(source.buyer.id, "chinese-humanities-pc-6");
+  expect(session.status).toBe("open");
+  const next = await payment.startPayment(source.buyer, { quoteId: newQuote.quote.id, consents: consent }, request());
+  expect(next.order).toMatchObject({ planId: "chinese-humanities-pc-6", status: "pending" });
+  expect(session.status).toBe("expired");
+  expect((await store.getOrderForUser(source.buyer.id, pending.order.id))?.status).toBe("canceled");
+  expect(source.subscription.status).toBe("active");
+});
+
+test("a second paid Category closes a historical parallel upgrade and retries failed closure on Webhook replay", async () => {
+  const source = await creditSource();
+  const categoryQuote = await store.createQuote(source.buyer.id, "chinese-humanities-pc-6");
+  const category = await payment.startPayment(source.buyer, { quoteId: categoryQuote.quote.id, consents: consent }, request());
+  const { quote } = await productStore.createUpgradeQuote(source.buyer.id, source.source.id);
+  const pending = await payment.startPayment(source.buyer, { quoteId: quote.id, consents: consent }, request());
+  expect((await store.getOrderForUser(source.buyer.id, category.order.id))?.status).toBe("canceled");
+  // Restore a competing pending order to reproduce a Checkout left by an older deployment.
+  await store.editProductData(data => { data.orders.find(item => item.id === category.order.id)!.status = "pending"; });
+  const paid = paidSession(category.order), session = creditSession(pending.order);
+  const expire = stripe.checkout.sessions.expire;
+  let attemptedClose = 0;
+  stripe.checkout.sessions.expire = (async () => { attemptedClose++; throw new Error("temporary Stripe failure"); }) as typeof expire;
+  try {
+    session.payment_intent = { id: "pi_processing_upgrade", status: "processing" } as Stripe.PaymentIntent;
+    expect((await send("checkout.session.completed", "evt_second_category", paid.session.id)).status).toBe(500);
+    expect(attemptedClose).toBe(0);
+    expect((await send("checkout.session.completed", "evt_second_category", paid.session.id)).status).toBe(500);
+    expect((await store.getOrderForUser(source.buyer.id, category.order.id))?.status).toBe("paid");
+    expect((await store.getOrderForUser(source.buyer.id, pending.order.id))?.status).toBe("pending");
+    session.payment_intent = null;
+    expect((await send("checkout.session.completed", "evt_second_category", paid.session.id)).status).toBe(500);
+    expect(attemptedClose).toBe(1);
+  } finally { stripe.checkout.sessions.expire = expire; }
+  expect((await send("checkout.session.completed", "evt_second_category", paid.session.id)).status).toBe(200);
+  expect(session.status).toBe("expired");
+  expect((await store.getOrderForUser(source.buyer.id, pending.order.id))?.status).toBe("canceled");
+  expect((await store.getLearningOverview(source.buyer.id)).subscriptions.filter(item => item.state === "active").map(item => item.scope)).toEqual(["category", "category"]);
+  await expect(productStore.createUpgradeQuote(source.buyer.id, source.source.id)).rejects.toMatchObject({ code: "upgrade_unavailable" });
 });
 
 

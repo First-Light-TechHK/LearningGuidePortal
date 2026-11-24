@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import { buildNotificationEmail } from "./notifications/emailLayout";
+import { publicAppOrigin } from "./runtimeConfig";
 
 function smtpConfigured() {
   return Boolean(process.env.SMTP_HOST?.trim() && process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim());
@@ -16,7 +18,7 @@ function logMail(event: string, detail: Record<string, unknown>) {
   console.info(JSON.stringify({ type: "mail", event, ...detail }));
 }
 
-async function sendViaSmtp(input: { to: string; subject: string; text: string; html: string }) {
+async function sendViaSmtp(input: { to: string; subject: string; text: string; html: string; includeHtml?: boolean }) {
   const from = fromAddress();
   if (!from) throw new Error("SMTP_FROM or SMTP_USER is not configured.");
   const port = Number(process.env.SMTP_PORT || "465");
@@ -39,8 +41,10 @@ async function sendViaSmtp(input: { to: string; subject: string; text: string; h
       to: input.to,
       subject: input.subject,
       text: input.text,
-      // Plain text only: a single-link HTML body from a free mailbox is a
-      // classic spam signature and Outlook rejects it outright.
+      // Account emails stay plain text only: a single-link HTML body from a
+      // free mailbox is a classic spam signature and Outlook rejects it.
+      // The Notification P0 emails opt in to their fixed HTML layout.
+      ...(input.includeHtml ? { html: input.html } : {}),
       replyTo: from,
       headers: {
         "Auto-Submitted": "auto-generated",
@@ -57,24 +61,28 @@ async function sendViaSmtp(input: { to: string; subject: string; text: string; h
       response: typeof info.response === "string" ? info.response.slice(0, 160) : undefined
     });
     if (accepted === 0 && rejected > 0) throw new Error("SMTP rejected every recipient.");
+    return { messageId: typeof info.messageId === "string" ? info.messageId : null };
   } catch (error) {
     logMail("smtp_failed", {
       toDomain: input.to.split("@")[1] || "",
       code: error instanceof Error ? (error as { code?: string }).code || error.name : "Error",
       message: error instanceof Error ? error.message.slice(0, 160) : "unknown"
     });
-    throw new EmailDeliveryError();
+    throw new EmailDeliveryError(undefined, "provider");
   }
 }
 
 export class EmailDeliveryError extends Error {
-  constructor(message = "Verification email could not be sent. Use a mailbox that this environment is allowed to mail.") {
+  constructor(
+    message = "Verification email could not be sent. Use a mailbox that this environment is allowed to mail.",
+    public readonly code: "not_configured" | "provider" = "provider",
+  ) {
     super(message);
     this.name = "EmailDeliveryError";
   }
 }
 
-async function sendEmail(input: { to: string; subject: string; text: string; html: string }) {
+async function sendEmail(input: { to: string; subject: string; text: string; html: string; includeHtml?: boolean }) {
   // 163 SMTP is the only delivery path. SES stays out of the app because the
   // account is still in the sandbox and cannot reach learner mailboxes.
   if (!smtpConfigured()) {
@@ -83,9 +91,14 @@ async function sendEmail(input: { to: string; subject: string; text: string; htm
       smtpUserSet: Boolean(process.env.SMTP_USER?.trim()),
       smtpPassSet: Boolean(process.env.SMTP_PASS?.trim())
     });
-    throw new EmailDeliveryError("Email delivery is not configured.");
+    throw new EmailDeliveryError("Email delivery is not configured.", "not_configured");
   }
   return sendViaSmtp(input);
+}
+
+/** The shared delivery entry point for the notification email channel. */
+export function sendRenderedEmail(input: { to: string; subject: string; text: string; html: string }) {
+  return sendEmail({ ...input, includeHtml: true });
 }
 
 export function sendVerificationEmail(input: { to: string; url: string; locale?: "en-GB" | "zh-CN" }) {
@@ -108,16 +121,90 @@ export function sendEmailBindingEmail(input: { to: string; url: string; locale: 
   return sendEmail({ to: input.to, subject: title, text: `${description}\n\n${input.url}`, html: `<p>${description}</p><p><a href="${url}">${title}</a></p>` });
 }
 
+function notificationAppOrigin() {
+  try {
+    return publicAppOrigin();
+  } catch {
+    return (process.env.NEXT_PUBLIC_APP_URL || "").trim().replace(/\/+$/, "");
+  }
+}
+
+function absoluteEmailLink(link: string | null | undefined) {
+  const value = (link || "").trim();
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  const origin = notificationAppOrigin();
+  if (!origin) return value;
+  return `${origin.replace(/\/+$/, "")}${value.startsWith("/") ? "" : "/"}${value}`;
+}
+
+async function logStudyGroupReminderEmail(input: {
+  to: string;
+  subject: string;
+  status: "sent" | "failed";
+  failureReason?: string | null;
+  messageId?: string | null;
+  sessionId?: string | null;
+}) {
+  try {
+    const { recordStudyGroupReminderEmail } = await import("./notifications/emailLog");
+    await recordStudyGroupReminderEmail({
+      to: input.to,
+      subject: input.subject,
+      status: input.status,
+      failureReason: input.failureReason || null,
+      providerMessageId: input.messageId || null,
+      sessionId: input.sessionId || null,
+    });
+  } catch {
+    // Recording must never change whether the mail went out or the caller's
+    // result; the redacted SMTP log line already carries the send outcome.
+  }
+}
+
+function sessionIdFromLink(link: string | null | undefined): string | null {
+  const match = (link || "").match(/\/sessions\/([^/?#]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 /**
- * Study Group mail. Mail goes out as plain text (sendViaSmtp), so a Live
- * Session reminder carries its session page as a labelled link on a line of
- * its own; the HTML part is the same text, escaped.
+ * Study Group mail for the existing T-10 reminder dispatch. The module owns
+ * the trigger and the localized copy; this wrapper gives the message the one
+ * fixed Notification P0 layout and records Sent/Failed against the in-app row
+ * the same dispatch just wrote (design §6/§7).
  */
-export function sendStudyGroupReminderEmail(input: { to: string; subject: string; text: string; link?: string | null; locale?: "en-GB" | "zh-CN" }) {
-  const label = input.locale === "zh-CN" ? "进入直播课" : "Enter Live Session";
-  const text = input.link ? `${input.text}\n\n${label}: ${input.link}` : input.text;
-  const safe = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
-  return sendEmail({ to: input.to, subject: input.subject, text, html: `<p>${safe}</p>` });
+export async function sendStudyGroupReminderEmail(input: { to: string; subject: string; text: string; link?: string | null; locale?: "en-GB" | "zh-CN" }) {
+  const chinese = input.locale === "zh-CN";
+  const label = chinese ? "进入直播课" : "Enter Live Session";
+  const link = absoluteEmailLink(input.link);
+  const sessionId = sessionIdFromLink(input.link);
+  const text = link ? `${input.text}\n\n${label}: ${link}` : input.text;
+  const built = buildNotificationEmail({
+    language: chinese ? "zh" : "en",
+    subject: input.subject,
+    body: input.text,
+    buttonText: link ? label : null,
+    buttonUrl: link,
+    footerReason: chinese
+      ? "你收到此邮件是因为你预约了 Learning Guide 直播课。"
+      : "You're receiving this email because you booked a Learning Guide Live Session.",
+    appUrl: notificationAppOrigin(),
+  });
+  try {
+    const sent = await sendEmail({ to: input.to, subject: input.subject, text, html: built.html, includeHtml: true });
+    await logStudyGroupReminderEmail({ to: input.to, subject: input.subject, status: "sent", messageId: sent.messageId, sessionId });
+    return sent;
+  } catch (error) {
+    const notConfigured = error instanceof EmailDeliveryError && error.code === "not_configured";
+    await logStudyGroupReminderEmail({
+      to: input.to,
+      subject: input.subject,
+      status: "failed",
+      failureReason: notConfigured ? "email not configured" : "provider error",
+      sessionId,
+    });
+    throw error;
+  }
 }
 
 /** Helpdesk updates to the ticket's contact email (agent reply, "is it solved?"). Plain text; the HTML part is escaped text. */

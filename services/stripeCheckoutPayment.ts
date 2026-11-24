@@ -56,7 +56,8 @@ export async function reconcileStripeCheckout(event: { id: string; type: string 
     subscriptionId: subscription.id, customerId: identifier(subscription.customer), paymentIntentId: identifier(session.payment_intent),
     trial: order.kind === "trial_activation", subscriptionStatus: subscription.status, cancelAtPeriodEnd: subscription.cancel_at_period_end,
     periodStart, periodEnd });
-  return result;
+  return context.plan?.scope === "category" && order.kind === "purchase"
+    ? { ...result, categoryBuyerId: order.userId } : result;
 }
 
 // Refresh only the signed-in user's recorded Checkouts. Provider state, rather

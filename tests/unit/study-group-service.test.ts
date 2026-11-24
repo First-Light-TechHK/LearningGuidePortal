@@ -19,7 +19,7 @@ let service: StudyGroupService;
 let repository: StudyGroupRepository;
 const access = new Set<string>();
 const mails: Array<{ to: string; subject: string; text: string }> = [];
-const notes: Array<{ userId: string; title: string; body: string }> = [];
+const notes: Array<{ userId: string; title: string; body: string; catalogue?: { templateId: string; params: Record<string, unknown>; channels?: string[]; eventKey: string } }> = [];
 const inactive = new Set<string>();  // deactivated accounts (Student Management)
 const tokenLogKey = Buffer.alloc(32, 7);
 let liveKit: { apiKey: string; apiSecret: string; url: string };
@@ -1190,12 +1190,14 @@ test("reminders go to the host and plan-to-attend members only, once", async () 
   assert.deepEqual(reminded, ["host", "planner"]);
   // The en-GB title stays the exact row marker the reminders view filters on.
   assert.equal(notes.filter((item) => item.body.includes("Reminder session")).every((item) => item.title === "Live Session reminder"), true);
-  assert.deepEqual(mails.filter((item) => item.text.includes("Reminder session")).map((item) => item.to).sort(), ["host@example.test", "planner@example.test"]);
+  const reminderNotices = notes.filter((item) => item.catalogue?.templateId === "LIVE_SESSION_REMINDER" && item.catalogue.params.session_title === "Reminder session");
+  assert.deepEqual(reminderNotices.map((item) => item.userId).sort(), ["host", "planner"]);
+  assert.ok(reminderNotices.every((item) => item.catalogue?.channels?.includes("email")), "the reminder delegates its email to the catalogue");
   notes.length = 0;
   mails.length = 0;
   await service.dispatchDueReminders();
   assert.equal(notes.filter((item) => item.body.includes("Reminder session")).length, 0);
-  assert.equal(mails.filter((item) => item.text.includes("Reminder session")).length, 0);
+  assert.equal(notes.filter((item) => item.catalogue?.templateId === "LIVE_SESSION_REMINDER" && item.catalogue.params.session_title === "Reminder session").length, 0);
   const early = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Too early", startsAt: "2026-09-19T02:20:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   const past = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Already due", startsAt: "2026-09-19T02:05:00.000Z", durationSeconds: 1800, maxParticipants: 4 });
   await repository.update((store) => {
@@ -1224,7 +1226,7 @@ test("leaving the group cancels the member's future reminder end-to-end", async 
   mails.length = 0;
   await service.dispatchDueReminders();
   assert.deepEqual(notes.filter((item) => item.body.includes("Leave session")).map((item) => item.userId).sort(), ["host"]);
-  assert.deepEqual(mails.filter((item) => item.text.includes("Leave session")).map((item) => item.to), ["host@example.test"]);
+  assert.deepEqual(notes.filter((item) => item.catalogue?.templateId === "LIVE_SESSION_REMINDER" && item.catalogue.params.session_title === "Leave session").map((item) => item.userId), ["host"]);
 });
 
 test("request-triggered reminder dispatch is single-flight and throttled to one sweep per window", async () => {
@@ -1291,7 +1293,7 @@ test("a Group card shows Live only while a child Session is live (BR-006)", asyn
 });
 
 test("a zh-CN reminder uses the Chinese sentence", async () => {
-  const localNotes: Array<{ title: string; body: string }> = [];
+  const localNotes: Array<{ title: string; body: string; catalogue?: { templateId: string; params: Record<string, unknown>; channels?: string[] } }> = [];
   const localMails: Array<{ subject: string; text: string }> = [];
   access.add("host-zh:course-1");
   const zh = serviceWith({
@@ -1306,7 +1308,9 @@ test("a zh-CN reminder uses the Chinese sentence", async () => {
   // The notification title follows the recipient's locale too (hunt L1): the
   // body was already Chinese while the title stayed hard-coded English.
   assert.equal(localNotes.find((item) => item.body.includes("中文课"))?.title, "直播课提醒");
-  assert.equal(localMails.find((item) => item.text.includes("中文课"))?.subject, "直播课提醒");
+  const zhReminder = localNotes.find((item) => item.body.includes("中文课"));
+  assert.equal(zhReminder?.catalogue?.params.session_title, "中文课");
+  assert.ok(zhReminder?.catalogue?.channels?.includes("email"), "the catalogue renders and sends the email");
 });
 
 test("a zh-CN member is told in Chinese that the Study Group was cancelled", async () => {
@@ -2003,7 +2007,9 @@ test("rescheduling tells the planned members and the new time gets its own remin
   mails.length = 0;
   await local.editSession({ actorUserId: "host", groupId: group.id, sessionId: session.id, startsAt: "2026-09-19T03:00:00.000Z" });
   assert.deepEqual(notes.filter((item) => item.title === "Live Session rescheduled").map((item) => item.userId), ["planner"]);
-  assert.deepEqual(mails.map((item) => item.to), ["planner@example.test"]);
+  const movedNotices = notes.filter((item) => item.catalogue?.templateId === "LIVE_SESSION_RESCHEDULED");
+  assert.deepEqual(movedNotices.map((item) => item.userId), ["planner"]);
+  assert.ok(movedNotices.every((item) => !item.catalogue?.channels?.includes("email")), "rescheduled is in-app only");
 
   // Saving the same Start Time again is not a move.
   notes.length = 0;
@@ -2197,7 +2203,7 @@ test("deactivated account (owner 2026-11-03): no reminder, reschedule or cancell
   mails.length = 0;
   await service.dispatchDueReminders();
   assert.deepEqual(notes.filter((item) => item.body.includes("Soon session")).map((item) => item.userId).sort(), ["host", "stays"], "the T-10 reminder skips the deactivated account");
-  assert.deepEqual(mails.filter((item) => item.text.includes("Soon session")).map((item) => item.to).sort(), ["host@example.test", "stays@example.test"]);
+  assert.deepEqual(notes.filter((item) => item.catalogue?.templateId === "LIVE_SESSION_REMINDER" && item.catalogue.params.session_title === "Soon session").map((item) => item.userId).sort(), ["host", "stays"]);
   await service.editSession({ actorUserId: "host", groupId: group.id, sessionId: soon.id, startsAt: "2026-09-19T02:40:00.000Z" });
   assert.equal(notes.some((item) => item.userId === "gone" && item.title === "Live Session rescheduled"), false, "no reschedule notice");
   await service.cancelSession({ actorUserId: "host", sessionId: soon.id });

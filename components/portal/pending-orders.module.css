@@ -1,7 +1,7 @@
 .orders { margin:0 0 32px; color:#1a2945; }
 .heading { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
-.heading h2 { margin:0 0 20px; font-size:18px; font-weight:600; line-height:26px; }
-.heading h3 { margin:0; font-size:15px; font-weight:600; line-height:22px; overflow-wrap:anywhere; }
+.heading h1 { margin:0 0 20px; font-size:18px; font-weight:600; line-height:26px; }
+.heading h2 { margin:0; font-size:15px; font-weight:600; line-height:22px; overflow-wrap:anywhere; }
 .heading p { margin:4px 0 12px; font-size:13px; color:#64748b; }
 .heading > strong { font-size:18px; line-height:24px; }
 .list { display:grid; gap:16px; }

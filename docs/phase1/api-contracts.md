@@ -181,6 +181,8 @@ Google 和 WeChat 回调必须在服务端校验 state、code、issuer/provider 
 
 ## Purchase / Payment / Subscription
 
+Pending subscription orders (2026-11-24): `POST /api/subscription/quote` may return `resumePending: true` for an owned Checkout candidate with the same terms. `POST /api/purchase/checkout` with `{quoteId, locale, resumeOnly: true}` verifies the existing payment and returns `{ok:true, checkoutUrl: string|null}`. This operation creates no order and requests no cancellation of an open payment. The ordinary Checkout POST still requires the three consents. It checks all overlaps, confirms closure of superseded payments and reserves the new order transactionally. Unknown or still-open conflicts return the existing `payment_pending` / `upgrade_in_progress` conflict with an owned `blockingOrderId`. A payment that completes during conflict resolution is reconciled and the request returns 409 `quote_expired` for a fresh quote. See [pending subscription order rules](domain-model.md#待支付订阅订单规则2026-11-24).
+
 ```ts
 // POST /api/subscription/quote
 type QuoteRequest = {
@@ -234,6 +236,14 @@ Authorised Lesson access includes all active `LessonContent` knowledge points be
 | GET | `/api/my-learning/notifications` | page | 返回当前 User 的通知和 unread count |
 | PATCH | `/api/my-learning/notifications/:id` | `{ read: boolean }` | 只能改当前 User 的一条通知 |
 | PATCH | `/api/my-learning/settings` | nickname、locale、avatar key | 复用字段校验；avatar 先 S3 上传再保存 key |
+
+### Notification Center：Backoffice 广播测试发送
+
+仅 Backoffice 服务端用服务令牌调用（无令牌 401，不对浏览器开放）。
+
+| Method | Path | Request | Server action |
+|---|---|---|---|
+| POST | `/api/integration/notifications/broadcasts/test` | operator、operatorEmail、titleEn、bodyEn、titleZh?、bodyZh?、buttonText?、buttonLink?、language? | 把屏幕上的内容（已保存或未保存）以 `[TEST]` 站内消息发给 operatorEmail 对应的 User；不保存广播、不计入任何统计，发送日志标记 Test；找不到该 User 返回 404 `no_learner`；内容校验失败返回 400 |
 
 ## AI Tutor
 

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { SubscriptionSelectionState } from "@/contracts/subscription-selection";
 import type { UpgradeQuoteDisplay } from "@/contracts/stripe-upgrade";
 import { getMessages } from "@/lib/i18n/messages";
+import { subscriptionOrdersPath } from "@/lib/subscriptionOrdersPath";
 import { formatPlanPrice } from "@/lib/planPricing";
 import { PricingPlans } from "./PricingPlans";
 import { PurchasePanel } from "./PurchasePanel";
@@ -70,7 +71,7 @@ function ExpandedSelection({ locale, plans, categories, courseTitles, selection,
   const categoryCourses = courseTitles.filter(course => course.category === category);
   const source = selection.categorySubscription;
   const everythingPlan = plans.find(plan => plan.scope === "everything" && plan.device === "pc" && plan.termMonths === source?.termMonths);
-  const [quote, setQuote] = useState<UpgradeQuoteDisplay | null>(null);
+  const [quote, setQuote] = useState<(UpgradeQuoteDisplay & { resumePending?: boolean }) | null>(null);
   const [refresh, setRefresh] = useState(0);
   const points = everythingPlan?.aiPoints ?? 0;
   const addedPoints = Math.max(0, points - (source?.aiPoints || 0));
@@ -93,11 +94,11 @@ function ExpandedSelection({ locale, plans, categories, courseTitles, selection,
     void (async () => {
       try {
         const response = await fetch("/api/subscription/quote", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "upgrade", subscriptionId: source.id }) });
-        const data = await response.json() as { quote?: UpgradeQuoteDisplay; code?: keyof ReturnType<typeof getMessages>["paymentErrors"]; blockingOrderId?: string };
+        const data = await response.json() as { quote?: UpgradeQuoteDisplay; resumePending?: boolean; code?: keyof ReturnType<typeof getMessages>["paymentErrors"]; blockingOrderId?: string };
         if (data.blockingOrderId && !controller.signal.aborted) setBlockingOrderId(data.blockingOrderId);
         if (!response.ok || !data.quote || !Number.isSafeInteger(data.quote.amountMinor) || data.quote.amountMinor < 0 || !Number.isFinite(Date.parse(data.quote.expiresAt)) || Date.parse(data.quote.expiresAt) <= Date.now()) throw new Error(data.code && getMessages(locale).paymentErrors[data.code] || text.quoteError);
         if (controller.signal.aborted) return;
-        setQuote(data.quote);
+        setQuote({ ...data.quote, resumePending: data.resumePending });
         timer = setTimeout(() => { setQuote(null); setRefresh(value => value + 1); }, Date.parse(data.quote.expiresAt) - Date.now());
       } catch (failure) {
         if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : text.quoteError);
@@ -111,7 +112,15 @@ function ExpandedSelection({ locale, plans, categories, courseTitles, selection,
     if (Date.parse(quote.expiresAt) <= Date.now()) { setQuote(null); setRefresh(value => value + 1); return; }
     inFlight.current = true; setBusy(true); setError("");
     try {
-      window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quote.id)}`);
+      let destination = `/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quote.id)}`;
+      if (quote.resumePending) {
+        const response = await fetch("/api/purchase/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quote.id, locale, resumeOnly: true }) });
+        const result = await response.json() as { checkoutUrl?: string | null; error?: string; blockingOrderId?: string };
+        setBlockingOrderId(result.blockingOrderId || null);
+        if (!response.ok) throw new Error(result.error || text.quoteError);
+        destination = result.checkoutUrl || destination;
+      }
+      window.location.assign(destination);
     } catch (failure) { setError(failure instanceof Error ? failure.message : copy.unavailable); inFlight.current = false; setBusy(false); }
   }
   const termSwitch = <div className="pricing-term-switch" role="group" aria-label={copy.term}>{([6, 12] as const).map(value => <PortalButton htmlType="button" key={value} aria-pressed={term === value} onClick={() => setTerm(value)}>{value === 6 ? copy.sixMonths : copy.year}</PortalButton>)}</div>;
@@ -126,7 +135,7 @@ function ExpandedSelection({ locale, plans, categories, courseTitles, selection,
         <div className="pricing-card-includes"><p>{text.allIncluded}</p><div className="pricing-category-switch pricing-category-switch--all">{[...owned, ...remaining].map(item => selection.ownedCategoryIds.includes(item.id) ? <OwnedChip key={item.id} label={text.owned}>{item.labels[locale]}</OwnedChip> : <span className="pricing-included-chip" key={item.id}>{item.labels[locale]}</span>)}</div>
           <div className="pricing-card-course-list"><p>{copy.courseSummary.replace("{courses}", String(courseTitles.length)).replace("{categories}", String(categories.length))} · <a href={`/${locale}/portal/courses`}>{copy.viewAll}</a></p><small>{copy.newEverything}</small></div></div>
         <ul className="pricing-card-benefits"><li><span>{copy.points}</span><strong>{points.toLocaleString(locale, { useGrouping: true })} (+{addedPoints.toLocaleString(locale, { useGrouping: true })})</strong></li></ul>
-        <div className="pricing-upgrade-action">{blockingOrderId && <p><Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(blockingOrderId)}#order-${encodeURIComponent(blockingOrderId)}`}>{getMessages(locale).orderManagement.viewOrders}</Link></p>}{error && <><p role="alert" className="portal-form-error">{error}</p><PortalButton htmlType="button" disabled={busy} onClick={() => setRefresh(value => value + 1)}>{text.quoteRetry}</PortalButton></>}{!source?.canUpgrade ? <p role="status">{text.upgradeUnavailable}</p> : (!everythingPlan || everythingPlan.available === false) && <p role="status">{copy.unavailable}</p>}<PortalButton htmlType="button" loading={busy} disabled={busy || !quote || !source?.canUpgrade || !everythingPlan || everythingPlan.available === false} onClick={() => void upgrade()}>{busy ? getMessages(locale).learning.processing : text.upgradeAction.replace("{price}", estimate)}</PortalButton></div>
+        <div className="pricing-upgrade-action">{blockingOrderId && <p><Link href={subscriptionOrdersPath(locale, blockingOrderId)}>{getMessages(locale).orderManagement.viewOrders}</Link></p>}{error && <><p role="alert" className="portal-form-error">{error}</p><PortalButton htmlType="button" disabled={busy} onClick={() => setRefresh(value => value + 1)}>{text.quoteRetry}</PortalButton></>}{!source?.canUpgrade ? <p role="status">{text.upgradeUnavailable}</p> : (!everythingPlan || everythingPlan.available === false) && <p role="status">{copy.unavailable}</p>}<PortalButton htmlType="button" loading={busy} disabled={busy || !quote || !source?.canUpgrade || !everythingPlan || everythingPlan.available === false} onClick={() => void upgrade()}>{busy ? getMessages(locale).learning.processing : text.upgradeAction.replace("{price}", estimate)}</PortalButton></div>
       </article>}
       <article className={`pricing-design-card pricing-design-card--category ${!one ? "pricing-last-category" : ""}`} data-selected={selectedScope === "category"} onClick={() => setSelectedScope("category")} onFocusCapture={() => setSelectedScope("category")}>
         {one && <div className="pricing-card-tags"/>}

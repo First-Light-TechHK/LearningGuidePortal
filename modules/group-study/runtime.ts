@@ -6,13 +6,37 @@ import { checkEntitlement, getProductCourse, getUserById, listPublishedCourses, 
 import { createPostgresStudyGroupRepository } from "@/repositories/studyGroupRepository";
 import { STARTING_SOON_MS, type StudyGroupStore } from "./domain";
 import { createStudyGroupRepository } from "./repository";
-import { createStudyGroupService, tutorAvailabilityFromKs, webhookRejectionLogLine, type StudyGroupService, type UserProfile } from "./service";
+import { createStudyGroupService, tutorAvailabilityFromKs, webhookRejectionLogLine, type StudyGroupNotifyInput, type StudyGroupService, type UserProfile } from "./service";
+import { emitCatalogueNotification } from "@/services/notifications/service";
 import { createLiveKitCloudGateway } from "./liveKitCloudGateway";
 import { createLiveKitHealthService, type LiveKitHealthProject, type LiveKitHealthService } from "./liveKitHealth";
 import { createHotLiveKitProjectRegistry, parseLiveKitProjects } from "./liveKitProjectRegistry";
 import { awsRegion } from "@/services/persistence/config";
 import { createAwsLiveKitCredentialResolver, createAwsSecretValueReader, createLiveKitCredentialResolver } from "@/services/liveKitCredentials";
 import { getTutorAvailability, streamTutorText } from "@/services/ksTutorClient";
+
+/**
+ * The Study Group write point for learner notices. Catalogue notices (booked,
+ * reminder, cancelled, rescheduled) go through the Notification P0 send path,
+ * so the operator's switch and copy apply; anything else (for example a
+ * cancelled Study Group, which has no P0 template) keeps the legacy row.
+ */
+export async function studyGroupNotify(input: StudyGroupNotifyInput) {
+  if (input.catalogue) {
+    await emitCatalogueNotification({
+      templateId: input.catalogue.templateId,
+      userId: input.userId,
+      eventKey: input.catalogue.eventKey,
+      params: input.catalogue.params,
+      channels: input.catalogue.channels,
+      sessionId: input.sessionId,
+      related: input.sessionId || null,
+      now: input.catalogue.now,
+    });
+    return;
+  }
+  await recordUserNotification(input.userId, input.title, input.body, input.sessionId, input.copies);
+}
 
 // BUG-0109: a T-10 reminder row is a pending prompt only while the situation
 // that produced it still holds — the Live Session is still scheduled and
@@ -310,9 +334,7 @@ export function studyGroupService() {
       const user = await getUserById(userId);
       return user ? studyGroupProfile(user) : null;
     },
-    notify: async (input) => {
-      await recordUserNotification(input.userId, input.title, input.body, input.sessionId, input.copies);
-    },
+    notify: studyGroupNotify,
     // Student Management (owner 2026-11-03): a deactivated account keeps its
     // memberships and plans but is not notified.
     accountActive: async (userId) => {

@@ -70,6 +70,57 @@ async function setGlobal(key: "improve_tutor" | "ai_support_assistant", enabled:
   return sm.saveFeatureSettings({ actor, reason: "release", expectedVersion: current.version, features: { [key]: { enabled } } });
 }
 
+// BUG-0358/0359: SMTP can take 20s while the Backoffice gives up at 8s. These
+// helpers let a test hold or fail the real mail dispatch point without SMTP.
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((accept, decline) => { resolve = accept; reject = decline; });
+  return { promise, resolve, reject };
+}
+
+async function withSmtp<T>(run: () => Promise<T>): Promise<T> {
+  const saved = { host: process.env.SMTP_HOST, user: process.env.SMTP_USER, pass: process.env.SMTP_PASS };
+  process.env.SMTP_HOST = "smtp.student-management.test";
+  process.env.SMTP_USER = "mailer@student-management.test";
+  process.env.SMTP_PASS = "test-secret";
+  try { return await run(); } finally {
+    const restore = (key: "SMTP_HOST" | "SMTP_USER" | "SMTP_PASS", value: string | undefined) => { if (value === undefined) delete process.env[key]; else process.env[key] = value; };
+    restore("SMTP_HOST", saved.host); restore("SMTP_USER", saved.user); restore("SMTP_PASS", saved.pass);
+  }
+}
+
+function withEmailSender<T>(send: () => Promise<unknown>, run: () => Promise<T>): Promise<T> {
+  const original = sm.studentManagementHooks.sendEmail;
+  sm.studentManagementHooks.sendEmail = send;
+  return run().finally(() => { sm.studentManagementHooks.sendEmail = original; });
+}
+
+async function within<T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<"timeout">(resolve => { timer = setTimeout(() => resolve("timeout"), ms); });
+  try { return await Promise.race([promise, expired]); } finally { if (timer) clearTimeout(timer); }
+}
+
+function captureStudentEvents() {
+  const events: Array<Record<string, unknown>> = [];
+  const info = console.info;
+  console.info = (...args: unknown[]) => {
+    try {
+      const entry = JSON.parse(String(args[0])) as Record<string, unknown>;
+      if (entry.type === "student_management") events.push(entry);
+    } catch { /* not one of ours */ }
+    info(...args);
+  };
+  return { events, restore: () => { console.info = info; } };
+}
+
+async function unverifiedLearner() {
+  seq += 1;
+  const email = `sm-pending-${seq}@example.test`;
+  return store.registerUser({ email, password: "password1", nickname: `Pending ${seq}` });
+}
+
 test("defaults: Improve Tutor off (needs AI Tutor), AI Support Assistant on (owner decision 2026-11-02)", async () => {
   const plain = await learner();
   const tutor = await learner({ aiTutor: true });
@@ -290,4 +341,83 @@ test("L3 (review B 2026-11-03): a read in flight while a write clears the cache 
   const resumed = sm.setEmergencyOff({ actor, feature: "ai_support_assistant", off: false, reason: "over" });
   await Promise.all([racingGlobal, resumed]);
   assert.equal(await sm.isFeatureEnabled(other.id, "ai_support_assistant", t0 + 6), true);
+});
+
+test("BUG-0358/0359: a slow SMTP send cannot hold send_password_link past the 4s budget; it answers pending and keeps sending", async () => {
+  const user = await learner();
+  const gate = deferred();
+  const captured = captureStudentEvents();
+  try {
+    await withSmtp(() => withEmailSender(() => gate.promise, async () => {
+      const started = Date.now();
+      const result = await within(sm.runStudentAction(user.id, { action: "send_password_link", actor }, request), 6_000);
+      assert.notEqual(result, "timeout", "the action must answer before the Backoffice 8s timeout while SMTP is still sending");
+      const response = result as Awaited<ReturnType<typeof sm.runStudentAction>>;
+      const elapsed = Date.now() - started;
+      assert.ok(elapsed < 5_000, `action answered in ${elapsed}ms`);
+      assert.deepEqual(response.email, { sent: null, pending: true });
+      assert.ok((await store.readProductData()).passwordResetTokens.some((token) => token.userId === user.id && !token.usedAt), "the reset token is issued before the response");
+      // The background send finishes after the response and records its result; it never rejects unhandled.
+      gate.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.ok(captured.events.some((event) => event.event === "email.send" && event.action === "send_password_link" && event.userId === user.id && event.ok === true), "the background send records its result");
+    }));
+  } finally { captured.restore(); gate.resolve(); }
+});
+
+test("BUG-0358/0359: a slow SMTP send cannot hold change_email past the 4s budget; the change is saved and the mail continues", async () => {
+  const user = await learner();
+  const next = `slow-${user.id}@example.test`;
+  const gate = deferred();
+  const captured = captureStudentEvents();
+  try {
+    await withSmtp(() => withEmailSender(() => gate.promise, async () => {
+      const started = Date.now();
+      const result = await within(sm.runStudentAction(user.id, { action: "change_email", actor, email: next, reason: "ticket", exemption: null }, request), 6_000);
+      assert.notEqual(result, "timeout", "the action must answer before the Backoffice 8s timeout while SMTP is still sending");
+      const response = result as Awaited<ReturnType<typeof sm.runStudentAction>>;
+      const elapsed = Date.now() - started;
+      assert.ok(elapsed < 5_000, `action answered in ${elapsed}ms`);
+      assert.equal(response.student.email, next);
+      assert.equal(response.student.emailVerification, "pending");
+      assert.deepEqual(response.email, { sent: null, pending: true });
+      assert.ok((await store.readProductData()).verificationTokens.some((token) => token.userId === user.id && !token.usedAt), "the verification token is issued before the response");
+      gate.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.ok(captured.events.some((event) => event.event === "email.send" && event.action === "change_email" && event.userId === user.id && event.ok === true), "the background send records its result");
+    }));
+  } finally { captured.restore(); gate.resolve(); }
+});
+
+test("BUG-0358/0359: a failed send answers sent:false, records the action and logs the failure without throwing or rejecting", async () => {
+  const user = await unverifiedLearner();
+  const captured = captureStudentEvents();
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => rejections.push(reason);
+  process.on("unhandledRejection", onRejection);
+  try {
+    await withSmtp(() => withEmailSender(async () => { throw new Error("smtp down"); }, async () => {
+      const response = await sm.runStudentAction(user.id, { action: "resend_verification", actor }, request);
+      assert.deepEqual(response.email, { sent: false });
+      const recorded = (await store.readProductData()).studentAdminEvents?.filter((event) => event.userId === user.id && event.action === "email.verification_sent") ?? [];
+      assert.equal(recorded.length, 1);
+      assert.deepEqual(recorded[0]!.after, { email: user.email, emailSent: false });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.deepEqual(rejections, []);
+      assert.ok(captured.events.some((event) => event.event === "email.send" && event.action === "resend_verification" && event.userId === user.id && event.ok === false), "the failed send is logged");
+    }));
+  } finally { process.off("unhandledRejection", onRejection); captured.restore(); }
+});
+
+test("BUG-0358/0359: a quick successful send answers sent:true and records the outcome", async () => {
+  const user = await unverifiedLearner();
+  try {
+    await withSmtp(() => withEmailSender(async () => undefined, async () => {
+      const response = await sm.runStudentAction(user.id, { action: "resend_verification", actor }, request);
+      assert.deepEqual(response.email, { sent: true });
+      const recorded = (await store.readProductData()).studentAdminEvents?.filter((event) => event.userId === user.id && event.action === "email.verification_sent") ?? [];
+      assert.equal(recorded.length, 1);
+      assert.deepEqual(recorded[0]!.after, { email: user.email, emailSent: true });
+    }));
+  } finally { /* withSmtp restores SMTP; the hook restores in withEmailSender */ }
 });
