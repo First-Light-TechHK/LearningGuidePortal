@@ -15,7 +15,7 @@ import { subscriptionCategoryLabel } from "@/lib/subscriptionCategoryLabel";
 import styles from "./subscription-records.module.css";
 
 type Copy = {
-  title: string; active: string; trial: string; grace: string; cancelAtPeriodEnd: string; canceled: string; expired: string; cancel: string; resume: string; manage: string; validUntil: string; records: string; date: string; amount: string; receipt: string; noReceipt: string; paid: string; pending: string; failed: string; canceledPayment: string; refunded: string; trialActivation: string;
+  title: string; active: string; trial: string; grace: string; cancelAtPeriodEnd: string; canceled: string; expired: string; cancel: string; resume: string; manage: string; validUntil: string; records: string; date: string; amount: string; receipt: string; noReceipt: string; paid: string; failed: string; canceledPayment: string; refunded: string; trialActivation: string;
   cancelTitle: string; cancelDescription: string; cancelReason: string; reasonLowUsage: string; reasonTooExpensive: string; reasonContent: string; reasonWebsite: string; reasonOther: string; reasonOtherPlaceholder: string; characters: string; confirmCancel: string; close: string; updatePaymentMethod: string; payNow: string; plan: string; validPeriod: string; upgrade: string;
 };
 
@@ -97,7 +97,7 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
     finally { actionInFlight.current = false; setBusyId(""); }
   }
 
-  const paymentStatus = (order: Order) => order.kind === "trial_activation" && order.status === "paid" ? copy.trialActivation : order.status === "paid" ? copy.paid : order.status === "pending" ? copy.pending : order.status === "failed" ? view.failed : order.status === "canceled" ? copy.canceledPayment : copy.refunded;
+  const paymentStatus = (order: Order) => order.kind === "trial_activation" && order.status === "paid" ? copy.trialActivation : order.status === "paid" ? copy.paid : order.status === "failed" ? view.failed : order.status === "canceled" ? copy.canceledPayment : copy.refunded;
   const reasons: Array<[SubscriptionCancelReason, string]> = [["low_usage", design.lowUsage], ["too_expensive", design.tooExpensive], ["content", design.content], ["website", design.website], ["other", copy.reasonOther]];
 
   const card = (record: typeof records[number]) => {
@@ -110,7 +110,6 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
     const colour = /CHINESE/.test(coverLabel) ? "chinese" : /EUROPEAN/.test(coverLabel) ? "european" : /SCIENCE/.test(coverLabel) ? "science" : /EVERYTHING/.test(coverLabel) ? "everything" : "other";
     const until = state === "grace" ? subscription?.graceEndsAt || subscription?.validTo : subscription?.validTo || order?.servicePeriodEnd;
     const status = state === "active" ? subscription?.source === "trial" ? copy.trial : view.active : state === "cancel_at_period_end" ? view.renewalCanceled : state === "grace" ? view.paymentFailed : state === "trial_canceled" ? copy.canceled : state === "expired" ? view.expired : view.statusUnavailable;
-    const pendingUpgrade = record.orders.find(item => item.kind === "upgrade" && item.status === "pending" && item.upgradeProration && item.quoteId);
     return <article className={styles.card} key={record.id} data-subscription-id={record.id} data-past={record.past}>
       <div className={styles.summary}>
         <div className={styles.product}><h2>{name}</h2>{image ? <Image className={styles.cover} src={image} alt={name} width={120} height={120} unoptimized/> : <div className={styles.coverArtwork} data-colour={colour} aria-hidden="true"><span>{coverLabel}</span><small>Learning Guide</small></div>}</div>
@@ -118,7 +117,7 @@ export function SubscriptionManager({ initialSubscriptions, initialOrders, local
           {subscription && state === "active" ? <button type="button" disabled={Boolean(busyId)} onClick={() => { setReason(undefined); setReasonText(""); setError(""); setCancelTarget(subscription); }}>{subscription.source === "trial" ? copy.cancel : view.cancelRenewal}</button> : null}
           {subscription && state === "grace" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void pay(subscription.id)}>{copy.payNow}</button> : null}
           {subscription && state === "cancel_at_period_end" ? <button type="button" disabled={Boolean(busyId)} onClick={() => void resume(subscription)}>{view.turnOnRenewal}</button> : null}
-          {pendingUpgrade ? <Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(pendingUpgrade.id)}#order-${encodeURIComponent(pendingUpgrade.id)}`}>{getMessages(locale).orderManagement.viewOrders}</Link> : subscription && allowCategoryUpgrade && state === "active" && subscription.scope === "category" && subscription.device !== "mobile" && subscription.stripeSubscriptionId ? <Link href={`/${locale}/subscription?upgradeFrom=${encodeURIComponent(subscription.id)}`}>{copy.upgrade}</Link> : null}
+          {subscription && allowCategoryUpgrade && state === "active" && subscription.scope === "category" && subscription.device !== "mobile" && subscription.stripeSubscriptionId ? <Link href={`/${locale}/subscription?upgradeFrom=${encodeURIComponent(subscription.id)}`}>{copy.upgrade}</Link> : null}
         </div></div>
         <div className={styles.time} data-state={state}><strong>{state === "grace" ? view.gracePeriod : record.past ? state === "unavailable" ? copy.validPeriod : view.expiredOn : copy.validUntil}</strong><span>{until ? date(until) : view.periodUnavailable}</span></div>
         <button className={styles.historyToggle} type="button" aria-expanded={Boolean(expanded[record.id])} aria-controls={`payments-${record.id}`} onClick={() => setExpanded(items => ({ ...items, [record.id]: !items[record.id] }))}>{view.paymentHistory}<Image src="/portal/subscriptions/design/chevron-down.svg" width={16} height={16} alt=""/></button>

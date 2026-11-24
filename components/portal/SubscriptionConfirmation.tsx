@@ -11,6 +11,7 @@ import Image from "next/image";
 import { formatPlanPrice } from "@/lib/planPricing";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
 import { getMessages } from "@/lib/i18n/messages";
+import { subscriptionOrdersPath } from "@/lib/subscriptionOrdersPath";
 import type { StripeUpgradeProration, StripeUpgradeCredit } from "@/contracts/stripe-upgrade";
 import type { SubscriptionConfirmationDisplay } from "@/contracts/subscription-confirmation";
 
@@ -136,7 +137,7 @@ function SubscriptionConfirmationContent({ locale, quote, plan, copy, planHeadin
     </fieldset>
     {isUpgrade && <p className="upgrade-renewal-note">{upgrade.renewalNote.replace("{category}", sourceCategory).replace("{date}", renewalDate).replace("{price}", money(plan.amountMinor)).replace("{months}", String(plan.termMonths))}</p>}
     {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-    {blockingOrderId && <p><Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(blockingOrderId)}#order-${encodeURIComponent(blockingOrderId)}`}>{getMessages(locale).orderManagement.viewOrders}</Link></p>}
+    {blockingOrderId && <p><Link href={subscriptionOrdersPath(locale, blockingOrderId)}>{getMessages(locale).orderManagement.viewOrders}</Link></p>}
     <footer className="confirmation-actions"><PortalButton type="primary" loading={busy} disabled={!renewal || !terms || !refund || busy} onClick={() => void submit()}>{busy ? copy.processing : copy.continue}</PortalButton></footer>
   </dialog>;
 }

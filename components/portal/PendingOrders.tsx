@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getMessages } from "@/lib/i18n/messages";
 import { formatPlanPrice } from "@/lib/planPricing";
 import { keepFocusInDialog } from "@/lib/dialogFocus";
+import { subscriptionOrdersPath } from "@/lib/subscriptionOrdersPath";
 import type { ManagedOrder, OrderAction, OrderActionResult } from "@/contracts/order-management";
 import styles from "./pending-orders.module.css";
 
@@ -18,7 +19,7 @@ export function PendingOrders({ initialOrders, locale, returnOrderId }: { initia
   const dialog = useRef<HTMLDialogElement>(null), router = useRouter();
   const text = getMessages(locale).orderManagement;
   useEffect(() => { setOrders(initialOrders); }, [initialOrders]);
-  const signIn = useCallback(() => window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(`/${locale}/account/my-learning/subscription`)}`), [locale]);
+  const signIn = useCallback(() => window.location.assign(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(subscriptionOrdersPath(locale, returnOrderId))}`), [locale, returnOrderId]);
   const run = useCallback(async (id: string, action: OrderAction, automatic = false, signal?: AbortSignal) => {
     if (lock.current) return;
     lock.current = true; setBusyId(id);
@@ -93,7 +94,7 @@ export function PendingOrders({ initialOrders, locale, returnOrderId }: { initia
   const closed = orders.filter(order => order.status === "failed" || order.status === "canceled");
   const date = (value: string) => new Date(value).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
   const card = (order: ManagedOrder) => <article key={order.id} id={`order-${order.id}`} className={styles.card} data-order-id={order.id} data-state={order.state} tabIndex={-1}>
-    <div className={styles.heading}><div><h3>{order.name}</h3><p>{text.kinds[order.kind]}{order.termMonths ? ` · ${text.months.replace("{count}", String(order.termMonths))}` : ""}</p></div><strong>{formatPlanPrice(locale, order)}</strong></div>
+    <div className={styles.heading}><div><h2>{order.name}</h2><p>{text.kinds[order.kind]}{order.termMonths ? ` · ${text.months.replace("{count}", String(order.termMonths))}` : ""}</p></div><strong>{formatPlanPrice(locale, order)}</strong></div>
     <strong className={styles.status} aria-live="polite">{text.states[order.state]}</strong>
     <dl><div><dt>{text.orderNumber}</dt><dd>{order.id}</dd></div><div><dt>{text.created}</dt><dd>{date(order.createdAt)}</dd></div>
       {order.expiresAt && <div><dt>{text.deadline}</dt><dd>{date(order.expiresAt)}</dd></div>}
@@ -109,7 +110,7 @@ export function PendingOrders({ initialOrders, locale, returnOrderId }: { initia
     </div>
   </article>;
   return <section className={styles.orders} aria-labelledby="pending-orders-title">
-    <div className={styles.heading}><h2 id="pending-orders-title">{text.title}{pending.length ? ` (${pending.length})` : ""}</h2><button type="button" disabled={Boolean(busyId)} onClick={() => void refresh()}>{text.refresh}</button></div>
+    <div className={styles.heading}><h1 id="pending-orders-title">{text.title}{pending.length ? ` (${pending.length})` : ""}</h1><button type="button" disabled={Boolean(busyId)} onClick={() => void refresh()}>{text.refresh}</button></div>
     {error && !cancelId && <p role="alert" className="portal-form-error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     <div className={styles.list}>{pending.length ? pending.map(card) : <p>{text.empty}</p>}</div>

@@ -8,6 +8,7 @@ import { formatPlanPrice } from "@/lib/planPricing";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
+import { subscriptionOrdersPath } from "@/lib/subscriptionOrdersPath";
 import Link from "next/link";
 
 type Plan = { alreadySubscribed?: boolean; upgradeUnavailable?: boolean; available?: boolean; id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
@@ -97,7 +98,7 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
       </div></> : null}
       {subscribed && <p role="status">{messages.pricingDesign.alreadySubscribed}</p>}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-      {blockingOrderId && <p><Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(blockingOrderId)}#order-${encodeURIComponent(blockingOrderId)}`}>{messages.orderManagement.viewOrders}</Link></p>}
+      {blockingOrderId && <p><Link href={subscriptionOrdersPath(locale, blockingOrderId)}>{messages.orderManagement.viewOrders}</Link></p>}
       <div className="purchase-actions">{allowTrial ? <PortalButton loading={pendingAction === "trial"} disabled={busy || blocked} onClick={startTrial}>{copy.startTrial}</PortalButton> : null}<PortalButton loading={pendingAction === "purchase"} disabled={busy || blocked} onClick={purchase} type="primary">{copy.buy}</PortalButton></div>
     </div>
   );
