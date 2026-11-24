@@ -52,7 +52,8 @@ test("video previews choose access from the title row, share the cutoff modal an
         const button = header.querySelector("button")!.getBoundingClientRect();
         return { height: box.height, line: parseFloat(getComputedStyle(element).lineHeight), beside: button.x >= box.right && Math.abs(button.y + button.height / 2 - box.y - box.height / 2) <= 1, right: button.right, edge: header.getBoundingClientRect().right - 20 };
       });
-      assert.ok(geometry.height <= geometry.line + 1, `${locale}/${width}: preview Lesson title stays on one line`);
+      // BUG-0353: same size as the subscribed title (28px), so beside the button it may take a second line on a narrow desktop.
+      assert.ok(geometry.height <= geometry.line * 2 + 1, `${locale}/${width}: preview Lesson title fits in two lines`);
       assert.equal(geometry.beside, true, "purchase entry stays beside the Lesson title");
       assert.equal(geometry.right, geometry.edge);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -63,13 +64,15 @@ test("video previews choose access from the title row, share the cutoff modal an
       const style = getComputedStyle(element);
       return { fontSize: style.fontSize, lineHeight: style.lineHeight, fontWeight: style.fontWeight, textAlign: style.textAlign, margin: style.margin };
     };
-    for (const width of [1300, 1440]) {
+    for (const width of [390, 1300, 1440]) {
       await page.setViewportSize({ width, height: 1024 });
       await mount("title-parity-preview");
       const previewTitle = await page.getByRole("heading", { name: "Looking closely", exact: true }).evaluate(titleStyle);
       await mount("title-parity-entitled", { entitled: true });
       const entitledTitle = await page.getByRole("heading", { name: "Looking closely", exact: true }).evaluate(titleStyle);
       assert.deepEqual(previewTitle, entitledTitle, `${locale}/${width}: preview title renders like the subscribed title`);
+      // One shared rule: the subscribed title keeps its own size (28/38, 24/32 on a phone), the preview does not shrink it.
+      assert.deepEqual([entitledTitle.fontSize, entitledTitle.lineHeight], width < 701 ? ["24px", "32px"] : ["28px", "38px"], `${locale}/${width}: shared title size`);
     }
     await page.setViewportSize({ width: 1440, height: 1024 });
     await mount("preview");
