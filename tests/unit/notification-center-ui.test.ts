@@ -85,6 +85,14 @@ test("the Unread empty text is its own message", () => {
   }
 });
 
+test("the page title and the side menu entry use the same name, as in F02 (R-10)", () => {
+  for (const [locale, name] of [["en-GB", "Notifications"], ["zh-CN", "通知"]] as const) {
+    const messages = getMessages(locale);
+    assert.equal(messages.notificationsPage.title, name);
+    assert.equal(messages.account.notifications, name);
+  }
+});
+
 test("the page loads the first page on the server and imports the list, with no placeholder", async () => {
   const source = await readFile("app/[locale]/account/my-learning/notifications/page.tsx", "utf8");
   assert.ok(!source.includes("placeholder"));

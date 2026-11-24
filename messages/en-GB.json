@@ -884,7 +884,7 @@
   "account": {
     "overview": "Overview",
     "subscription": "My Subscription",
-    "notifications": "Notification Center",
+    "notifications": "Notifications",
     "settings": "Personal settings",
     "help": "Help Center / FAQ",
     "menu": "Account menu",
@@ -893,7 +893,7 @@
     "contactAction": "Contact support"
   },
   "notificationsPage": {
-    "title": "Notification centre",
+    "title": "Notifications",
     "intro": "Updates about your subscription, study groups and Learning Guide.",
     "dropdownTitle": "Notifications",
     "bellLabel": "Notifications",
