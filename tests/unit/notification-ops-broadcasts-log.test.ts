@@ -211,6 +211,47 @@ test("a broadcast button link reaches each recipient in their own locale (REV-06
   assert.equal(rows.find((item) => item.userId === en.id)?.buttonLink, "/en-GB/portal/courses");
 });
 
+test("broadcast test send reaches only the operator's learner account, marked Test, never a real send (NTF-BC-014)", async () => {
+  const testRoute = await import("../../app/api/integration/notifications/broadcasts/test/route");
+  const url = "/api/integration/notifications/broadcasts/test";
+  const operatorEmail = "broadcast-test-me@example.test";
+  const me = await verifiedUser(store, operatorEmail);
+  const content = { titleEn: "Unsaved title", bodyEn: "Unsaved body.", buttonText: "Open", buttonLink: "/portal/courses", operator: "ops@example.test", operatorEmail };
+
+  assert.equal((await testRoute.POST(request(url, undefined, content, "POST"))).status, 401);
+  assert.equal((await testRoute.POST(request(url, TOKEN, { ...content, titleEn: "" }, "POST"))).status, 400);
+  const stranger = await testRoute.POST(request(url, TOKEN, { ...content, operatorEmail: "nobody-here@example.test" }, "POST"));
+  assert.equal(stranger.status, 404);
+  assert.equal((await stranger.json()).code, "no_learner");
+
+  const before = await store.ensureProductData();
+  const broadcastsBefore = (before.notificationBroadcasts || []).length;
+  const notificationsBefore = before.notifications.length;
+  const sent = await testRoute.POST(request(url, TOKEN, content, "POST"));
+  assert.equal(sent.status, 200);
+  const body = await sent.json();
+  assert.equal(body.ok, true);
+
+  const data = await store.ensureProductData();
+  assert.equal((data.notificationBroadcasts || []).length, broadcastsBefore);
+  assert.equal(data.notifications.length, notificationsBefore + 1);
+  const row = data.notifications.find((item) => item.id === body.notificationId)!;
+  assert.equal(row.userId, me.id);
+  assert.equal(row.title, "[TEST] Unsaved title");
+  assert.equal(row.isTest, true);
+  assert.equal(row.category, "announcement");
+  assert.equal(row.buttonLink, "/en-GB/portal/courses");
+  assert.equal(data.notifications.filter((item) => item.userId !== me.id && item.title.startsWith("[TEST]")).length, 0);
+
+  const inbox = await service.listLearnerNotifications(me.id, { filter: "all", limit: 20 });
+  assert.equal(inbox.items.find((item) => item.id === body.notificationId)?.isTest, true);
+  assert.equal(inbox.unreadCount, 0);
+  const log = await service.querySendLog({ page: 1 });
+  const logged = log.items.find((item) => item.notificationId === body.notificationId);
+  assert.equal(logged?.isTest, true);
+  assert.equal(logged?.broadcastId, null);
+});
+
 test("PATCH broadcasts withdraw is irreversible, writes withdrawn and clears learner inbox", async () => {
   const created = await broadcastsRoute.POST(request("/api/integration/notifications/broadcasts", TOKEN, {
     titleEn: "Withdraw me", bodyEn: "This will be withdrawn.", audience: "all", operator: "ops@example.test",
@@ -363,7 +404,7 @@ test("send log default window hides older rows; detail 404 after 180 days; purge
   const defaults = await (await sendLogRoute.GET(request("/api/integration/notifications/send-log", TOKEN))).json();
   assert.equal(defaults.items.some((item: { id: string }) => item.id === "nlog_ten_days"), false);
   assert.equal(defaults.items.some((item: { id: string }) => item.id === "nlog_two_hundred_days"), false);
-  const widened = await (await sendLogRoute.GET(request("/api/integration/notifications/send-log?from=2020-01-01", TOKEN))).json();
+  const widened = await (await sendLogRoute.GET(request("/api/integration/notifications/send-log?from=2020-01-01&recipient=send-log-old@example.test", TOKEN))).json();
   assert.equal(widened.items.some((item: { id: string }) => item.id === "nlog_ten_days"), true);
   assert.equal(widened.items.some((item: { id: string }) => item.id === "nlog_two_hundred_days"), false);
 

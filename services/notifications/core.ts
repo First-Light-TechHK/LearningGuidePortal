@@ -244,7 +244,8 @@ export function appendNotificationLogInData(data: ProductData, entry: Omit<Notif
 
 export type RenderedTestNotificationInput = {
   userId: string;
-  templateId: string;
+  /** null for a broadcast test: the content is not a catalogue template. */
+  templateId: string | null;
   category: NotificationCategory;
   rendered: { title: string; body: string; buttonText: string | null; link: string | null; language: NotificationLanguage };
   eventKey: string;
@@ -263,7 +264,7 @@ export function insertTestNotificationInData(data: ProductData, input: RenderedT
     readAt: null,
     createdAt: now,
     category: input.category,
-    templateId: input.templateId,
+    templateId: input.templateId ?? undefined,
     buttonText: input.rendered.buttonText || undefined,
     buttonLink: input.rendered.link || undefined,
     language: input.rendered.language,
@@ -938,6 +939,41 @@ export function sendBroadcastInData(data: ProductData, broadcastId: string, acto
   broadcast.sentAt = now;
   appendAudit(broadcast, "broadcast_sent", actor, now, { status: "draft" }, { status: "sent", recipients: recipients.length });
   return { recipients: recipients.length };
+}
+
+/**
+ * PRD NTF-BC-014: "Send test to me" for the content on screen, saved or not.
+ * Nothing is saved as a broadcast; the in-app message goes to the learner account
+ * with the operator's email as a `[TEST]` row (isTest, excluded from every count).
+ */
+export function sendBroadcastTestInData(
+  data: ProductData,
+  input: BroadcastUpdateInput & { titleEn: string; bodyEn: string; operatorEmail: string; operator: string; language?: NotificationLanguage },
+  now = new Date().toISOString(),
+) {
+  const fields = validateBroadcastFields({ ...input, audience: "all" });
+  const email = input.operatorEmail.trim().toLowerCase();
+  const user = data.users.find((item) =>
+    (item.email || "").trim().toLowerCase() === email && item.status === "active" && !item.deactivatedAt && !item.mergedIntoUserId);
+  if (!user) return { ok: false, code: "no_learner" } as const;
+  const wantsZh = (input.language ?? (user.locale.toLowerCase().startsWith("zh") ? "zh" : "en")) === "zh";
+  const language: NotificationLanguage = wantsZh && fields.titleZh && fields.bodyZh ? "zh" : "en";
+  const result = insertTestNotificationInData(data, {
+    userId: user.id,
+    templateId: null,
+    category: "announcement",
+    rendered: {
+      title: language === "zh" ? fields.titleZh! : fields.titleEn,
+      body: language === "zh" ? fields.bodyZh! : fields.bodyEn,
+      buttonText: fields.buttonText,
+      link: localiseLink(fields.buttonLink, user.locale),
+      language,
+    },
+    eventKey: `test:broadcast:${makeId("test")}`,
+    operator: input.operator,
+    now,
+  });
+  return { ok: true, sentTo: user.email || email, notificationId: result.notification.id, logId: result.log.id } as const;
 }
 
 export function withdrawBroadcastInData(data: ProductData, broadcastId: string, actor: string, now = new Date().toISOString()) {

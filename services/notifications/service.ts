@@ -16,6 +16,7 @@ import {
   purgeExpiredNotificationRecordsInData,
   querySendLogInData,
   sendBroadcastInData,
+  sendBroadcastTestInData,
   sendLogDetailInData,
   setNotificationReadInData,
   templateIdForEvent,
@@ -408,6 +409,11 @@ export async function createBroadcastDraft(input: BroadcastDraftInput) {
 
 export async function sendBroadcast(broadcastId: string, actor: string) {
   return editProductData((data) => sendBroadcastInData(data, broadcastId, actor));
+}
+
+/** "Send test to me" on the broadcast editor (NTF-BC-014): on-screen content, nothing saved. */
+export async function sendBroadcastTest(input: Parameters<typeof sendBroadcastTestInData>[1]) {
+  return editProductData((data) => sendBroadcastTestInData(data, input));
 }
 
 export async function withdrawBroadcast(broadcastId: string, actor: string) {
