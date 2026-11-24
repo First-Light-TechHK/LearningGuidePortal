@@ -57,7 +57,10 @@ import type { NotificationBroadcast, NotificationLogEntry, NotificationTemplate 
 /** A notification that cannot be written must never undo or fail a payment step. */
 function notifySafely(data: ProductData, input: Parameters<typeof createNotificationInData>[1]) {
   try { return createNotificationInData(data, input); }
-  catch { console.error(JSON.stringify({ type: "notifications.hook_failed", templateId: input.templateId })); return null; }
+  catch (error) {
+    console.error(JSON.stringify({ type: "notifications.hook_failed", templateId: input.templateId, error: error instanceof Error ? error.name : "unknown" }));
+    return null;
+  }
 }
 
 const scrypt = promisify(scryptCallback);

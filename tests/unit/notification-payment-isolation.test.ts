@@ -48,5 +48,6 @@ test("a notification that cannot render does not stop a purchase from being fulf
   assert.equal(data.notifications.filter((item) => item.userId === user.id && item.templateId === "SUB_SUCCESS").length, 0, "no subscription notification row was written");
   assert.equal(errors.length, 1);
   assert.match(errors[0], /notifications\.hook_failed/);
+  assert.equal(JSON.parse(errors[0]).error, "TypeError", "the log line names the error type (P-04)");
   assert.ok(!errors[0].includes(user.id) && !errors[0].includes("@"), "the log line carries no user data");
 });
