@@ -52,7 +52,8 @@
   display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 12px; padding: 14px 20px;
   border-bottom: 1px solid var(--lg-line); color: inherit; text-decoration: none;
 }
-.itemUnread { background: var(--ntf-unread-bg); }
+/* Two classes: the component library resets "a" to a transparent background with a class + element rule that a single class loses to. */
+.item.itemUnread { background: var(--ntf-unread-bg); }
 .item:hover, .item:focus-visible { background: #eef3ff; }
 .item:focus-visible { outline: 2px solid var(--lg-blue); outline-offset: -2px; }
 .itemIcon { width: 36px; height: 36px; }

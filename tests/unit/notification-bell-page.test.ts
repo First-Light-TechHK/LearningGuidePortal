@@ -51,7 +51,8 @@ async function open(locale: "en-GB" | "zh-CN", state: State, width = 1440) {
       return route.fulfill({ json: { ok: true, items: state.items, unreadCount: state.unreadCount, total: state.items.length, nextCursor: null } });
     }
     if (url.pathname.endsWith(".svg")) return route.fulfill({ contentType: "image/svg+xml", body: await readFile("public/portal/figma-logo.svg") });
-    return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div>' });
+    // The running app sits inside the component library's wrapper, whose injected rule ".css-xxxx a { background: transparent }" (class + element) beats a single class; reproduce it so the unread colour is checked against it.
+    return route.fulfill({ contentType: "text/html", body: '<!doctype html><style>.css-dev-only-do-not-override-test a { background: transparent }</style><body class="css-dev-only-do-not-override-test"><div id="root"></div></body>' });
   });
   await page.goto(`http://header.test/${locale}/portal/courses`);
   for (const file of ["app/styles.css", "app/portal-design.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
