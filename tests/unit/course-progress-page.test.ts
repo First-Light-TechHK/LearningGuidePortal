@@ -154,7 +154,10 @@ test("text points share continuous anchors, track scroll and resume, and preserv
     await page.locator('[data-text-point-id="t2"] .la-prose').first().waitFor();
     await page.waitForFunction(() => {
       const reader = document.querySelector("[data-text-reader]")!, point = reader.querySelector('[data-text-point-id="t2"]')!;
-      return Math.abs(point.getBoundingClientRect().top - 12) < 2;
+      const toolbar = document.querySelector('[data-reading-toolbar][data-visible="true"]');
+      const current = document.querySelector('button[aria-current="step"]');
+      return toolbar && Math.abs(point.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom - 12) < 2
+        && current?.textContent?.includes("Reading 2");
     }, undefined, {timeout:3000}).catch(async error => {
       throw new Error(JSON.stringify(await page.evaluate(() => {
         const reader = document.querySelector("[data-text-reader]")!;

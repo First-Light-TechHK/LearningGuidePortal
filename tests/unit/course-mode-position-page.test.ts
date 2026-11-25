@@ -67,6 +67,14 @@ test("mode switching resumes the last visited point after backward review, with 
         await modeSwitch.click();
         await page.getByRole('option', { name: mode === 'text' ? getMessages(locale).previewVideoDesign.textMode : getMessages(locale).previewVideoDesign.videoMode, exact: true }).click();
       };
+      const waitForReadingPoint = async (id: string) => {
+        await page.waitForFunction(pointId => {
+          const point = document.querySelector(`[data-text-point-id="${pointId}"]`);
+          const toolbar = document.querySelector('[data-reading-toolbar][data-visible="true"]');
+          return point && toolbar && window.scrollY > 0
+            && Math.abs(point.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom - 12) < 2;
+        }, id);
+      };
       const controlBox = (await modeControl.boundingBox())!;
       assert.ok(controlBox.width <= 120 && controlBox.height <= 24, 'mode select remains compact');
       assert.ok((await modeControl.innerText()).includes(getMessages(locale).previewVideoDesign.videoMode));
@@ -93,7 +101,7 @@ test("mode switching resumes the last visited point after backward review, with 
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="b"] [aria-current="step"]')?.textContent?.includes("text 2"));
       assert.equal(await page.evaluate(() => new URL((window as any).destination, location.href).searchParams.get("contentId")), "b-text-2");
       // The active point updates before the browser applies the reader's scheduled scroll.
-      await page.waitForFunction(() => window.scrollY > 0 && Math.abs(document.querySelector('[data-text-point-id="b-text-2"]')!.getBoundingClientRect().top - 12) < 2);
+      await waitForReadingPoint("b-text-2");
       assert.equal(await page.locator("[data-text-reader]").evaluate(element => element.scrollTop), 0, "desktop reading also uses page scrolling");
       assert.deepEqual(modeRequests[1], { mode: "text", lessonId: "a", accessContext: "entitled" });
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-text-last-position.png` });
@@ -105,20 +113,21 @@ test("mode switching resumes the last visited point after backward review, with 
       positions.text = { lessonId: "a", contentId: "a-text-4" };
       await setMode("text");
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="a"] [aria-current="step"]')?.textContent?.includes("text 4"));
+      await waitForReadingPoint("a-text-4");
       const reviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-text-3");
       await page.getByRole("button", { name: /^1\.3 text 3/ }).click();
       await reviewed;
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
       // Point selection schedules page scrolling; let it finish before switching
       // away so the test represents the settled reading position.
-      await page.waitForFunction(() => Math.abs(document.querySelector('[data-text-point-id="a-text-3"]')!.getBoundingClientRect().top - 12) < 2);
+      await waitForReadingPoint("a-text-3");
       await setMode("video"); await video.waitFor();
       await setMode("text");
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 3"));
       // The step updates before the reader scrolls to it. These screenshots stay inside
       // the viewport: a full-page one can resize the page to 1x1 for a moment, the text
       // reflows, and the reader saves whichever point that leaves on screen.
-      await page.waitForFunction(() => window.scrollY > 0 && Math.abs(document.querySelector('[data-text-point-id="a-text-3"]')!.getBoundingClientRect().top - 12) < 2);
+      await waitForReadingPoint("a-text-3");
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-reviewed-1-3.png` });
       await setMode("video"); await video.waitFor();
       const videoReviewed = page.waitForRequest(request => request.url().includes("/api/study/") && request.postDataJSON()?.contentId === "a-video-1");
@@ -133,14 +142,12 @@ test("mode switching resumes the last visited point after backward review, with 
       await page.setViewportSize({ width: 390, height: 844 });
       await setMode("text");
       await page.waitForFunction(() => document.querySelector('[data-lesson-id="b"] [aria-current="step"]')?.textContent?.includes("text 3"));
-      await page.waitForFunction(() => {
-        const reader = document.querySelector('[data-text-reader]'), target = document.querySelector('[data-text-point-id="b-text-3"]');
-        if (!reader || !target) return false;
-        const offset = target.getBoundingClientRect().top;
-        return offset >= 0 && offset < 40;
-      });
+      await waitForReadingPoint("b-text-3");
       await page.screenshot({ path: `test-results/course-mode-position/${locale}-last-position-mobile.png` });
-      await page.locator('[data-text-point-id="b-text-2"]').evaluate(element => window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top - 12));
+      await page.locator('[data-text-point-id="b-text-2"]').evaluate(element => {
+        const toolbar = document.querySelector('[data-reading-toolbar][data-visible="true"]')!;
+        window.scrollBy(0, element.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom - 12);
+      });
       await page.waitForFunction(() => document.querySelector('[aria-current="step"]')?.textContent?.includes("text 2"));
       assert.equal(await page.locator('[data-text-reader]').evaluate(element => element.scrollTop), 0, "mobile point tracking uses page scrolling");
       assert.deepEqual(errors, []);
