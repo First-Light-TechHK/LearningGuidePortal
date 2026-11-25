@@ -7,7 +7,7 @@ import { lessonOutlineDestination } from "../../lib/previewLessonPresentation";
 
 test("explicit lesson links retain every lesson and choose its available mode without a foreign content cursor", () => {
   const lesson = { href: "/zh-CN/account/learn/course?lessonId=earlier&contentId=other-lesson#outline", modes: ["text"] as ("text" | "video")[] };
-  assert.deepEqual(lessonOutlineDestination(lesson, "video"), { href: "/zh-CN/account/learn/course?lessonId=earlier&viewMode=text#outline", mode: "text" });
+  assert.deepEqual(lessonOutlineDestination(lesson, "video"), { href: "/zh-CN/account/learn/course?lessonId=earlier&viewMode=text&modeSwitch=1#outline", mode: "text" });
   assert.equal(lessonOutlineDestination({ ...lesson, href: null }, "video"), null);
   assert.equal(lessonOutlineDestination({ ...lesson, modes: [] }, "video"), null);
   assert.equal(lessonOutlineDestination({ ...lesson, modes: ["video", "text"] }, "video")?.mode, "video");

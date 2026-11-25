@@ -42,7 +42,7 @@ test("text lesson keeps inline exhibit references inert while explicit exhibit d
     await page.setViewportSize({width:1440,height:1024});
     await page.evaluate(props=>(window as unknown as {mount:(props:unknown)=>void}).mount(props),viewProps);
     await bars.nth(2).waitFor();await assertInertReferences();
-    const breadcrumb=page.locator('nav').first();
+    const breadcrumb=page.locator('[data-lesson-breadcrumb]');
     async function assertFullWidthBreadcrumb(width:number) {
       const bounds=await breadcrumb.evaluate(element=>{
         const box=element.getBoundingClientRect(),first=element.querySelector('a')!.getBoundingClientRect(),style=getComputedStyle(element);
