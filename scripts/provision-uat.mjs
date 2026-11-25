@@ -131,6 +131,10 @@ export const tiers = {
       // ADMIN_HOSTS defaults to the admin.ilovelearningguide.com hosts; Sandbox must
       // serve its own admin host and route every Admin call to the Sandbox Admin.
       ADMIN_HOSTS: new URL(sandboxAdminOrigin).hostname,
+      // Sandbox consumes Admin's read-only course projection (Sandbox plan §4.5).
+      // Every other tier keeps the default `store`; the switch is configuration,
+      // never an environment branch in product code.
+      PORTAL_COURSE_SOURCE: 'admin',
       // Like UAT, Sandbox sends its own origin as the OpenRouter site header once the
       // AI Tutor key is configured. Not a key: it cannot make AI work by itself.
       OPENROUTER_SITE_URL: sandboxOrigin,

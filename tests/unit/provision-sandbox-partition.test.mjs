@@ -64,10 +64,14 @@ test("sandbox tier no longer disables AI/Helpdesk keys and keeps only its own is
     "ADMIN_PORTAL_BASE_URL",
     "KS_TUTOR_BASE_URL",
     "OPENROUTER_SITE_URL",
+    "PORTAL_COURSE_SOURCE",
     "PORTAL_HELPDESK_BASE_URL",
     "PORTAL_NOTIFICATIONS_BASE_URL",
     "PORTAL_STUDENTS_BASE_URL"
   ]);
+  // Only Sandbox consumes Admin's read-only course projection; every other tier
+  // stays on the local `store` default.
+  assert.equal(sandbox.deployVariables.PORTAL_COURSE_SOURCE, "admin");
   assert.equal(sandbox.deployVariables.OPENROUTER_SITE_URL, "https://sandbox.ilovelearningguide.com");
   for (const key of ["ADMIN_PORTAL_BASE_URL", "KS_TUTOR_BASE_URL", "ADMIN_HELPDESK_BASE_URL"]) {
     assert.equal(sandbox.deployVariables[key], "https://admin.sandbox.ilovelearningguide.com", `${key} must point at the Sandbox Admin`);

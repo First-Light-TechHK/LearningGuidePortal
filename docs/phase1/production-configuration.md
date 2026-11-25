@@ -41,6 +41,11 @@ Set these as App Runner environment variables or Secrets Manager references for 
 | `OPENROUTER_API_KEY` | secret | Server-side OpenRouter key | AI Tutor requests |
 | `OPENROUTER_SITE_URL` | variable | Public product URL | OpenRouter attribution header |
 | `OPENROUTER_APP_NAME` | variable | `Learning Guide` | OpenRouter attribution header |
+| `PORTAL_COURSE_SOURCE` | variable | `store` everywhere; `admin` only on Sandbox | Selects the Admin read-only course projection mirror (`admin`) or the local course store (`store`, default) |
+| `ADMIN_PORTAL_BASE_URL` | variable | Sandbox Admin origin, for example `https://admin.sandbox.example.com` | Admin `/api/portal/v1/**` projection and media; required only when `PORTAL_COURSE_SOURCE=admin` |
+| `ADMIN_PORTAL_API_TOKEN` | secret | Sandbox Admin `AUTH_TOKEN` | `X-API-Key` for the projection; required only when `PORTAL_COURSE_SOURCE=admin` |
+| `ADMIN_PORTAL_TIMEOUT_MS` | variable | `5000` (optional) | Projection request timeout |
+| `ADMIN_PORTAL_CACHE_TTL_SECONDS` | variable | `60` (optional) | Catalogue mirror refresh throttle |
 
 ## App Runner instance role
 

@@ -85,6 +85,14 @@ export function runtimeConfiguration() {
   const openRouter = hasEnv("OPENROUTER_API_KEY");
   const sessionSecret = Boolean(process.env.SESSION_SECRET?.trim() && (process.env.SESSION_SECRET?.trim().length || 0) >= 32);
   const payment = paymentMode();
+  // Read-only course projection status (Sandbox plan §4.5). This never gates
+  // readiness: a temporarily unreachable Admin must not make App Runner kill Sandbox.
+  const adminBaseConfigured = hasEnv("ADMIN_PORTAL_BASE_URL");
+  const adminTokenConfigured = hasEnv("ADMIN_PORTAL_API_TOKEN");
+  const adminCatalogueConfigured = adminBaseConfigured && adminTokenConfigured;
+  const courseSource = (process.env.PORTAL_COURSE_SOURCE || "store").trim().toLowerCase() === "admin" && adminCatalogueConfigured
+    ? "admin"
+    : "store";
   const required: string[] = [];
   if (production && !publicUrl) required.push("NEXT_PUBLIC_APP_URL");
   if (production && publicUrl && !/^https:\/\//i.test(process.env.NEXT_PUBLIC_APP_URL || "")) required.push("HTTPS NEXT_PUBLIC_APP_URL");
@@ -129,6 +137,8 @@ export function runtimeConfiguration() {
       sessionSecret: sessionSecret ? "configured" : "missing"
     },
     aiTutor: openRouter ? "configured" : "missing",
+    courseSource,
+    adminCatalogue: adminCatalogueConfigured ? "configured" : "missing",
     ready: required.length === 0,
     missing: required
   };
