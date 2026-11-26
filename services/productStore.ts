@@ -2201,6 +2201,29 @@ export async function markStripeTrialGrace(subscriptionId: string) {
   });
 }
 
+/**
+ * Frozen variables for the failed-renewal notification. Both write points share
+ * this so the deferred email channel always receives every variable the template
+ * needs — `user_name` included. Email rendering fails closed on a missing
+ * variable, so a write point that forgets one silently loses the email.
+ */
+export function renewalFailedNotificationParams(
+  data: ProductData,
+  subscription: ProductSubscription,
+  plan: ProductPlan | undefined,
+  graceEnd: string,
+  amountMinor?: number,
+) {
+  const user = data.users.find((item) => item.id === subscription.userId);
+  return {
+    user_name: (user?.nickname || "").trim() || "there",
+    plan_name: plan ? planDisplayName(plan) : "subscription",
+    scope_name: plan ? planScopeName(plan, data) : "",
+    renewal_amount: amountMinor ?? plan?.amountMinor ?? 0,
+    grace_end_date: graceEnd,
+  };
+}
+
 export async function markStripeSubscriptionGrace(subscriptionId: string) {
   return editData((data) => {
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === subscriptionId && item.source === "purchase" && item.state !== "expired");
@@ -2219,12 +2242,7 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
       userId: subscription.userId,
       templateId: "SUB_RENEWAL_FAILED",
       eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
-      params: {
-        plan_name: plan ? planDisplayName(plan) : "subscription",
-        scope_name: plan ? planScopeName(plan, data) : "",
-        renewal_amount: plan?.amountMinor ?? 0,
-        grace_end_date: graceEnd.toISOString(),
-      },
+      params: renewalFailedNotificationParams(data, subscription, plan, graceEnd.toISOString()),
     });
     return subscription;
   });
@@ -3251,12 +3269,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
             userId: subscription.userId,
             templateId: "SUB_RENEWAL_FAILED",
             eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
-            params: {
-              plan_name: plan ? planDisplayName(plan) : "subscription",
-              scope_name: plan ? planScopeName(plan, data) : "",
-              renewal_amount: plan?.amountMinor ?? event.amountMinor ?? 0,
-              grace_end_date: end,
-            },
+            params: renewalFailedNotificationParams(data, subscription, plan, end, event.amountMinor),
           });
         }
       }
