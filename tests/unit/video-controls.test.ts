@@ -49,8 +49,12 @@ test('shared video toolbar keeps controls usable without playback or picture-in-
         assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), Number(rate));
         assert.equal(await speedLabel.textContent(), rate === '1' ? defaultSpeed : `${rate}×`);
       }
-      await speed.selectOption('1'); await speed.focus(); await page.keyboard.press('ArrowDown');
+      await speed.selectOption('1'); await speed.focus();
+      // On macOS Chromium, native type-ahead selects the next matching rate.
+      // Linux changes a focused select directly with ArrowDown.
+      await page.keyboard.press(process.platform === 'darwin' ? '1' : 'ArrowDown');
       assert.equal(await speed.inputValue(), '1.25', 'native keyboard selection remains available');
+      assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), 1.25);
       await page.locator('video').evaluate(video => { (video as HTMLVideoElement).playbackRate = 1; });
       await page.waitForFunction(expected => document.querySelector('.la-video-speed > span')?.textContent === expected, defaultSpeed);
       await speed.selectOption('1.5');
