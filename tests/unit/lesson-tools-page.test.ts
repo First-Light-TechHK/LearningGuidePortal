@@ -196,47 +196,49 @@ test("lesson tools show access hints only for unentitled previews and retain ena
     await mount('long-outline', true, 'text', 'Looking closely', longReading, 40);
     const longOutline = page.locator('[data-reading-outline] nav');
     await page.waitForFunction(() => document.querySelector('[data-reading-outline]')?.getAttribute('data-reading-sticky') === 'true');
-    // Keep the original scroll and assertion in separate browser tasks; do not wait for a settling frame.
-    const before = await longOutline.evaluate(nav => {
-      const started = performance.now();
-      const frames: {phase: string; ms: number; scroll: number; height: number; total: number; inset: string}[] = [];
-      const recorder = { sample(phase: string) { frames.push({
-        phase, ms: +(performance.now() - started).toFixed(2), scroll: nav.scrollTop,
-        height: nav.clientHeight, total: nav.scrollHeight, inset: getComputedStyle(nav).getPropertyValue('--reading-top-inset'),
-      }); } };
-      Reflect.set(nav, 'qaOutlineFrames', frames);
-      recorder.sample('before scroll');
-      nav.scrollTop = nav.scrollHeight;
-      recorder.sample('after scroll');
-      requestAnimationFrame(() => { recorder.sample('frame 1'); requestAnimationFrame(() => recorder.sample('frame 2')); });
-      return nav.scrollTop;
+    const waitForToolbar = async (visible: boolean) => page.waitForFunction(expected => {
+      const bar = document.querySelector<HTMLElement>('[data-reading-toolbar]');
+      const root = document.querySelector<HTMLElement>('[data-reading-outline]');
+      const inset = root ? parseFloat(getComputedStyle(root).getPropertyValue('--reading-top-inset')) : NaN;
+      return bar?.getAttribute('data-visible') === String(expected) && inset === (expected ? Math.ceil(bar.getBoundingClientRect().height) : 0);
+    }, visible);
+    const atBottom = async () => page.waitForFunction(() => {
+      const nav = document.querySelector<HTMLElement>('[data-reading-outline] nav');
+      return nav && nav.scrollHeight > nav.clientHeight && nav.scrollTop > 0 && nav.scrollTop >= nav.scrollHeight - nav.clientHeight - 1;
     });
-    const scrolled = await longOutline.evaluate(element => element.scrollTop > 0);
-    const geometry = await longOutline.getByRole('link').last().evaluate(element => {
-      const nav = element.closest('nav')!;
-      const list = nav.getBoundingClientRect(), link = element.getBoundingClientRect();
-      const hit = document.elementFromPoint(link.left + link.width / 2, link.top + link.height / 2);
-      return {
-        nav: list.toJSON(), link: link.toJSON(), href: element.getAttribute('href'),
-        count: nav.querySelectorAll('a').length, scrollTop: nav.scrollTop,
-        clientHeight: nav.clientHeight, scrollHeight: nav.scrollHeight,
-        inset: getComputedStyle(nav).getPropertyValue('--reading-top-inset'),
-        toolbarVisible: document.querySelector('[data-reading-toolbar]')?.getAttribute('data-visible'),
-        hitTag: hit?.tagName, hitHref: hit?.closest('a')?.getAttribute('href'), hitInsideLink: !!hit && element.contains(hit),
-      };
-    });
-    const visible = geometry.link.top >= geometry.nav.top && geometry.link.bottom <= geometry.nav.bottom;
-    let evidence = '';
-    if (!visible || !scrolled) {
-      const frames = await longOutline.evaluate(async nav => {
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        return Reflect.get(nav, 'qaOutlineFrames');
+    const last = longOutline.getByRole('link').last();
+    const assertLastVisible = async () => {
+      const geometry = await last.evaluate(element => {
+        const nav = element.closest('nav')!, list = nav.getBoundingClientRect(), link = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(link.left + link.width / 2, link.top + link.height / 2);
+        return { navTop: list.top, navBottom: list.bottom, linkTop: link.top, linkBottom: link.bottom,
+          href: element.getAttribute('href'), hit: !!hit && element.contains(hit), scrollTop: nav.scrollTop,
+          scrollHeight: nav.scrollHeight, clientHeight: nav.clientHeight,
+          inset: getComputedStyle(nav).getPropertyValue('--reading-top-inset'),
+          toolbarVisible: document.querySelector('[data-reading-toolbar]')?.getAttribute('data-visible') };
       });
-      evidence = await browserAssertionEvidence(page, 'test-results/lesson-tools', locale+'-outline-failure',
-        'tests/unit/lesson-tools-page.test.ts', {locale, initialScrollResult: before, geometry, frames});
-    }
-    assert.ok(scrolled, `an oversized outline scrolls inside the sidebar; scrollTop=${geometry.scrollTop}; ${evidence}`);
-    assert.ok(visible, `the final lesson is reachable inside the outline; ${geometry.href}, ${geometry.count} links, top clearance ${geometry.link.top-geometry.nav.top}px, bottom clearance ${geometry.nav.bottom-geometry.link.bottom}px, inset ${geometry.inset}; ${evidence}`);
+      const visible = geometry.linkTop >= geometry.navTop && geometry.linkBottom <= geometry.navBottom;
+      const evidence = visible && geometry.hit ? '' : await browserAssertionEvidence(page, 'test-results/lesson-tools', locale+'-outline-failure', 'tests/unit/lesson-tools-page.test.ts', { locale, geometry });
+      assert.ok(visible, `the whole final lesson is visible: ${JSON.stringify(geometry)}; ${evidence}`);
+      assert.equal(geometry.hit, true, 'the final lesson is not covered');
+      assert.equal(geometry.href, '/lesson-39?viewMode=text&modeSwitch=1');
+    };
+    // A real wheel gesture reaches the bottom with the toolbar hidden; then the
+    // page scroll reveals the toolbar and shrinks the outline viewport.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await waitForToolbar(false);
+    await longOutline.hover(); await page.mouse.wheel(0, 10000); await atBottom();
+    await assertLastVisible();
+    await page.mouse.move(900, 400); await page.mouse.wheel(0, 700); await waitForToolbar(true);
+    await assertLastVisible();
+    // A reader part-way through the outline must not be moved to the end.
+    await page.evaluate(() => window.scrollTo(0, 0)); await waitForToolbar(false);
+    await longOutline.hover(); await page.mouse.wheel(0, -1000);
+    await page.waitForFunction(() => { const n=document.querySelector<HTMLElement>('[data-reading-outline] nav');return n && n.scrollTop < n.scrollHeight-n.clientHeight-100; });
+    const middle = await longOutline.evaluate(n => n.scrollTop);
+    assert.ok(middle > 0, 'the reader is genuinely part-way through the outline');
+    await page.mouse.move(900, 400); await page.mouse.wheel(0, 700); await waitForToolbar(true);
+    assert.equal(await longOutline.evaluate(n => n.scrollTop), middle, 'toolbar reflow preserves a middle position');
     for (const width of [1200, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await mount(`reading-narrow-${width}`, true, 'text', 'Looking closely', longReading);
@@ -244,6 +246,13 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       assert.ok((await tools.boundingBox())!.y >= (await page.locator('article').boundingBox())!.y + (await page.locator('article').boundingBox())!.height - 1, 'narrow screens keep tools after the reading article');
       await assertCompletionPosition(width);
     }
+    // Verify a real click reaches the final lesson's destination.
+    await page.setViewportSize({ width: 1440, height: 700 });
+    await mount('long-outline-click', true, 'text', 'Looking closely', longReading, 40);
+    await page.evaluate(() => window.scrollTo(0, 700)); await waitForToolbar(true);
+    await longOutline.hover(); await page.mouse.wheel(0, 10000); await atBottom();
+    await assertLastVisible(); await last.click();
+    await page.waitForURL('http://tools.test/lesson-39?viewMode=text&modeSwitch=1');
     assert.deepEqual(errors, []);
     await page.close();
   } } finally { await browser.close(); }
