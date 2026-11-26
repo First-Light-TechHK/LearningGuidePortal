@@ -2428,3 +2428,42 @@ body { background: #fff; color: var(--lg-ink); }
 }
 
 /* Account settings — sign-in method linking */
+
+/* Sandbox environment banner (PRD v2.0 §3.1): rendered only when APP_ENV=SANDBOX.
+   Full width, normal document flow (never fixed) so it cannot cover the header. */
+.sandbox-environment-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  background: #6d28d9;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.sandbox-environment-badge__tag {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sandbox-environment-badge__text {
+  font-weight: 500;
+}
+
+@media (max-width: 480px) {
+  .sandbox-environment-badge { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
+}
+

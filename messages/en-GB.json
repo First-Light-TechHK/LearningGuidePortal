@@ -540,7 +540,11 @@
     "eyebrow": "Learning Guide Portal",
     "title": "Learn through guided courses",
     "description": "Explore a course, start with the public lesson, and continue learning with a course-aligned AI Tutor.",
-    "navigation": {"primaryLabel": "Primary navigation", 
+    "sandbox": {
+      "label": "Sandbox",
+      "message": "Sandbox environment — test courses and test payments only. Do not use a real card."
+    },
+    "navigation": {"primaryLabel": "Primary navigation",
       "courses": "Courses",
       "studyGroups": "Study Groups",
       "pricing": "Subscription",

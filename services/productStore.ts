@@ -28,6 +28,7 @@ import path from "path";
 import { promisify } from "util";
 import { atomicWriteJson, ensureDir, now, readBinary, readJson, removeDir, systemRoot, writeBinary } from "./fileStore";
 import { persistenceEnabled } from "./persistence/config";
+import { adminCatalogueEnabled } from "./adminCatalogue";
 import { query } from "./persistence/db";
 import { hydrateOrmFromSql } from "./ormRuntime";
 import type { SocialUserInput } from "@/contracts/wechat";
@@ -131,6 +132,14 @@ export type ProductCourse = CourseMetadata & {
   sections: ProductSection[];
   createdAt: string;
   updatedAt: string;
+  /** Set when this row is a read-only mirror of an Admin-projected course. */
+  origin?: "admin";
+  /** Admin UUID used to fetch the projection detail and media; never a Portal key. */
+  adminCourseId?: string;
+  /** ISO timestamp of the last successful catalogue sync for this row. */
+  adminSyncedAt?: string;
+  /** ISO timestamp of the last successful detail sync for this row. */
+  adminDetailSyncedAt?: string;
 };
 export type ProductPlan = {
   available?: boolean;
@@ -1374,9 +1383,51 @@ export async function deleteSession(token: string | undefined) {
   await editData((data) => { data.sessions = data.sessions.filter((item) => item.tokenHash !== hashToken(token)); });
 }
 
+/**
+ * With the Admin projection switched on, catalogue and detail reads may come from
+ * the read-only mirror (§4.5 of the Sandbox plan). Every other environment keeps
+ * reading only local rows, so `PORTAL_COURSE_SOURCE` unset is byte-for-byte today's
+ * behaviour. Mirrored rows are never exposed when the source is `store`.
+ */
+function courseVisibleInSource(course: ProductCourse, adminMode: boolean) {
+  return adminMode || course.origin !== "admin";
+}
+
+function findVisibleCourse(courses: ProductCourse[], slugOrId: string, adminMode: boolean) {
+  const matches = courses.filter(course => (course.slug === slugOrId || course.id === slugOrId) && courseVisibleInSource(course, adminMode));
+  if (!adminMode) return matches[0] || null;
+  // Admin is the single writer, so a recorded mirror shadows a legacy local row
+  // that happens to share the slug (the seeded local aggregate keeps its own copy).
+  return matches.find(course => course.origin === "admin") || matches[0] || null;
+}
+
+async function ensureCourseSourceSynced() {
+  if (!adminCatalogueEnabled()) return;
+  const { syncCourseSource } = await import("./courseSource");
+  await syncCourseSource();
+}
+
+async function ensureCourseSourceFresh(slugOrId: string) {
+  if (!adminCatalogueEnabled()) return;
+  const { refreshCourseSource } = await import("./courseSource");
+  await refreshCourseSource(slugOrId);
+}
+
 export async function listPublishedCourses() {
+  const adminMode = adminCatalogueEnabled();
+  if (adminMode) await ensureCourseSourceSynced();
   const data = await ensureProductData();
-  return data.courses.filter((course) => course.status === "published");
+  const visible = data.courses.filter((course) => course.status === "published" && courseVisibleInSource(course, adminMode));
+  if (!adminMode) return visible;
+  // One card per slug. In admin mode the Admin mirror wins over a legacy local
+  // row with the same slug, because Admin is the single writer.
+  const bySlug = new Map<string, ProductCourse>();
+  for (const course of visible) {
+    const key = course.slug || course.id;
+    const existing = bySlug.get(key);
+    if (!existing || (existing.origin !== "admin" && course.origin === "admin")) bySlug.set(key, course);
+  }
+  return [...bySlug.values()];
 }
 
 export async function listPreviewCourseRecommendations(course: Pick<ProductCourse, "id" | "categoryId" | "category">) {
@@ -1393,8 +1444,10 @@ export async function listPreviewCourseRecommendations(course: Pick<ProductCours
 }
 
 export async function getProductCourse(slug: string) {
+  const adminMode = adminCatalogueEnabled();
+  if (adminMode) await ensureCourseSourceFresh(slug);
   const data = await ensureProductData();
-  return data.courses.find((course) => course.slug === slug || course.id === slug) || null;
+  return findVisibleCourse(data.courses, slug, adminMode);
 }
 
 function studyBookmarkRevision(record: ProductStudyRecord | undefined) {
@@ -1404,9 +1457,12 @@ function studyBookmarkRevision(record: ProductStudyRecord | undefined) {
 
 /** D1 Course page view: identity, syllabus access, CTA bands, unique-LP progress. */
 export async function getCoursePage(slug: string, userId?: string | null): Promise<CoursePage> {
+  // Network work happens before any product write lock (Sandbox plan §4.5).
+  const adminMode = adminCatalogueEnabled();
+  if (adminMode) await ensureCourseSourceFresh(slug);
   if (!userId) {
     const data = await ensureProductData();
-    const course = data.courses.find((item) => item.slug === slug || item.id === slug) || null;
+    const course = findVisibleCourse(data.courses, slug, adminMode);
     return buildCoursePage({
       course,
       hasLiveEntitlement: false,
@@ -1428,7 +1484,7 @@ export async function getCoursePage(slug: string, userId?: string | null): Promi
       }
     });
 
-    const course = data.courses.find((item) => item.slug === slug || item.id === slug) || null;
+    const course = findVisibleCourse(data.courses, slug, adminMode);
     if (!course) return emptyFailedCoursePage();
 
     const entitlement = activeEntitlement(data, userId, course.id);
@@ -2130,6 +2186,29 @@ export async function markStripeTrialGrace(subscriptionId: string) {
   });
 }
 
+/**
+ * Frozen variables for the failed-renewal notification. Both write points share
+ * this so the deferred email channel always receives every variable the template
+ * needs — `user_name` included. Email rendering fails closed on a missing
+ * variable, so a write point that forgets one silently loses the email.
+ */
+export function renewalFailedNotificationParams(
+  data: ProductData,
+  subscription: ProductSubscription,
+  plan: ProductPlan | undefined,
+  graceEnd: string,
+  amountMinor?: number,
+) {
+  const user = data.users.find((item) => item.id === subscription.userId);
+  return {
+    user_name: (user?.nickname || "").trim() || "there",
+    plan_name: plan ? planDisplayName(plan) : "subscription",
+    scope_name: plan ? planScopeName(plan, data) : "",
+    renewal_amount: amountMinor ?? plan?.amountMinor ?? 0,
+    grace_end_date: graceEnd,
+  };
+}
+
 export async function markStripeSubscriptionGrace(subscriptionId: string) {
   return editData((data) => {
     const subscription = data.subscriptions.find((item) => item.stripeSubscriptionId === subscriptionId && item.source === "purchase" && item.state !== "expired");
@@ -2148,12 +2227,7 @@ export async function markStripeSubscriptionGrace(subscriptionId: string) {
       userId: subscription.userId,
       templateId: "SUB_RENEWAL_FAILED",
       eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
-      params: {
-        plan_name: plan ? planDisplayName(plan) : "subscription",
-        scope_name: plan ? planScopeName(plan, data) : "",
-        renewal_amount: plan?.amountMinor ?? 0,
-        grace_end_date: graceEnd.toISOString(),
-      },
+      params: renewalFailedNotificationParams(data, subscription, plan, graceEnd.toISOString()),
     });
     return subscription;
   });
@@ -2863,7 +2937,8 @@ function managedCourse(data: ProductData, actorId: string, courseId: string) {
   const actor = data.users.find(user => user.id === actorId);
   if (!canAuthorCourses(actor)) throw new AuthoringError("restricted");
   const course = data.courses.find(course => course.id === courseId);
-  if (!course || !canManageCourse(actor, course)) throw new AuthoringError("notFound");
+  // Admin-projected courses are a read-only mirror; Portal must never edit them.
+  if (!course || course.origin === "admin" || !canManageCourse(actor, course)) throw new AuthoringError("notFound");
   return course;
 }
 
@@ -2882,7 +2957,8 @@ export async function listCoursesForAuthor(actorId: string, query: CourseListQue
   const data = await ensureProductData();
   const actor = data.users.find(user => user.id === actorId);
   if (!actor || !canAuthorCourses(actor)) throw new AuthoringError("restricted");
-  return { ...selectAuthorCourses(data.courses, actor, query), operator: canOperateBackoffice(actor) };
+  // The embedded backoffice must not offer Admin-mirrored rows for editing.
+  return { ...selectAuthorCourses(data.courses.filter(course => course.origin !== "admin"), actor, query), operator: canOperateBackoffice(actor) };
 }
 
 export async function getCourseForAuthor(actorId: string, courseId: string) {
@@ -2954,6 +3030,7 @@ export async function addLessonToCourse(input: { courseId: string; title: string
   return editData((data) => {
     const course = actorId ? managedCourse(data, actorId, input.courseId) : data.courses.find((item) => item.id === input.courseId);
     if (!course) throw new Error("Course not found.");
+    if (course.origin === "admin") throw new AuthoringError("notFound");
     if (course.status !== "draft") throw new AuthoringError(course.status === "archived" ? "archived" : "published");
     const title = input.title.trim();
     const body = input.body.trim();
@@ -2979,6 +3056,7 @@ export async function setCourseStatus(courseId: string, status: ProductCourse["s
   return editData(async (data) => {
     const course = actorId ? managedCourse(data, actorId, courseId) : data.courses.find((item) => item.id === courseId);
     if (!course) throw new Error("Course not found.");
+    if (course.origin === "admin") throw new AuthoringError("notFound");
     if (!["draft", "published", "archived"].includes(status)) throw new AuthoringError("invalid");
     if (actorId && expectedUpdatedAt !== course.updatedAt) throw new AuthoringError("conflict");
     if (course.status === "archived" && status === "published") throw new AuthoringError("archived");
@@ -3176,12 +3254,7 @@ export async function applyVerifiedStripeEvent(event: VerifiedStripeEvent) {
             userId: subscription.userId,
             templateId: "SUB_RENEWAL_FAILED",
             eventKey: `${subscription.id}:${periodEnd}:SUB_RENEWAL_FAILED`,
-            params: {
-              plan_name: plan ? planDisplayName(plan) : "subscription",
-              scope_name: plan ? planScopeName(plan, data) : "",
-              renewal_amount: plan?.amountMinor ?? event.amountMinor ?? 0,
-              grace_end_date: end,
-            },
+            params: renewalFailedNotificationParams(data, subscription, plan, end, event.amountMinor),
           });
         }
       }
