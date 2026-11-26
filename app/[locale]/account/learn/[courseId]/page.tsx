@@ -43,7 +43,7 @@ export default async function LearningPage({ params, searchParams }: { params: P
   if (!lesson) notFound();
   const { mode: courseMode, preferredMode: preferredCourseMode } = await getCourseLearningModeSelection(user.id, course.id);
   if (!courseMode && availableCourseLearningModes(course).length > 1) redirect(`/${locale}/portal/courses/${encodeURIComponent(course.id)}?lessonEntry=${encodeURIComponent(lesson.id)}`);
-  lesson.contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id)) : undefined;
+  lesson.contents = lesson.contents?.length ? await signCourseMediaReferences(sanitiseLessonContents(lesson.contents, course.id, course)) : undefined;
   const bookmarkSnapshot = await getLessonBookmarks(user.id, course.id);
   const overview = await getLearningOverview(user.id);
   const study = overview.courses.find((item) => item.courseId === course.id);

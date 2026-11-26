@@ -273,7 +273,7 @@ export function insertTestNotificationInData(data: ProductData, input: RenderedT
     isTest: true,
   };
   data.notifications.unshift(notification);
-  const log = appendLog(data, {
+  const log = appendLog(data, { analyticsEvent:"message_created", category:notification.category, language:notification.language,
     notificationId: notification.id,
     userId: input.userId,
     templateId: input.templateId,
@@ -340,7 +340,12 @@ export type CreateNotificationResult =
   | { created: false; reason: "duplicate" | "disabled" | "missing_data" | "unknown_template" | "unknown_user" | "invalid_template"; variables?: string[] };
 
 function appendLog(data: ProductData, entry: Omit<NotificationLogEntry, "id">): NotificationLogEntry {
-  const row: NotificationLogEntry = { ...entry, id: makeId("nlog") };
+  const event = entry.channel === "email" && entry.status === "sent" ? "email_sent"
+    : entry.channel === "email" && entry.status === "failed" ? "email_failed"
+    : entry.channel === "email" && entry.status === "delivered" ? "email_delivered" : undefined;
+  const notification = event && entry.notificationId ? data.notifications.find(item => item.id === entry.notificationId) : undefined;
+  const row: NotificationLogEntry = { ...entry, ...(event ? {analyticsEvent:event} : {}),
+    ...(notification ? {category:notification.category,language:notification.language} : {}), id: makeId("nlog") };
   notificationTables(data).log.unshift(row);
   return row;
 }
@@ -482,6 +487,7 @@ export function createNotificationInData(data: ProductData, input: CreateNotific
     notificationEmailRow(notification).params = { ...input.params };
   }
   const log = appendLog(data, {
+    ...(replaceable ? {} : {analyticsEvent: "message_created" as const}), category: notification.category, language: notification.language,
     notificationId: notification.id,
     userId: input.userId,
     templateId: template.id,
@@ -599,6 +605,7 @@ export function recordLegacyNotificationInData(data: ProductData, input: LegacyN
   };
   data.notifications.unshift(notification);
   appendLog(data, {
+    analyticsEvent: "message_created", category: notification.category, language: notification.language,
     notificationId: notification.id,
     userId: input.userId,
     templateId: templateId || null,
@@ -725,10 +732,12 @@ export function unreadCountInData(data: ProductData, userId: string, now = new D
 export function setNotificationReadInData(data: ProductData, userId: string, notificationId: string, read: boolean, now = new Date().toISOString()) {
   const item = data.notifications.find((notification) => notification.id === notificationId && notification.userId === userId);
   if (!item) throw new Error("Notification not found.");
+  if (Boolean(item.readAt) === read) return item;
   item.readAt = read ? now : null;
   appendLog(data, {
     notificationId: item.id, userId, templateId: item.templateId || null, broadcastId: item.broadcastId || null,
     channel: "in_app", status: read ? "read" : "delivered", failureReason: null, occurredAt: now, isTest: Boolean(item.isTest),
+    analyticsEvent: read ? "notification_marked_read" : "notification_marked_unread", category: item.category, language: item.language,
   });
   return item;
 }
@@ -910,6 +919,8 @@ export function deleteBroadcastDraftInData(data: ProductData, broadcastId: strin
 export function sendBroadcastInData(data: ProductData, broadcastId: string, actor: string, now = new Date().toISOString()) {
   const broadcast = notificationTables(data).broadcasts.find((item) => item.id === broadcastId);
   if (!broadcast || broadcast.deletedAt) throw new BroadcastError("not_found", "Broadcast not found.");
+  // A timed-out caller may safely retry after the atomic send has committed.
+  if (broadcast.status === "sent") return { recipients: data.notifications.filter(item => item.broadcastId === broadcast.id && !item.isTest).length };
   if (broadcast.status !== "draft") throw new BroadcastError("not_draft", "Only a draft can be sent.");
   const recipients = audienceUsers(data, broadcast.audience, new Date(now));
   for (const user of recipients) {
@@ -931,6 +942,7 @@ export function sendBroadcastInData(data: ProductData, broadcastId: string, acto
     };
     data.notifications.unshift(notification);
     appendLog(data, {
+      analyticsEvent: "message_created", category: notification.category, language: notification.language,
       notificationId: notification.id, userId: user.id, templateId: null, broadcastId: broadcast.id,
       channel: "in_app", status: "delivered", failureReason: null, occurredAt: now, isTest: false,
     });

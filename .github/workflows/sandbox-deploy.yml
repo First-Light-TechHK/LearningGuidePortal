@@ -1,0 +1,56 @@
+# Promotes only an attested immutable image already running in production.
+name: Deploy Sandbox
+on:
+  push:
+    branches: [sandbox]
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full SHA of the currently deployed production revision
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+concurrency:
+  group: learning-guide-sandbox-release
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: sandbox
+    steps:
+      - name: Require the protected sandbox branch
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: test "$RELEASE_REF" = refs/heads/sandbox
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-1
+      - uses: aws-actions/amazon-ecr-login@v2
+      - name: Verify provenance and promote exact production image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha || vars.PRODUCTION_RELEASE_SHA }}
+          PRODUCTION_SOURCE_REF: ${{ vars.PRODUCTION_SOURCE_REF }}
+          PRODUCTION_SIGNER_WORKFLOW: ${{ vars.PRODUCTION_SIGNER_WORKFLOW }}
+          PRODUCTION_SERVICE_NAME: ${{ vars.PRODUCTION_SERVICE_NAME }}
+          PROD_SERVICE_ARN: ${{ vars.PPE_APP_RUNNER_SERVICE_ARN }}
+          SANDBOX_SERVICE_ARN: ${{ vars.SANDBOX_APP_RUNNER_SERVICE_ARN }}
+          SANDBOX_ORIGIN: ${{ vars.SANDBOX_ORIGIN }}
+          PRODUCTION_CONFIRMED_SHA: ${{ vars.PRODUCTION_CONFIRMED_SHA }}
+          PRODUCTION_CONFIRMED_IMAGE: ${{ vars.PRODUCTION_CONFIRMED_IMAGE }}
+        run: node scripts/release/sandbox-promotion.mjs

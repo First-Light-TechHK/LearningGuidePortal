@@ -5,7 +5,7 @@ import { ArrowRight, BookOpen, CreditCard, Megaphone, MessageSquare, Users, type
 import type { Locale } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
 import type { LearnerNotificationItem, NotificationCategory } from "@/services/notifications/types";
-import { fetchNotifications, setNotificationRead, UNREAD_EVENT, type NotificationPage } from "./notificationsClient";
+import { fetchNotifications, setNotificationRead, trackNotificationInteraction, UNREAD_EVENT, type NotificationPage } from "./notificationsClient";
 import s from "./notifications.module.css";
 
 const PAGE_SIZE = 20;
@@ -54,6 +54,8 @@ export function NotificationList({ locale, initial, copy }: { locale: Locale; in
     return () => { window.removeEventListener(UNREAD_EVENT, onUnread); controller.current?.abort(); };
   }, []);
 
+  useEffect(() => { trackNotificationInteraction("notification_center_opened"); }, []);
+
   // Deep link from the bell: #n-<id> scrolls to the row and focuses it.
   useEffect(() => {
     const row = location.hash.startsWith("#n-") ? document.getElementById(location.hash.slice(1)) : null;
@@ -79,6 +81,7 @@ export function NotificationList({ locale, initial, copy }: { locale: Locale; in
     try {
       const result = await fetchNotifications({ filter: next, limit: PAGE_SIZE, locale, signal: current.signal });
       setPage({ items: result.items, total: result.total, nextCursor: result.nextCursor });
+      trackNotificationInteraction("notification_filter_changed",undefined,next);
     } catch {
       if (current.signal.aborted) return;
       setFilter(previous);
@@ -117,6 +120,7 @@ export function NotificationList({ locale, initial, copy }: { locale: Locale; in
   }
 
   function followLink(item: LearnerNotificationItem) {
+    trackNotificationInteraction("notification_cta_clicked",item.id);
     if (!item.unread) return;
     // Not awaited: the browser is already following the link.
     setNotificationRead(item.id, true, { keepalive: true }).then((result) => patchRow(item.id, result.notification.read, result.notification.readAt)).catch(() => undefined);

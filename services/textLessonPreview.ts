@@ -21,8 +21,8 @@ export function firstHalfTextHtml(html: string): string {
   });
 }
 
-export function buildTextLessonPreview(lesson: { contents?: LessonContent[]; body: string; preview?: LessonPreviewConfiguration }, courseId: string, entitled: boolean): { contents: LessonContent[]; body: string; textPreview?: TextLessonPreview } {
-  const contents = sanitiseLessonContents(lesson.contents || [], courseId);
+export function buildTextLessonPreview(lesson: { contents?: LessonContent[]; body: string; preview?: LessonPreviewConfiguration }, courseId: string, entitled: boolean, mirror?: { origin?: string; adminCourseId?: string }): { contents: LessonContent[]; body: string; textPreview?: TextLessonPreview } {
+  const contents = sanitiseLessonContents(lesson.contents || [], courseId, mirror);
   if (entitled) return { contents, body: lesson.body };
   const textPreview = textLessonPreviewPolicy(contents, lesson.preview);
   return {

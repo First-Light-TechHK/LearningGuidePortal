@@ -60,3 +60,10 @@ jobs:
 
       - name: Run the Helpdesk PostgreSQL io tests
         run: bash scripts/pg-io-postgres.sh tests/io/postgres/helpdesk-repository.test.ts tests/io/postgres/helpdesk-insights.test.ts
+
+      - name: Run notification and product PostgreSQL proofs
+        run: |
+          NOTIFICATION_QA_DATABASE_URL="$DATABASE_URL" bash scripts/pg-io-postgres.sh \
+            tests/io/postgres/notification-interactions.test.ts \
+            tests/io/postgres/product-lock-directory.test.ts \
+            tests/io/postgres/schema-fresh-vs-migrations.test.ts

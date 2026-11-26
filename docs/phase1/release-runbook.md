@@ -809,3 +809,19 @@ Text reading navigation smoke (2026-11-19, local revision): in en-GB and zh-CN, 
 Local reading-navigation result (2026-11-19): 14 related browser/service/API/i18n tests passed, including real checkpoint-before-Course-read ordering, expired/stale write rejection, both locale directions, 320–1440px toolbar layouts, long sticky sidebars and internal scrolling, LP/paragraph offsets, delayed-layout anchor preservation, retry/explicit leave, original Header/My Learning links, modified-click interception guard, preview isolation, purchase entry and cross-Lesson mode navigation. Main TypeScript, scoped ESLint and production build passed (existing image/ESLint configuration warnings). Desktop/mobile screenshots were reviewed in test-results/reading-navigation. These fixtures do not replace target-environment/full-page Figma acceptance.
 
 Reading-navigation dev integration (2026-11-19): retain saved Course-mode routing and stale-bookmark revalidation from dev when merging the compact bar. Explicit navigation must not mistake a rejected checkpoint for an acknowledged save after conflict recovery; offer the existing retry/leave choice. The 37 relevant browser/service/API cases were verified, including corrected toolbar-aware paragraph positioning and fallback-mode tests. Main TypeScript, scoped ESLint and production build passed; target-environment smoke remains pending.
+
+# Sandbox 从生产版本晋级
+
+两仓的 `sandbox` 分支 push 自动触发 `Deploy Sandbox`；也可在该分支手动运行并提供完整生产版本 SHA。`dev` push 不触发。流程只读取生产服务，更新 Sandbox App Runner 的镜像来源；不会移动或重写 Git 分支。修改只适用于新 workflow，现有 DEV/SIT/UAT/PPE 流程不变。
+
+## 启用前置条件
+
+1. 仓库启用受保护的 `sandbox` GitHub Environment，限定部署分支与可信审批人；仅可信发布负责人可维护环境变量、密钥和 workflow。AWS 权限应只允许读取指定生产服务、只更新指定 Sandbox 服务及读取所需 ECR；不要给予生产更新权限。
+2. 生产服务必须 RUNNING、最新 App Runner 操作成功，运行的 ImageRepository 指向不可变 `@sha256:` 镜像，生产运行配置 APP_ENV 为允许的生产环境值。Sandbox 服务必须名为 `learning-guide-sandbox`（Admin 为 `learning-guide-admin-sandbox`），是 RUNNING 的镜像服务，配置 APP_ENV=SANDBOX、自动部署关闭，当前镜像也是不可变摘要。两服务 ARN 必须不同，Sandbox 有拉取新旧镜像权限。现有 source branch + start-deployment 无法保证 App Runner 实际拉取的精确 commit；它不满足本门禁，负责人确认单独不能解决目标部署的 SHA 漂移。需先以可核验方式把生产和 Sandbox 迁移为不可变镜像服务并保留旧镜像。
+3. 受保护 Environment 中的 `PRODUCTION_SOURCE_REF` 必须明确指定可信生产来源分支；被晋级 SHA 必须是实际运行的生产版本完整 40 位 SHA，并与受保护来源 ref 的发布证据一致；它不必等于该分支当前 HEAD。自动触发使用受保护的 `PRODUCTION_RELEASE_SHA`，手动触发提供 `release_sha`；该 SHA 的规定 push CI 及所有必需 job 必须成功，其中包括 Portal Study Group PostgreSQL I/O；新失败或运行中的最新重跑会阻止发布。
+4. 生产镜像与 SHA 的绑定必须有下列任一证据：GitHub 对该 OCI 摘要的 SLSA attestation，由受保护变量 `PRODUCTION_SIGNER_WORKFLOW` 指定的可信 workflow 签发，来源 ref 和 SHA 匹配；或可信生产发布负责人核对构建、成功生产操作和正在运行的摘要后，在受保护 `sandbox` environment 维护 `PRODUCTION_CONFIRMED_SHA` 和 `PRODUCTION_CONFIRMED_IMAGE`，二者必须同时精确匹配。负责人确认属于人工信任路径，应保留确认人、时间、生产操作 ID、CI 链接和构建证据；不得仅按分支名或操作成功推断 SHA。当前两仓生产流水线尚无此镜像及签名保证，不应假设已具备。
+5. 配置 environment variables：`PRODUCTION_SOURCE_REF`、`PRODUCTION_RELEASE_SHA`、可选的 `PRODUCTION_SIGNER_WORKFLOW`、`PRODUCTION_SERVICE_NAME`、`PPE_APP_RUNNER_SERVICE_ARN`、`SANDBOX_APP_RUNNER_SERVICE_ARN`、`SANDBOX_ORIGIN`；Admin 使用 `ADMIN_PPE_APP_RUNNER_SERVICE_ARN`、`ADMIN_SANDBOX_APP_RUNNER_SERVICE_ARN`、`ADMIN_SANDBOX_ORIGIN`。确认 origin 指向 Sandbox。配置只用于该环境的 AWS 凭据；OCI provenance 检查需要 ECR/GitHub attestation 读取权限。生产 workflow 将来改名时需同步固定 signer 策略并复核信任边界。
+
+发布前流程读取生产和 Sandbox 状态、验证证据，更新前复查两边配置；更新仅替换 Sandbox 的 image digest 和 APP_VERSION，保留其环境变量、密钥引用和身份配置。App Runner 操作成功后复查目标 digest，再检查 Sandbox 健康。Portal 使用现有 live smoke；Admin 仅检查健康及环境，完整业务验收仍需另行执行。健康或部署失败时，若服务已稳定且其完整来源配置与本次目标一致（忽略对象键顺序），恢复原 Sandbox 来源并等待操作结果；若服务仍忙或被他人变更，不覆盖其状态，报错交运维处理。失败始终使 workflow 失败。CLI 请求结果不确定时不能假定未发生写入，应先检查 App Runner 操作与来源，再手工决定恢复。
+
+本地离线验证：Admin `node --test scripts/sandbox-promotion.test.mjs`，Portal `node --test tests/unit/sandbox-release-policy.test.mjs tests/unit/sandbox-pg-ci.test.mjs`。这只验证策略和回退决策，不构成 AWS、签名服务、实时健康或实际回滚演练。启用前应由运维在隔离账户演练正反例、权限及失败恢复。

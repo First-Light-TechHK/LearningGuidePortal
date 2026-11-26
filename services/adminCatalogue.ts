@@ -131,10 +131,25 @@ async function request(path: string): Promise<unknown> {
 
 /** Online, published, non-archived courses (the projection filters those upstream). */
 export async function listCourses(): Promise<AdminCourseSummary[]> {
-  const data = await request(`/api/portal/v1/courses?limit=${LIST_LIMIT}`);
-  if (!Array.isArray(data)) throw new AdminCatalogueError("Admin catalogue list is not an array.", "invalid");
-  return data.filter((item): item is AdminCourseSummary =>
-    isObject(item) && typeof item.id === "string" && item.id.length > 0) as AdminCourseSummary[];
+  const rows: AdminCourseSummary[] = [];
+  const seen = new Set<string>();
+  let afterId: string | undefined;
+  for (;;) {
+    const cursor = afterId ? `&afterId=${encodeURIComponent(afterId)}` : "";
+    const data = await request(`/api/portal/v1/courses?limit=${LIST_LIMIT}&paged=1${cursor}`);
+    if (!Array.isArray(data) || data.length > LIST_LIMIT) {
+      throw new AdminCatalogueError("Admin catalogue page is malformed.", "invalid");
+    }
+    for (const item of data) {
+      if (!isObject(item) || typeof item.id !== "string" || !item.id || seen.has(item.id)) {
+        throw new AdminCatalogueError("Admin catalogue page contains invalid or duplicate IDs.", "invalid");
+      }
+      seen.add(item.id);
+      rows.push(item as AdminCourseSummary);
+    }
+    if (data.length < LIST_LIMIT) return rows;
+    afterId = (data[data.length - 1] as AdminCourseSummary).id;
+  }
 }
 
 export async function getCourse(id: string): Promise<AdminCourseDetail> {

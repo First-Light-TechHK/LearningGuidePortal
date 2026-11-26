@@ -440,3 +440,16 @@ test("send log detail shows failure reason, related record and Test tag", async 
   const list = await (await sendLogRoute.GET(request("/api/integration/notifications/send-log?status=failed", TOKEN))).json();
   assert.ok(list.items.some((item: { id: string; isTest: boolean }) => item.id === "nlog_failed_detail" && item.isTest === true));
 });
+
+test('retrying a sent broadcast returns the existing count without duplicating delivery', async () => {
+ const created=await broadcastsRoute.POST(request('/api/integration/notifications/broadcasts', TOKEN, {titleEn:'Retry',bodyEn:'Idempotence',audience:'all',operator:'ops@example.test'},'POST'));
+ const draft=(await created.json()).broadcast;
+ const body={id:draft.id,action:'send',operator:'ops@example.test'};
+ const first=await broadcastsRoute.PATCH(request('/api/integration/notifications/broadcasts',TOKEN,body,'PATCH'));
+ const result=await first.json();
+ const retry=await broadcastsRoute.PATCH(request('/api/integration/notifications/broadcasts',TOKEN,body,'PATCH'));
+ assert.equal(retry.status,200);
+ assert.equal((await retry.json()).recipients,result.recipients);
+ const data=await store.readProductData();
+ assert.equal(data.notifications.filter(n=>n.broadcastId===draft.id).length,result.recipients);
+});

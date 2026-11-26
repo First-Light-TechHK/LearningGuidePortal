@@ -55,6 +55,7 @@ export async function recordEmailDelivery(input: EmailDeliveryInput): Promise<Em
       related: input.related || null,
       recipientEmail: input.recipientEmail || null,
       recipientName: input.recipientName || null,
+      providerMessageId: input.providerMessageId?.trim() || null,
     });
     return { logId: log.id, created: true, deduplicated: false };
   });

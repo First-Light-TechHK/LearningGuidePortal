@@ -8,13 +8,16 @@ import type { ProductCourse } from "@/services/productStore";
 export function CatalogueCourseCard({ course, category, locale, variant = "catalogue" }: { course: ProductCourse; category: string; locale: Locale; variant?: "catalogue" | "home" }) {
   const copy = getMessages(locale).portal;
   const lessons = course.sections.flatMap(section => section.lessons);
-  const minutes = totalCourseMinutes(lessons);
+  const lessonCount = lessons.length || course.catalogueLessonCount || 0;
+  const minutes = lessons.length
+    ? totalCourseMinutes(lessons)
+    : Math.ceil((course.catalogueDurationSeconds || 0) / 60);
   const homeCopy = getMessages(locale).homeDesign;
   if (variant === "home") {
     return <article className="home-course-card" data-course-id={course.id}>
       <Link prefetch={false} className="home-course-link" href={`/${locale}/portal/courses/${course.id}`} aria-label={`${copy.viewCourse}: ${course.title}`}>
         <div className="home-course-cover"><CourseThumbnail slug={course.slug} title={course.title} src={course.cover || course.thumbnailPath} /><span className="home-course-category">{category}</span></div>
-        <div className="home-course-body"><div className="home-course-heading"><h3>{course.title}</h3><p className="home-course-meta">{lessons.length} {copy.lessonCount} · {Math.floor(minutes / 60)}{homeCopy.hourShort} {minutes % 60}{homeCopy.minuteShort}</p></div>
+        <div className="home-course-body"><div className="home-course-heading"><h3>{course.title}</h3><p className="home-course-meta">{lessonCount} {copy.lessonCount} · {Math.floor(minutes / 60)}{homeCopy.hourShort} {minutes % 60}{homeCopy.minuteShort}</p></div>
           <div className="home-course-description"><p title={course.description}>{course.description}</p></div>
         </div>
       </Link>
@@ -24,7 +27,7 @@ export function CatalogueCourseCard({ course, category, locale, variant = "catal
     <Link prefetch={false} className="portal-course-link" href={`/${locale}/portal/courses/${course.id}`} aria-label={`${copy.viewCourse}: ${course.title}`}>
       <div className="portal-course-image-wrap"><CourseThumbnail slug={course.slug} title={course.title} src={course.cover || course.thumbnailPath} /><span className="portal-course-category">{category}</span></div>
       <div className="portal-course-card-body">
-        <div className="portal-course-heading"><h3>{course.title}</h3><div className="portal-course-meta">{lessons.length} {copy.lessonCount} · {Math.floor(minutes / 60)}{homeCopy.hourShort} {minutes % 60}{homeCopy.minuteShort}</div></div>
+        <div className="portal-course-heading"><h3>{course.title}</h3><div className="portal-course-meta">{lessonCount} {copy.lessonCount} · {Math.floor(minutes / 60)}{homeCopy.hourShort} {minutes % 60}{homeCopy.minuteShort}</div></div>
         <div className="portal-course-card-bottom"><p title={course.description}>{course.description}</p></div>
       </div>
     </Link>

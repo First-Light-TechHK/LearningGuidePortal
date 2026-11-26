@@ -119,7 +119,20 @@ function text(value: unknown, max: number, required = true): string {
   return value.trim();
 }
 
+type ReadMirror = { origin?: string; adminCourseId?: string };
+
+function isAdminMirrorMedia(value: unknown, mirror?: ReadMirror): boolean {
+  if (mirror?.origin !== "admin" || !mirror.adminCourseId ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mirror.adminCourseId) || typeof value !== "string") return false;
+  const prefix = `/api/admin-course-media/${mirror.adminCourseId}/assets/`;
+  return value.startsWith(prefix) && /^[a-zA-Z0-9_-]+$/.test(value.slice(prefix.length));
+}
+
 export function validateLessonContents(value: unknown, courseId: string, options: { allowExternalMedia?: boolean } = {}): LessonContent[] {
+  return validateLessonContentsInternal(value, courseId, options);
+}
+
+function validateLessonContentsInternal(value: unknown, courseId: string, options: { allowExternalMedia?: boolean; mirror?: ReadMirror } = {}): LessonContent[] {
   if (!isContentId(courseId) || !Array.isArray(value) || value.length > LIMITS.contents) throw new LessonContentError();
   try {
     if (Buffer.byteLength(JSON.stringify(value), "utf8") > LIMITS.lessonBytes) throw new LessonContentError("Lesson content is too large.");
@@ -132,7 +145,7 @@ export function validateLessonContents(value: unknown, courseId: string, options
     return id;
   };
   const url = (value: unknown, image = false) => {
-    if (!courseMediaAssetId(value, courseId) && !(image && isCourseStaticImage(value, courseId)) && !(options.allowExternalMedia && safeExternalMediaUrl(value))) throw new LessonContentError("Media must belong to this course.");
+    if (!courseMediaAssetId(value, courseId) && !isAdminMirrorMedia(value, options.mirror) && !(image && isCourseStaticImage(value, courseId)) && !(options.allowExternalMedia && safeExternalMediaUrl(value))) throw new LessonContentError("Media must belong to this course.");
     return value as string;
   };
   const html = (value: unknown, nodes: string[]) => sanitiseRichHtml(text(value, LIMITS.htmlCharacters, false), courseId, nodes);
@@ -191,9 +204,9 @@ export function validateLessonContents(value: unknown, courseId: string, options
 }
 
 /** Read defence: malformed stored content is withheld, never returned unsanitised. */
-export function sanitiseLessonContents(value: unknown, courseId: string): LessonContent[] {
+export function sanitiseLessonContents(value: unknown, courseId: string, mirror?: ReadMirror): LessonContent[] {
   try {
-    return validateLessonContents(restoreLegacyLessonNodes(value, courseId), courseId, { allowExternalMedia: true }).filter(content => content.active !== false).map(content => {
+    return validateLessonContentsInternal(restoreLegacyLessonNodes(value, courseId), courseId, { allowExternalMedia: true, mirror }).filter(content => content.active !== false).map(content => {
       const nodes = content.nodes.filter(node => node.active !== false);
       const ids = nodes.map(node => node.id);
       return { ...content, ...(content.html !== undefined ? { html: sanitiseRichHtml(content.html, courseId, ids) } : {}), nodes: nodes.map(node => ({ ...node, ...(node.html !== undefined ? { html: sanitiseRichHtml(node.html, courseId, ids) } : {}) })) };

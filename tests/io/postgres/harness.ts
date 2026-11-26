@@ -174,7 +174,8 @@ function collect(child: ChildProcess, role: string, mode: string, timeoutMs: num
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
     child.stdout?.on("data", (chunk) => (stdout += chunk));
     child.stderr?.on("data", (chunk) => (stderr += chunk));
-    child.on("exit", (exitCode, signal) => {
+    // Wait for stdout/stderr pipes to drain before parsing large results.
+    child.on("close", (exitCode, signal) => {
       clearTimeout(timer);
       const line = stdout.split("\n").find((item) => item.startsWith("LG_IO_RESULT "));
       let result: Record<string, unknown> | null = null;
