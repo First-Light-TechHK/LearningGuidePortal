@@ -197,11 +197,18 @@ test("lesson tools show access hints only for unentitled previews and retain ena
     await page.waitForFunction(() => document.querySelector('[data-reading-outline]')?.getAttribute('data-reading-sticky') === 'true');
     await longOutline.evaluate(element => { element.scrollTop = element.scrollHeight; });
     assert.ok(await longOutline.evaluate(element => element.scrollTop > 0), 'an oversized outline scrolls inside the sidebar');
-    assert.ok(await longOutline.getByRole('link').last().evaluate(element => {
-      const list = element.closest('nav')!.getBoundingClientRect();
-      const link = element.getBoundingClientRect();
-      return link.top >= list.top && link.bottom <= list.bottom;
-    }), 'the final lesson is reachable inside the outline');
+    const outlineGeometry = await longOutline.getByRole('link').last().evaluate(element => {
+      const nav = element.closest('nav')!;
+      const list = nav.getBoundingClientRect(), link = element.getBoundingClientRect();
+      return {
+        navTop: list.top, navBottom: list.bottom, linkTop: link.top, linkBottom: link.bottom,
+        scrollTop: nav.scrollTop, clientHeight: nav.clientHeight, scrollHeight: nav.scrollHeight,
+        inset: getComputedStyle(nav.closest('[data-reading-outline]')!).getPropertyValue('--reading-top-inset'),
+        toolbarVisible: document.querySelector('[data-reading-toolbar]')?.getAttribute('data-visible'),
+      };
+    });
+    assert.ok(outlineGeometry.linkTop >= outlineGeometry.navTop && outlineGeometry.linkBottom <= outlineGeometry.navBottom,
+      `the final lesson is reachable inside the outline: ${JSON.stringify(outlineGeometry)}`);
     for (const width of [1200, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await mount(`reading-narrow-${width}`, true, 'text', 'Looking closely', longReading);
