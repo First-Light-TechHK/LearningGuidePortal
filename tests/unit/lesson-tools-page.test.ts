@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { browserAssertionEvidence } from "../fixtures/browser-assertion-evidence";
 import { build } from "esbuild";
 import { chromium } from "playwright";
 import { getMessages } from "../../lib/i18n/messages";
@@ -195,20 +196,47 @@ test("lesson tools show access hints only for unentitled previews and retain ena
     await mount('long-outline', true, 'text', 'Looking closely', longReading, 40);
     const longOutline = page.locator('[data-reading-outline] nav');
     await page.waitForFunction(() => document.querySelector('[data-reading-outline]')?.getAttribute('data-reading-sticky') === 'true');
-    await longOutline.evaluate(element => { element.scrollTop = element.scrollHeight; });
-    assert.ok(await longOutline.evaluate(element => element.scrollTop > 0), 'an oversized outline scrolls inside the sidebar');
-    const outlineGeometry = await longOutline.getByRole('link').last().evaluate(element => {
+    // Keep the original scroll and assertion in separate browser tasks; do not wait for a settling frame.
+    const before = await longOutline.evaluate(nav => {
+      const started = performance.now();
+      const frames: {phase: string; ms: number; scroll: number; height: number; total: number; inset: string}[] = [];
+      const recorder = { sample(phase: string) { frames.push({
+        phase, ms: +(performance.now() - started).toFixed(2), scroll: nav.scrollTop,
+        height: nav.clientHeight, total: nav.scrollHeight, inset: getComputedStyle(nav).getPropertyValue('--reading-top-inset'),
+      }); } };
+      Reflect.set(nav, 'qaOutlineFrames', frames);
+      recorder.sample('before scroll');
+      nav.scrollTop = nav.scrollHeight;
+      recorder.sample('after scroll');
+      requestAnimationFrame(() => { recorder.sample('frame 1'); requestAnimationFrame(() => recorder.sample('frame 2')); });
+      return nav.scrollTop;
+    });
+    const scrolled = await longOutline.evaluate(element => element.scrollTop > 0);
+    const geometry = await longOutline.getByRole('link').last().evaluate(element => {
       const nav = element.closest('nav')!;
       const list = nav.getBoundingClientRect(), link = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(link.left + link.width / 2, link.top + link.height / 2);
       return {
-        navTop: list.top, navBottom: list.bottom, linkTop: link.top, linkBottom: link.bottom,
-        scrollTop: nav.scrollTop, clientHeight: nav.clientHeight, scrollHeight: nav.scrollHeight,
-        inset: getComputedStyle(nav.closest('[data-reading-outline]')!).getPropertyValue('--reading-top-inset'),
+        nav: list.toJSON(), link: link.toJSON(), href: element.getAttribute('href'),
+        count: nav.querySelectorAll('a').length, scrollTop: nav.scrollTop,
+        clientHeight: nav.clientHeight, scrollHeight: nav.scrollHeight,
+        inset: getComputedStyle(nav).getPropertyValue('--reading-top-inset'),
         toolbarVisible: document.querySelector('[data-reading-toolbar]')?.getAttribute('data-visible'),
+        hitTag: hit?.tagName, hitHref: hit?.closest('a')?.getAttribute('href'), hitInsideLink: !!hit && element.contains(hit),
       };
     });
-    assert.ok(outlineGeometry.linkTop >= outlineGeometry.navTop && outlineGeometry.linkBottom <= outlineGeometry.navBottom,
-      `the final lesson is reachable inside the outline: ${JSON.stringify(outlineGeometry)}`);
+    const visible = geometry.link.top >= geometry.nav.top && geometry.link.bottom <= geometry.nav.bottom;
+    let evidence = '';
+    if (!visible || !scrolled) {
+      const frames = await longOutline.evaluate(async nav => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return Reflect.get(nav, 'qaOutlineFrames');
+      });
+      evidence = await browserAssertionEvidence(page, 'test-results/lesson-tools', locale+'-outline-failure',
+        'tests/unit/lesson-tools-page.test.ts', {locale, initialScrollResult: before, geometry, frames});
+    }
+    assert.ok(scrolled, `an oversized outline scrolls inside the sidebar; scrollTop=${geometry.scrollTop}; ${evidence}`);
+    assert.ok(visible, `the final lesson is reachable inside the outline; ${geometry.href}, ${geometry.count} links, top clearance ${geometry.link.top-geometry.nav.top}px, bottom clearance ${geometry.nav.bottom-geometry.link.bottom}px, inset ${geometry.inset}; ${evidence}`);
     for (const width of [1200, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await mount(`reading-narrow-${width}`, true, 'text', 'Looking closely', longReading);

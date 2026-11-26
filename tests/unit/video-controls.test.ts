@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { browserAssertionEvidence } from '../fixtures/browser-assertion-evidence';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
@@ -52,9 +53,27 @@ test('shared video toolbar keeps controls usable without playback or picture-in-
       await speed.selectOption('1'); await speed.focus();
       // On macOS Chromium, native type-ahead selects the next matching rate.
       // Linux changes a focused select directly with ArrowDown.
-      await page.keyboard.press(process.platform === 'darwin' ? '1' : 'ArrowDown');
-      assert.equal(await speed.inputValue(), '1.25', 'native keyboard selection remains available');
-      assert.equal(await page.locator('video').evaluate(video => (video as HTMLVideoElement).playbackRate), 1.25);
+      const key = process.platform === 'darwin' ? '1' : 'ArrowDown';
+      await speed.evaluate(el => {
+        const events: object[] = [];
+        Reflect.set(el, 'qaSpeedEvents', events);
+        for (const type of ['keydown', 'keyup', 'input', 'change']) {
+          el.addEventListener(type, event => events.push({type, ms: performance.now(), value: (el as HTMLSelectElement).value,
+            key: event instanceof KeyboardEvent ? event.key : undefined}), {once: true});
+        }
+      });
+      await page.keyboard.press(key);
+      const state = await speed.evaluate(el => ({focused: document.activeElement === el,
+        value: (el as HTMLSelectElement).value, rate: document.querySelector('video')!.playbackRate,
+        label: document.querySelector('.la-video-speed > span')?.textContent, events: Reflect.get(el, 'qaSpeedEvents')}));
+      let evidence = '';
+      if (state.value !== '1.25' || state.rate !== 1.25) {
+        evidence = await browserAssertionEvidence(page, 'test-results/video-speed', locale+'-speed-failure',
+          'tests/unit/video-controls.test.ts', {locale, key, state});
+      }
+      const message = `native keyboard selection remains available; key=${key}, ${JSON.stringify(state)}; ${evidence}`;
+      assert.equal(state.value, '1.25', message);
+      assert.equal(state.rate, 1.25, message);
       await page.locator('video').evaluate(video => { (video as HTMLVideoElement).playbackRate = 1; });
       await page.waitForFunction(expected => document.querySelector('.la-video-speed > span')?.textContent === expected, defaultSpeed);
       await speed.selectOption('1.5');
