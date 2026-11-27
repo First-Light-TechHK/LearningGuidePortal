@@ -128,13 +128,19 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       for (const width of [1200, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 1024 });
         await page.locator("h1").click();
-        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-        assert.ok((await tools.boundingBox())!.y >= (await page.locator("video").boundingBox())!.y + (await page.locator("video").boundingBox())!.height);
+        // Desktop Lesson layouts keep their 1500px stage (see preview-access-page), so a
+        // narrower desktop window scrolls sideways; phone widths still fit the viewport.
+        const canvasScrolls = width > 700 && width < 1500;
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), canvasScrolls, `${locale}/${width}: desktop stage keeps its width`);
+        const toolsBox = (await tools.boundingBox())!, videoBox = (await page.locator("video").boundingBox())!;
+        if (width > 700) assert.ok(toolsBox.x >= videoBox.x + videoBox.width - 1, `${locale}/${width}: desktop tools stay in the right column`);
+        else assert.ok(toolsBox.y >= videoBox.y + videoBox.height, `${locale}/${width}: phone widths stack the tools under the player`);
         const first = controls.first().locator(".."); await first.hover();
         if (entitled) assert.equal(await tools.getByRole("tooltip", { includeHidden: true }).count(), 0);
         else {
+          const canvas = await page.evaluate(() => document.documentElement.scrollWidth);
           const tip = (await tooltip.boundingBox())!;
-          assert.ok(tip.x >= 0 && tip.x + tip.width <= width);
+          assert.ok(tip.x >= 0 && tip.x + tip.width <= canvas, `${locale}/${width}: the hint stays on the stage`);
         }
         if (width === 390) await page.screenshot({ path: `test-results/lesson-tools/${locale}-${entitled ? "active" : "locked"}-mobile.png`, fullPage: true });
       }
@@ -157,11 +163,14 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       await page.waitForFunction(() => {
         const button = document.querySelector('[data-text-completion] button')?.getBoundingClientRect();
         const tools = document.querySelector('[data-reading-tools]')?.getBoundingClientRect();
-        return button && tools && Math.abs(innerHeight - button.bottom - 30) < 1 && (innerWidth > 1200 ? Math.abs(button.left - tools.left) < 1 : Math.abs(innerWidth - button.right - 24) < 1);
+        // The desktop stage keeps three columns down to 701px, so the completion action
+        // stays aligned with the right column there and hugs the viewport on phones.
+        return button && tools && Math.abs(innerHeight - button.bottom - 30) < 1 && (innerWidth > 700 ? Math.abs(button.left - tools.left) < 1 : Math.abs(innerWidth - button.right - 24) < 1);
       });
       const button = page.locator('[data-text-completion] button');
       const box = (await button.boundingBox())!;
-      assert.ok(box.x >= 0 && box.x + box.width <= width, 'completion remains inside the viewport');
+      const canvas = await page.evaluate(() => document.documentElement.scrollWidth);
+      assert.ok(box.x >= 0 && box.x + box.width <= canvas, 'completion remains inside the stage');
       assert.equal(await button.evaluate(element => getComputedStyle(element).borderRadius), '8px');
     }
     const longReading = '<p>Read slowly and observe the relationships in this lesson.</p>'.repeat(80);
@@ -242,8 +251,12 @@ test("lesson tools show access hints only for unentitled previews and retain ena
     for (const width of [1200, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await mount(`reading-narrow-${width}`, true, 'text', 'Looking closely', longReading);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-      assert.ok((await tools.boundingBox())!.y >= (await page.locator('article').boundingBox())!.y + (await page.locator('article').boundingBox())!.height - 1, 'narrow screens keep tools after the reading article');
+      // A text Lesson keeps a 1300px stage, so narrower desktop windows scroll sideways.
+      const canvasScrolls = width > 700 && width < 1300;
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), canvasScrolls, `${locale}/${width}: text stage keeps its width`);
+      const toolsBox = (await tools.boundingBox())!, articleBox = (await page.locator('article').boundingBox())!;
+      if (width > 700) assert.ok(toolsBox.x >= articleBox.x + articleBox.width - 1, 'desktop tools stay beside the reading article');
+      else assert.ok(toolsBox.y >= articleBox.y + articleBox.height - 1, 'narrow screens keep tools after the reading article');
       await assertCompletionPosition(width);
     }
     // Verify a real click reaches the final lesson's destination.
