@@ -126,7 +126,7 @@ export type ProductCourse = CourseMetadata & {
   slug: string;
   title: string;
   description: string;
-  category?: "Chinese Humanities" | "European Humanities" | "Science";
+  category?: "Chinese Humanities" | "European Humanities" | "Science" | "Society";
   thumbnailPath?: string | null;
   status: "draft" | "published" | "archived";
   sections: ProductSection[];
@@ -136,6 +136,9 @@ export type ProductCourse = CourseMetadata & {
   origin?: "admin";
   /** Admin UUID used to fetch the projection detail and media; never a Portal key. */
   adminCourseId?: string;
+  /** Summary counts are available before the Admin detail request completes. */
+  catalogueLessonCount?: number;
+  catalogueDurationSeconds?: number;
   /** ISO timestamp of the last successful catalogue sync for this row. */
   adminSyncedAt?: string;
   /** ISO timestamp of the last successful detail sync for this row. */
@@ -845,11 +848,14 @@ export async function editProductData<T>(mutator: (data: ProductData) => Promise
 }
 
 async function editData<T>(mutator: (data: ProductData) => Promise<T> | T) {
-  const operation = editQueue.then(() => withProductFileLock(() => productTransaction(async () => {
+  const transaction = () => productTransaction(async () => {
     const data = await ensureProductData();
     const result = await mutator(data);
     return { data, result };
-  }, saveData)));
+  }, saveData);
+  // PostgreSQL serialises across processes through its transaction advisory lock.
+  // Only filesystem storage needs the local lock file and its local directory.
+  const operation = editQueue.then(() => persistenceEnabled() ? transaction() : withProductFileLock(transaction));
   editQueue = operation.then(() => undefined, () => undefined);
   return operation;
 }
@@ -1417,7 +1423,14 @@ export async function listPublishedCourses() {
   const adminMode = adminCatalogueEnabled();
   if (adminMode) await ensureCourseSourceSynced();
   const data = await ensureProductData();
-  const visible = data.courses.filter((course) => course.status === "published" && courseVisibleInSource(course, adminMode));
+  const adminCourseSlugs = adminMode
+    ? new Set(data.courses.filter(course => course.origin === "admin").map(course => course.slug || course.id))
+    : null;
+  const visible = data.courses.filter((course) => course.status === "published"
+    && courseVisibleInSource(course, adminMode)
+    // A retained archived Admin row is a tombstone: its old local same-slug copy
+    // must not make a deliberately withdrawn Admin course visible again.
+    && (course.origin === "admin" || !adminCourseSlugs?.has(course.slug || course.id)));
   if (!adminMode) return visible;
   // One card per slug. In admin mode the Admin mirror wins over a legacy local
   // row with the same slug, because Admin is the single writer.
@@ -1447,7 +1460,9 @@ export async function getProductCourse(slug: string) {
   const adminMode = adminCatalogueEnabled();
   if (adminMode) await ensureCourseSourceFresh(slug);
   const data = await ensureProductData();
-  return findVisibleCourse(data.courses, slug, adminMode);
+  const course = findVisibleCourse(data.courses, slug, adminMode);
+  if (adminMode && course?.origin === "admin" && course.status !== "published") return null;
+  return course;
 }
 
 function studyBookmarkRevision(record: ProductStudyRecord | undefined) {

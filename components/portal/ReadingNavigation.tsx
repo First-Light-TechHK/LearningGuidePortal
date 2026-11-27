@@ -27,7 +27,15 @@ export function ReadingNavigation({ root, locale, courseHref, beforeNavigate }: 
       const shown = breadcrumb.getBoundingClientRect().bottom <= 0 || busy || Boolean(failedHref);
       const height = Math.ceil(element.getBoundingClientRect().height);
       page.style.setProperty("--reading-toolbar-height", `${height}px`);
-      page.style.setProperty("--reading-top-inset", `${shown ? height : 0}px`);
+      const inset = `${shown ? height : 0}px`;
+      if (page.style.getPropertyValue("--reading-top-inset") !== inset) {
+        const outline = page.querySelector<HTMLElement>("[data-reading-outline] nav");
+        const atBottom = Boolean(outline && outline.scrollHeight > outline.clientHeight &&
+          outline.scrollTop > 0 && outline.scrollTop >= outline.scrollHeight - outline.clientHeight - 1);
+        page.style.setProperty("--reading-top-inset", inset);
+        // Preserve the user's position at the end when the toolbar changes the available height.
+        if (outline && atBottom) outline.scrollTop = outline.scrollHeight;
+      }
       setVisible(shown);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };

@@ -57,7 +57,7 @@ export default async function PublicLessonPage({ params, searchParams }: { param
     recommendations,
     videoLimitSeconds: lesson.preview?.videoLimitSeconds ?? 600
   };
-  const preview = buildTextLessonPreview(lesson, course.id, access.allowed);
+  const preview = buildTextLessonPreview(lesson, course.id, access.allowed, course);
   const contents = preview.contents.length ? await signCourseMediaReferences(preview.contents) : undefined;
   const poster = await signCourseMediaUrl(course.cover || course.thumbnailPath || courseImageFor(course.slug));
   const tutorAvailability = await getTutorAvailability(course.slug);

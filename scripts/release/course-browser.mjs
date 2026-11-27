@@ -535,7 +535,14 @@ export async function verifyCourseBrowser({ origin, manifest, credentials, outpu
             for (const lesson of lessonsOf(course)) {
               const row = rows.and(page.locator(`[data-lesson-id=${selectorValue(lesson.id)}]`));
               requireCheck(await row.count() === 1, 'syllabus_lesson_missing');
-              const title = await row.locator('h3').evaluate(element => { const copy = element.cloneNode(true); copy.querySelectorAll('span').forEach(span => span.remove()); return copy.textContent; });
+              // The row is "<Lesson N label><title>". The title follows the label,
+              // either as bare text or in its own span (Course detail, 2026-10), so
+              // drop only the label instead of every span.
+              const title = await row.locator('h3').evaluate(element => {
+                const copy = element.cloneNode(true);
+                copy.querySelector('span')?.remove();
+                return copy.textContent;
+              });
               requireCheck(normaliseText(title) === normaliseText(lesson.title), 'syllabus_title_mismatch');
             }
             const src = await checkImage(page.locator('img.course-thumbnail'), courseDeadline);

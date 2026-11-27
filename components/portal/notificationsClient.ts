@@ -40,3 +40,10 @@ export function setNotificationRead(id: string, read: boolean, { keepalive = fal
     keepalive,
   });
 }
+
+
+/** Best effort: only event name and opaque notification id leave the browser. */
+export function trackNotificationInteraction(event: 'notification_bell_opened' | 'notification_item_clicked' | 'notification_cta_clicked' | 'notification_center_opened' | 'notification_filter_changed', notificationId?: string, filter?: 'all' | 'unread') {
+  try { if (window.localStorage.getItem('learning-guide-cookie-preference') !== 'optional') return; } catch { return; }
+  void fetch('/api/my-learning/notifications/analytics', {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({event,...(notificationId ? {notificationId} : {}),...(filter ? {filter} : {})}),keepalive:true}).catch(() => undefined);
+}

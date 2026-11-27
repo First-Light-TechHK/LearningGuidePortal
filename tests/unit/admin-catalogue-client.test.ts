@@ -65,7 +65,7 @@ test("listCourses authenticates with X-API-Key and returns the projection rows",
   const rows = await listCourses();
   assert.equal(rows.length, 1);
   assert.equal(rows[0]!.id, "uuid-1");
-  assert.match(seenUrl, /^https:\/\/admin\.sandbox\.test\/api\/portal\/v1\/courses\?limit=200$/);
+  assert.match(seenUrl, /^https:\/\/admin\.sandbox\.test\/api\/portal\/v1\/courses\?limit=200&paged=1$/);
   assert.equal(seenHeaders["X-API-Key"], "service-token");
   assert.equal(seenHeaders.Accept, "application/json");
 });
@@ -104,4 +104,22 @@ test("an invalid JSON body, unsuccessful envelope or malformed detail is rejecte
 
   globalThis.fetch = (async () => jsonResponse({ success: true, data: { slug: "no-id" } })) as typeof fetch;
   await assert.rejects(getCourse("uuid-1"), error => isKind(error, "invalid"));
+});
+
+
+test("reads all cursor pages and rejects repeated pages and later failures", async () => {
+  enableProjection();
+  const page = Array.from({ length: 200 }, (_, i) => ({ id: `id-${i}` }));
+  const urls: string[] = [];
+  globalThis.fetch = (async input => {
+    urls.push(String(input));
+    return jsonResponse({ success: true, data: urls.length === 1 ? page : [{ id: "last" }] });
+  }) as typeof fetch;
+  assert.equal((await listCourses()).length, 201);
+  assert.match(urls[1]!, /afterId=id-199$/);
+  globalThis.fetch = (async () => jsonResponse({ success: true, data: page })) as typeof fetch;
+  await assert.rejects(listCourses(), error => isKind(error, "invalid"));
+  let calls = 0;
+  globalThis.fetch = (async () => ++calls === 1 ? jsonResponse({ success: true, data: page }) : new Response("", { status: 500 })) as typeof fetch;
+  await assert.rejects(listCourses(), error => isKind(error, "http"));
 });

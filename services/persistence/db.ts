@@ -80,6 +80,11 @@ const SCHEMA_PROBE = `
     AND to_regclass('app_files') IS NOT NULL
     AND to_regclass('data_migrations') IS NOT NULL
     AND to_regclass('orm_rows') IS NOT NULL
+    AND to_regclass('notification_interaction_events') IS NOT NULL
+    AND to_regclass('notification_interaction_user_time_idx') IS NOT NULL
+    AND to_regclass('notification_interaction_time_idx') IS NOT NULL
+    AND to_regclass('orm_sessions_token_hash_idx') IS NOT NULL
+    AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'notification_interaction_events' AND column_name = 'is_test' AND table_schema = ANY (current_schemas(false)))
     AND to_regclass('orm_users_email_key') IS NOT NULL
     AND to_regclass('orm_accounts_provider_subject_key') IS NOT NULL
     AND to_regclass('orm_email_binding_token_hash_key') IS NOT NULL
@@ -192,6 +197,25 @@ async function runSchemaBatchOnce(): Promise<void> {
 -- Additive and repeatable. Roll back application code first; retain this table
 -- for support history. Drop only after an approved export/retention decision.
 -- User-owned assessment participation, independent of Study/Entitlement.
+-- Independent append-only learner interaction events, isolated from product snapshot writes.
+CREATE TABLE IF NOT EXISTS notification_interaction_events (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL,
+ event TEXT NOT NULL,
+ notification_id TEXT,
+ template_id TEXT,
+ broadcast_id TEXT,
+ category TEXT,
+ language TEXT,
+ channel TEXT NOT NULL DEFAULT 'in_app',
+ is_test BOOLEAN NOT NULL DEFAULT false,
+ filter TEXT,
+ occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE notification_interaction_events ADD COLUMN IF NOT EXISTS is_test BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS notification_interaction_user_time_idx ON notification_interaction_events (user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS notification_interaction_time_idx ON notification_interaction_events (occurred_at);
+
 CREATE TABLE IF NOT EXISTS lesson_assessments (
   user_id TEXT NOT NULL,
   course_id TEXT NOT NULL,
@@ -474,6 +498,7 @@ CREATE OR REPLACE VIEW helpdesk_assist_outcomes AS SELECT a.id AS assist_id,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (table_name, id)
         );
+CREATE INDEX IF NOT EXISTS orm_sessions_token_hash_idx ON orm_rows ((payload->>'tokenHash')) WHERE table_name = 'sessions';
         -- Mirrors db/migrations/025_auth_identity_keys.sql.
 CREATE UNIQUE INDEX IF NOT EXISTS orm_users_email_key ON orm_rows ((lower(btrim(payload->>'email'))))
 WHERE table_name = 'users' AND nullif(btrim(payload->>'email'), '') IS NOT NULL;

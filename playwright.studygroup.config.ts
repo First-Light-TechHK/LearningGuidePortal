@@ -5,6 +5,8 @@ const port = 3013;
 const baseURL = `http://127.0.0.1:${port}`;
 
 const sessionSecret = "e2e-session-secret-at-least-32-chars!!";
+const notificationsToken = "e2e-local-notification-service";
+process.env.STUDYGROUP_E2E_NOTIFICATIONS_TOKEN = notificationsToken;
 
 // Dual mode for the Study Group two-browser E2E:
 //   local (default): docker livekit-server + nginx TLS terminator on 7443.
@@ -33,6 +35,7 @@ const nextEnv = {
   STORAGE_BACKEND: "local",
   EMAIL_VERIFICATION_REQUIRED: "0",
   SESSION_SECRET: sessionSecret,
+  NOTIFICATIONS_SERVICE_TOKEN: notificationsToken,
   APP_VERSION: "e2e",
   // In DEV the default admin hosts include localhost/127.0.0.1 (services/adminHost.ts),
   // which 307-redirects every non-backoffice API POST on this origin to

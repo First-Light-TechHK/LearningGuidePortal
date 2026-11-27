@@ -186,12 +186,13 @@ export async function sendTemplateTest(input: TemplateTestInput): Promise<Templa
   const text = rendered.emailBody || rendered.body;
   let status: "sent" | "failed" = "sent";
   let failureReason: string | null = null;
+  let providerMessageId: string | null = null;
   if (!emailDeliveryConfigured()) {
     status = "failed";
     failureReason = "email not configured";
   } else {
     try {
-      await sendHelpdeskUpdateEmail({ to: email, subject, text });
+      providerMessageId = (await sendHelpdeskUpdateEmail({ to: email, subject, text })).messageId;
     } catch (error) {
       if (!(error instanceof EmailDeliveryError)) throw error;
       status = "failed";
@@ -213,6 +214,7 @@ export async function sendTemplateTest(input: TemplateTestInput): Promise<Templa
       related: null,
       recipientEmail: email,
       recipientName: "",
+      providerMessageId,
     });
     auditTemplateTestInData(data, template.id, input.operator, now, "email");
     return entry;
