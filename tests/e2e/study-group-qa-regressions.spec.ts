@@ -76,7 +76,7 @@ async function mailTo(email: string) {
 async function remindersFor(member: Member) {
   const response = await member.context.request.get("/api/study-groups?view=reminders");
   expect(response.status(), "reminders view").toBe(200);
-  return ((await response.json()).data as Array<{ body: string }>).map((item) => item.body);
+  return (await response.json()).data as Array<{ sessionId?: string; kind?: "rescheduled" }>;
 }
 
 // Fails if the room shows its connection banner (the one with Reconnect):
@@ -476,35 +476,73 @@ test("N8: a double click schedules one session and joins once; the server folds 
   }
 });
 
-test("N9: a moved Start Time withdraws the old reminder, tells planned members, and reminds again for the new time", async ({ browser, baseURL }) => {
+test("N9: a moved start notifies booked learners in-app and reschedules the reminder email", async ({ browser, baseURL }) => {
   test.setTimeout(330_000);
   const origin = appOrigin(baseURL);
   const host = await newMember(browser, origin, "n9-a", "Study Host");
   const member = await newMember(browser, origin, "n9-b", "Study Guest");
+  const templateId = "LIVE_SESSION_RESCHEDULED";
+  const headers = { "x-notifications-token": process.env.STUDYGROUP_E2E_NOTIFICATIONS_TOKEN || "" };
+  const templatesPath = "/api/integration/notifications/templates";
+  const setEnabled = async (enabled: boolean) => {
+    const response = await host.context.request.put(`${templatesPath}/${templateId}`, {
+      headers, data: { enabled, operator: "study-group-e2e" },
+    });
+    expect(response.status(), "set reschedule template switch").toBe(200);
+    expect((await response.json()).template.enabled).toBe(enabled);
+  };
+  const rescheduleNotices = async (learner: Member) => {
+    const response = await learner.context.request.get("/api/my-learning/notifications");
+    expect(response.status(), "learner Notification Center API").toBe(200);
+    const { items } = await response.json() as { items: Array<{ templateId: string; title: string; buttonLink: string }> };
+    return items.filter((item) => item.templateId === templateId);
+  };
+  const dispatchEmails = async () => {
+    const response = await host.context.request.post("/api/internal/notifications/run", {
+      headers, data: { job: "email-dispatch" },
+    });
+    expect(response.status(), "run local mail queue").toBe(200);
+  };
+  let previousEnabled: boolean | undefined;
   try {
+    const settings = await host.context.request.get(templatesPath, { headers });
+    expect(settings.status()).toBe(200);
+    const { templates } = await settings.json() as { templates: Array<{ id: string; enabled: boolean; channels: string[] }> };
+    const template = templates.find((item) => item.id === templateId);
+    expect(template?.channels, "PRD §5: reschedule itself is in-app only").toEqual(["in_app"]);
+    previousEnabled = template?.enabled;
+    await setEnabled(true);
+
     const title = unique("Rescheduled session");
     const groupId = await createGroup(host, unique("E2E N9"));
     await joinGroup(member, groupId);
-    const sessionId = await scheduleSession(host, groupId, { title, startsInMs: 8 * 60_000 });
+    // Book before the ten-minute reminder window opens.
+    const sessionId = await scheduleSession(host, groupId, { title, startsInMs: 10 * 60_000 + 30_000, aiTutorEnabled: false });
     expect((await member.context.request.post(`/api/study-groups/sessions/${sessionId}/plan`, { data: {} })).status()).toBe(200);
-    // "<title> in the Study Group "<group>" starts in N minutes." (QA M10-a).
-    const reminded = async () => (await remindersFor(member)).some((body) => body.startsWith(`${title} in the Study Group`));
-    await expect.poll(reminded, { timeout: 60_000, intervals: [3_000] }).toBe(true);
+    const reminded = async () => (await remindersFor(member)).some((row) => row.sessionId === sessionId && row.kind !== "rescheduled");
+    await expect.poll(reminded, { timeout: 90_000, intervals: [3_000] }).toBe(true);
+    await dispatchEmails();
 
-    // The Host moves the start to just outside the reminder window.
     const moved = await host.context.request.patch(`/api/study-groups/sessions/${sessionId}`, { data: { groupId, startsAt: new Date(Date.now() + 10 * 60_000 + 40_000).toISOString() } });
     expect(moved.status(), "reschedule").toBe(200);
     await expect.poll(reminded, { timeout: 15_000 }).toBe(false);
-    await expect.poll(async () => (await notificationsFor(member.email)).filter((item) => item.title === "Live Session rescheduled" && item.body.includes(title)).length, { timeout: 15_000 }).toBe(1);
-    expect((await notificationsFor(host.email)).filter((item) => item.title === "Live Session rescheduled"), "the Host who moved it is not told").toHaveLength(0);
-    await expect.poll(async () => (await mailTo(member.email)).filter((message) => message.raw.includes("Live Session rescheduled")).length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(async () => (await rescheduleNotices(member)).length).toBe(1);
+    const [notice] = await rescheduleNotices(member);
+    expect(notice.title).toContain(title);
+    expect(notice.buttonLink).toContain(`/sessions/${sessionId}`);
+    expect(await rescheduleNotices(host), "the Host who moved it is not told").toHaveLength(0);
 
-    // When the new time enters the window, the reminder comes again.
     await expect.poll(reminded, { timeout: 150_000, intervals: [5_000] }).toBe(true);
-    await expect.poll(async () => (await mailTo(member.email)).filter((message) => message.raw.includes("Live Session reminder")).length, { timeout: 30_000 }).toBe(2);
+    await dispatchEmails();
+    const received = await mailTo(member.email);
+    expect(received.filter((message) => message.raw.includes(`Subject: Starting in 10 minutes: ${title}`))).toHaveLength(2);
+    expect(received.filter((message) => /^Subject:[ \t]*Live Session rescheduled:/im.test(message.raw))).toHaveLength(0);
   } finally {
-    await host.context.close();
-    await member.context.close();
+    try {
+      if (previousEnabled !== undefined) await setEnabled(previousEnabled);
+    } finally {
+      await Promise.all([host.context.close(), member.context.close()]);
+    }
   }
 });
 

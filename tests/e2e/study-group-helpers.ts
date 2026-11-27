@@ -10,7 +10,7 @@ const CONSENTS = { renewal: true, terms: true, refund: true };
 // The mock model answers "COURSE\nMock tutor reply: ..."; the tutor pipeline
 // strips the mode-tag line, so the chat shows the remaining text.
 export const MOCK_TUTOR_REPLY = "Mock tutor reply: the course text explains this topic.";
-export const SMTP_SINK_MESSAGES = "http://127.0.0.1:8789/messages";
+export const SMTP_SINK_MESSAGES = `http://127.0.0.1:${process.env.STUDYGROUP_SMTP_SINK_HTTP_PORT || 8789}/messages`;
 
 export type Member = { context: BrowserContext; email: string; nickname: string };
 
