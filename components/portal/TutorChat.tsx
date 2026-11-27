@@ -8,7 +8,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import { Copy as CopyIcon, RotateCw, Undo2 } from "lucide-react";
 import { TutorRequestError, tutorErrorMessage } from "./tutorChatError";
 
-type Message = { role: "user" | "assistant"; content: string; createdAt?: string };
+type Message = { id?: string; role: "user" | "assistant"; content: string; createdAt?: string };
 
 type Copy = {
   tutor: string;
@@ -113,14 +113,17 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
     if (!retryAt) setInput("");
     setBusy(true); setError("");
     const createdAt = new Date().toISOString();
-    const prior = retryAt ? messages.slice(0, messages.findLastIndex((item) => item.role === "user")) : messages;
-    const next = [...prior, { role: "user" as const, content: message, createdAt }, { role: "assistant" as const, content: "", createdAt }];
+    const retryIndex = retryAt ? messages.findLastIndex((item) => item.role === "user") : -1;
+    const prior = retryIndex < 0 ? messages : messages.slice(0, retryIndex);
+    const question = retryIndex < 0 ? { role: "user" as const, content: message, createdAt } : messages[retryIndex];
+    const next = [...prior, question, { role: "assistant" as const, content: "", createdAt }];
     setMessages(next);
     try {
       const response = await fetch("/api/ai-tutor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ courseId, lessonId, mode, message, conversationId, locale, ...(retryAt ? { action: "retry", lastUserAt: retryAt } : {}) }), signal: controller.signal });
       if (generationRef.current !== generation) return;
       if (!response.ok) throw new TutorRequestError(response.status, await response.text().catch(() => ""));
       setConversationId(response.headers.get("X-Conversation-Id") || conversationId);
+      const answerId = response.headers.get("X-Tutor-Answer-Id");
       if (!response.body) throw new TutorRequestError(null, "");
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let answer = "";
       while (true) {
@@ -130,18 +133,22 @@ export function TutorChat({ locale, courseId, lessonId, copy, onClose }: { local
         answer += decoder.decode(chunk.value, { stream: true });
         setMessages([...next.slice(0, -1), { role: "assistant", content: answer, createdAt }]);
       }
-      const refreshed = await fetch(`/api/ai-tutor?courseId=${encodeURIComponent(courseId)}&lessonId=${encodeURIComponent(lessonId)}&mode=${mode}&locale=${locale}`);
-      if (refreshed.ok && generationRef.current === generation) {
-        const data = await refreshed.json() as { conversation?: { messages: Message[] } };
-        // Only adopt persisted timestamps for the answer just displayed; a stale read must not erase it.
-        const saved = data.conversation?.messages;
-        if (saved?.at(-1)?.role === "assistant" && saved.at(-1)?.content === answer) setMessages(saved);
+      answer += decoder.decode();
+      setMessages([...next.slice(0, -1), { id: answerId ?? undefined, role: "assistant", content: answer, createdAt }]);
+      const data = await fetch(`/api/ai-tutor?courseId=${encodeURIComponent(courseId)}&lessonId=${encodeURIComponent(lessonId)}&mode=${mode}&locale=${locale}`, { signal: controller.signal })
+        .then(async (refreshed) => refreshed.ok ? await refreshed.json() as { conversation?: { messages: Message[] } } : null)
+        .catch(() => null);
+      if (generationRef.current === generation) {
+        // Ignore stale history, including a previous reply with identical text.
+        const saved = data?.conversation?.messages;
+        const last = saved?.at(-1);
+        if (saved && last?.role === "assistant" && (answerId ? last.id === answerId : last.content === answer)) setMessages(saved);
       }
     } catch (requestError) {
       if (generationRef.current !== generation) return;
       // REQ-0140: never show the API body (JSON) to the learner, only a fixed localised line.
       setError(requestError instanceof TutorRequestError ? tutorErrorMessage(locale, requestError.status, requestError.body) : tutorErrorMessage(locale, null, ""));
-      setMessages(retryAt ? prior : next.slice(0, -1));
+      setMessages(retryAt ? messages : next.slice(0, -1));
     }
     if (generationRef.current !== generation) return;
     setBusy(false);

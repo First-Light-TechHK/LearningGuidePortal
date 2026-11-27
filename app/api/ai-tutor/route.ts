@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { currentProductUser } from "@/services/productAuth";
+import { randomUUID } from "node:crypto";
+import { currentProductUser, currentProductUserFromRequest } from "@/services/productAuth";
 import {
   checkEntitlement,
   deleteConversation,
@@ -83,7 +84,7 @@ export async function PATCH(request: Request) {
 
 export async function POST(request: Request) {
   if (!requestOriginMatches(request)) return jsonError("Invalid origin.", 403);
-  const user = await currentProductUser();
+  const user = await currentProductUserFromRequest(request);
   if (!user) return jsonError("Sign in is required.", 401);
   try {
     const body = await request.json() as {
@@ -122,12 +123,10 @@ export async function POST(request: Request) {
     }
 
     const locale: Locale = body.locale === "zh-CN" ? "zh-CN" : "en-GB";
-    let history = conversation.messages.slice(-10);
-    if (body.action === "retry") {
-      const trimmed = await trimLastTutorTurn(user.id, conversation.id, course.id, lesson.id, body.lastUserAt || "");
-      if (!trimmed) return jsonError("Conversation changed.", 409);
-      history = trimmed.history.slice(-10);
-    }
+    const previousTurn = body.action === "retry" ? conversation.messages[lastUser] : undefined;
+    // Keep the old turn until the replacement has streamed successfully.
+    const history = previousTurn ? conversation.messages.slice(0, lastUser) : conversation.messages;
+    const answerId = randomUUID();
 
     const generator = streamTutorText({
       externalCourseId: course.slug,
@@ -137,6 +136,7 @@ export async function POST(request: Request) {
       history: history.map((item) => ({ role: item.role, content: item.content })),
       signal: request.signal,
       userId: user.id,
+      requireCompletion: true,
     });
     // 首字节前失败仍可返回标准错误状态；流开始后只能结束响应。
     const first = await generator.next();
@@ -154,15 +154,20 @@ export async function POST(request: Request) {
             answer += delta;
             controller.enqueue(encoder.encode(delta));
           }
-          if (answer.trim()) {
-            const timestamp = new Date().toISOString();
-            const messages: ProductConversation["messages"] = [
-              ...history,
-              { role: "user", content: message, createdAt: timestamp },
-              { role: "assistant", content: answer, createdAt: new Date().toISOString() },
-            ];
-            await saveTutorReplyIfUnchanged({ ...conversation, mode, messages }, history, Boolean(body.action || conversation.messages.length));
-          }
+          if (!answer.trim()) throw new KsTutorError("AI Tutor returned an empty reply.", 502, "KS_TUTOR_STREAM_ERROR");
+          request.signal.throwIfAborted();
+          const timestamp = new Date().toISOString();
+          const messages: ProductConversation["messages"] = [
+            ...history,
+            { id: previousTurn?.id ?? randomUUID(), role: "user", content: message, createdAt: previousTurn?.createdAt ?? timestamp },
+            { id: answerId, role: "assistant", content: answer, createdAt: timestamp },
+          ];
+          const saved = await saveTutorReplyIfUnchanged(
+            { ...conversation, mode, messages },
+            conversation.messages,
+            conversation.messages.length > 0,
+          );
+          if (!saved) throw new Error("AI Tutor conversation changed.");
           controller.close();
         } catch (error) {
           controller.error(error);
@@ -178,6 +183,7 @@ export async function POST(request: Request) {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-store",
         "X-Conversation-Id": conversation.id,
+      "X-Tutor-Answer-Id": answerId,
         "X-Tutor-Provider": "ks",
       },
     });

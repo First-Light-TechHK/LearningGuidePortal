@@ -51,11 +51,12 @@ const copy = { tutor: "AI Tutor", lecture: "Lecture", socratic: "Socratic", send
 test("the chat shows localised 503 and 409 errors in a dismissible dialog", async () => {
   const body = JSON.stringify({ ok: false, code: "AI_TUTOR_UNAVAILABLE", error: "AI Tutor is currently unavailable." });
   let responseStatus = 503;
+  let messages: { role: string; content: string; createdAt: string }[] = [];
   const server = createServer((request, response) => {
     const url = new URL(request.url || "/", "http://127.0.0.1");
     if (url.pathname === "/api/ai-tutor" && request.method === "GET") {
       response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ conversation: { id: "c1", messages: [] }, welcome: "Ask away." }));
+      response.end(JSON.stringify({ conversation: { id: "c1", messages }, welcome: "Ask away." }));
       return;
     }
     if (url.pathname === "/api/ai-tutor" && request.method === "POST") {
@@ -106,6 +107,22 @@ test("the chat shows localised 503 and 409 errors in a dismissible dialog", asyn
       assert.equal(await page.getByRole("dialog").count(), 0);
       await page.close();
     }
+
+    responseStatus = 503;
+    messages = [
+      { role: "user", content: "Original question", createdAt: "2026-11-06T10:00:00.000Z" },
+      { role: "assistant", content: "Original answer", createdAt: "2026-11-06T10:00:01.000Z" },
+    ];
+    const page = await browser.newPage();
+    await page.goto(origin);
+    await page.addScriptTag({ content: bundle.outputFiles.find((file) => file.path.endsWith(".js"))!.text });
+    await page.evaluate((props) => { (window as unknown as { mount: (value: unknown) => void }).mount(props); }, { locale: "en-GB", courseId: "course", lessonId: "lesson", copy });
+    await page.getByText("Original answer").waitFor();
+    await page.getByRole("button", { name: getMessages("en-GB").learning.tutorRetry }).click();
+    await page.getByRole("alert").waitFor();
+    assert.equal(await page.getByText("Original answer").count(), 1);
+    assert.equal(await page.getByText("Original question").count(), 1);
+    await page.close();
   } finally {
     await browser.close();
     server.closeAllConnections();

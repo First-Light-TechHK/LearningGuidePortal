@@ -280,7 +280,7 @@ export type ProductStudyEvent = {
   clientEventId: string;
   createdAt: string;
 };
-export type ProductConversationMessage = { role: "user" | "assistant"; content: string; createdAt: string };
+export type ProductConversationMessage = { id?: string; role: "user" | "assistant"; content: string; createdAt: string };
 export type ProductConversation = {
   id: string;
   userId: string;
@@ -2771,15 +2771,16 @@ export async function saveConversation(conversation: ProductConversation) {
 }
 
 /** Prevent an older stream from restoring history removed by Undo or New chat. */
-export async function saveTutorReplyIfUnchanged(conversation: ProductConversation, history: ProductConversationMessage[], expectExisting: boolean) {
+export async function saveTutorReplyIfUnchanged(conversation: ProductConversation, expectedHistory: ProductConversationMessage[], expectExisting: boolean) {
   return editData((data) => {
     const index = data.conversations.findIndex((item) => item.id === conversation.id && item.userId === conversation.userId);
     const current = index >= 0 ? data.conversations[index] : null;
     if (expectExisting && !current) return false;
-    if (current && JSON.stringify(current.messages.slice(-10)) !== JSON.stringify(history)) return false;
+    if (current && JSON.stringify(current.messages) !== JSON.stringify(expectedHistory)) return false;
     if (!current && data.conversations.some((item) => item.userId === conversation.userId && item.courseId === conversation.courseId && item.lessonId === conversation.lessonId)) return false;
-    if (index >= 0) data.conversations[index] = { ...conversation, messages: conversation.messages.slice(-12), updatedAt: now() };
-    else data.conversations.unshift({ ...conversation, messages: conversation.messages.slice(-12), updatedAt: now() });
+    const next = { ...conversation, messages: conversation.messages.slice(-40), updatedAt: now() };
+    if (index >= 0) data.conversations[index] = next;
+    else data.conversations.unshift(next);
     return true;
   });
 }

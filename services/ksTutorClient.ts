@@ -236,6 +236,7 @@ export async function* streamTutorText(input: {
   // KS quota bucket: the learning page's 1:1 Tutor ("portal", the default)
   // and the Live Session room ("study-group") never spend each other's budget.
   channel?: "portal" | "study-group";
+  requireCompletion?: boolean;
   // Portal 学员 userId：用于 KS 侧日志审计和用户级限流分桶（2026-10-28）
   userId?: string;
 }): AsyncGenerator<string> {
@@ -316,6 +317,7 @@ export async function* streamTutorText(input: {
         boundary = buffer.indexOf("\n\n");
       }
     }
+    if (!done && input.requireCompletion) throw new KsTutorError("AI Tutor stream ended early.", 502, "KS_TUTOR_STREAM_ERROR");
   } finally {
     timeout.dispose();
     await reader.cancel().catch(() => undefined);
