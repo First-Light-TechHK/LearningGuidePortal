@@ -192,7 +192,7 @@ export function tutorAnswerSegments(text: string): { segments: TutorAnswerSegmen
   };
   const segments: TutorAnswerSegment[] = [];
   let startsLine = true;
-  for (const part of splitCode(text)) {
+  for (const part of splitCode(text.replace(/\r\n?/g, "\n"))) {
     if (part.code) { segments.push({ kind: "code", text: part.text, fenced: part.fenced }); startsLine = part.fenced; continue; }
     const prose = part.text
       .replace(SOURCES_LIST, (_match, entries: string) => {

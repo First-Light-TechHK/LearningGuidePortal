@@ -47,6 +47,16 @@ test("Group Study renders indented explanation after an image as prose", async (
   assert.match(html, /<p>Sources<\/p><p>\[1\] Lesson 1<\/p>/);
 });
 
+test("Group Study renders a Windows-line-ending matrix without swallowing the following text", async () => {
+  const matrix = String.raw`\begin{pmatrix} a \\ b \end{pmatrix}`;
+  const text = ["State vector:", "$$", matrix, "$$", "Next paragraph.", "", "Sources", "[1] Lesson 3"].join("\r\n");
+  const html = await render(text);
+  assert.equal((html.match(/class="katex-display"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /katex-error/);
+  assert.match(html, /<p>Next paragraph\.<\/p>/);
+  assert.match(html, /<p>\[1\] Lesson 3<\/p>/);
+});
+
 test("tutor answer splits bold Sources entries and removes encoded trailing space", () => {
   const text = "Claim.\n\n**Sources**\n**[1] Lesson_1_0921&#x20;** **[2] Modeling Life 精华提炼**";
   assert.deepEqual(tutorAnswerParts(text), {

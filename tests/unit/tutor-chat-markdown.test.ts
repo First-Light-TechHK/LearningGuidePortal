@@ -71,7 +71,7 @@ function startServer() {
         // 助手回复：block LaTeX（多行 $$）+ 列表 + 行内公式
         const answer = "Here is the formula:\n\n$$\nE = mc^2\n$$\n\nKey points:\n1. Energy\n2. Mass\n3. Speed of light $c$\n\n| Symbol | Meaning |\n| --- | --- |\n| E | Energy |\n\n![diagram](/api/user/courses/course/images/22222222-2222-4222-8222-222222222222.png)\n\n[Source: Lesson 1]";
         response.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "X-Conversation-Id": "conversation-md" });
-        response.end(answer);
+        response.end(answer.replace(/\n/g, "\r\n"));
       });
       return;
     }
@@ -124,6 +124,7 @@ test("welcome, assistant and user bubbles render LaTeX and markdown", async () =
 
     // assistant 气泡应有 block LaTeX
     assert.ok(await page.locator(".tutor-message.assistant .katex-display").count() >= 1, "assistant bubble should render block LaTeX");
+    assert.equal(await page.locator(".tutor-message.assistant .katex-error").count(), 0);
     // assistant 气泡应有列表
     assert.ok(await page.locator(".tutor-message.assistant ol").count() >= 1, "assistant bubble should render ordered list");
     assert.equal(await page.locator(".tutor-message.assistant table tr").count(), 2, "assistant bubble should keep the table after the list");
