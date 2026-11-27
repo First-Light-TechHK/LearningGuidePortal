@@ -6,6 +6,7 @@ import { resetAdminCourseMirrorForTests } from "../../services/adminCourseMirror
 
 const ADMIN_ID = "4d22b6a5-c091-4fc1-90d5-1c16bf2cb1b2";
 const SUMMARY = { id: ADMIN_ID, slug: "modeling-life", title: "Modeling life", category: "Science" };
+const EPICUREANISM_SUMMARY = { ...SUMMARY, slug: "epicureanism", title: "Admin Epicureanism" };
 const DETAIL = {
   ...SUMMARY,
   shortDescription: "See how mathematics models life.",
@@ -101,6 +102,35 @@ test("switching the source back to store hides mirrored rows", async () => {
     process.env.PORTAL_COURSE_SOURCE = "store";
     const localOnly = await store.listPublishedCourses();
     assert.equal(localOnly.some(course => course.origin === "admin"), false, "store mode is exactly today's behaviour");
+  } finally {
+    await restore();
+  }
+});
+
+test("an archived Admin course shadows a same-slug local copy in the catalogue and detail route", async () => {
+  const { restore } = await isolate("lg-admin-mirror-archive-collision-");
+  try {
+    process.env.PORTAL_COURSE_SOURCE = "admin";
+    process.env.ADMIN_PORTAL_BASE_URL = "https://admin.sandbox.test";
+    process.env.ADMIN_PORTAL_API_TOKEN = "service-token";
+    process.env.ADMIN_PORTAL_CACHE_TTL_SECONDS = "0";
+    resetAdminCourseMirrorForTests();
+
+    const state: FetchState = { list: [EPICUREANISM_SUMMARY], detail: null, fail: false };
+    installProjection(state);
+    const store = await import("../../services/productStore");
+    assert.ok((await store.listPublishedCourses()).some(course => course.slug === "epicureanism" && course.origin === "admin"));
+
+    state.list = [];
+    const { syncCatalogueIfStale } = await import("../../services/adminCourseMirror");
+    await syncCatalogueIfStale(true);
+
+    assert.equal((await store.listPublishedCourses()).some(course => course.slug === "epicureanism"), false,
+      "the local published copy must not resurrect an Admin course after Admin withdraws it");
+    assert.equal(await store.getProductCourse("epicureanism"), null,
+      "the detail route must not fall through to the local same-slug copy");
+    assert.equal((await store.getCoursePage("epicureanism")).pageState, "withdrawn",
+      "the tombstone should render as withdrawn rather than expose the local copy");
   } finally {
     await restore();
   }

@@ -7,10 +7,10 @@ export const requiredWorkflows = {
   'overlay-check.yml': ['overlay-check']
 };
 
-export function evaluateRequiredCI({ sha, branch, workflows }) {
+export function evaluateRequiredCI({ sha, branch, workflows, required = requiredWorkflows }) {
   const failures = [];
   const evidence = [];
-  for (const [workflow, requiredJobs] of Object.entries(requiredWorkflows)) {
+  for (const [workflow, requiredJobs] of Object.entries(required)) {
     // A newer failed, cancelled or pending run must supersede an older green run.
     const run = (workflows[workflow] || [])
       .filter(item => item.head_sha === sha && item.head_branch === branch && item.event === 'push')

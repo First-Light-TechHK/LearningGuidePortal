@@ -104,8 +104,28 @@ test("product snapshot upserts live rows and deletes ids that left the aggregate
     },
   });
   assert.equal(sql.some((item) => item.text.includes("DELETE FROM orm_rows") && item.values[0] === "courses"), true);
-  assert.equal(sql.some((item) => item.text.includes("INSERT INTO orm_rows") && item.values[0] === "courses" && item.values[1] === "stoicism"), true);
+  assert.equal(sql.some((item) => item.text.includes("INSERT INTO orm_rows") && item.values[0] === "courses" && Array.isArray(item.values[1]) && item.values[1].includes("stoicism")), true);
   assert.equal(sql.some((item) => item.text.includes("INSERT INTO orm_rows") && item.values[0] === "doc:portalContent"), true);
-  assert.equal(sql.some((item) => item.values[0] === "users" && item.values[1] === "user-keep"), true);
+  assert.equal(sql.some((item) => item.values[0] === "users" && Array.isArray(item.values[1]) && item.values[1].includes("user-keep")), true);
   assert.equal(sql.some((item) => item.text.includes("INSERT INTO data_migrations") && item.values[0] === "001_add_stoicism"), true);
+});
+
+test("large snapshots batch row writes while retaining all identifiers and payloads", async () => {
+  const calls: Array<{text:string;values:unknown[]}> = [];
+  const rows = Array.from({length: 2501}, (_,i) => ({id:`u${i}`,value:i}));
+  await persistProductSnapshot({users:rows}, {query:async(text,values=[])=>{calls.push({text,values});return {rows:[]};}});
+  const writes = calls.filter(call => call.text.includes('INSERT INTO orm_rows') && call.values[0] === 'users');
+  assert.ok(writes.length <= 3, `expected bounded batches, got ${writes.length}`);
+  assert.equal(writes.flatMap(call => call.values[1] as string[]).length, rows.length);
+  const payloads = writes.flatMap(call => call.values[2] as string[]).map(value=>JSON.parse(value));
+  assert.deepEqual(payloads,rows);
+});
+
+test('hydration keeps first matching duplicate position and appends new rows in order', async () => {
+  const data: Record<string, unknown> = { users:[{id:'same',value:1},{id:'same',value:2}] };
+  await hydrateOrmFromSql(data,{query:async(text) => ({rows:text.includes('FROM orm_rows') ? [
+    {table_name:'users',id:'same',payload:{id:'same',value:3}},
+    {table_name:'users',id:'new',payload:{id:'new',value:4}},
+  ]:[]})});
+  assert.deepEqual(data.users,[{id:'same',value:3},{id:'same',value:2},{id:'new',value:4}]);
 });

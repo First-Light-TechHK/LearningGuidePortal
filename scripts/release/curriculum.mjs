@@ -7,6 +7,16 @@ export function canonical(value) {
 }
 export const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 
+/**
+ * Stored fields that carry no published content: every environment writes them
+ * when the same course is authored or imported, so two environments holding the
+ * same content still differ in these values.
+ */
+export function courseContent(course) {
+  const { createdAt, updatedAt, revision, ...content } = course || {};
+  return content;
+}
+
 export function mediaReferences(value) {
   const found = new Map();
   function visit(item, key = '') {
@@ -29,8 +39,10 @@ export function curriculumManifest(product) {
   const courses = (product.courses || []).filter(course => course.status === 'published').map(course => ({
     id: course.id, slug: course.slug, title: course.title, category: course.category,
     cover: course.cover || course.thumbnailPath || null,
-    // Hash all stored fields, including authoring metadata. Ordering of JSON keys is immaterial.
-    revision: digest(course),
+    // Hash all stored content fields. Timestamps and the draft-edit counter are
+    // written independently in each environment (they differ by milliseconds for
+    // the same content), so hashing them would report a false mismatch.
+    revision: digest(courseContent(course)),
     media: mediaReferences(course),
     sections: (course.sections || []).filter(section => !section.archivedAt).map(section => ({
       id: section.id, title: section.title,

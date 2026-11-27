@@ -304,6 +304,7 @@ test("LIVE_SESSION_CANCELLED and LIVE_SESSION_RESCHEDULED obey their switches", 
     startsAt: minutesFromNow(120), durationSeconds: 1800, maxParticipants: 4,
   });
   await service.planToAttend({ actorUserId: user.id, sessionId: session.id });
+  const beforeMoveMailCount = mails.length;
 
   // Rescheduled is off by default: the move sends nothing.
   await setTemplate("LIVE_SESSION_RESCHEDULED", { enabled: false });
@@ -318,6 +319,14 @@ test("LIVE_SESSION_CANCELLED and LIVE_SESSION_RESCHEDULED obey their switches", 
   let moved = await rowsFor(user.id, "LIVE_SESSION_RESCHEDULED");
   assert.equal(moved.length, 1);
   assert.equal(moved[0].title, "Moved: Switch session");
+  const memberInbox = await notifications.listLearnerNotifications(user.id);
+  const visibleMove = memberInbox.items.filter((item) => item.templateId === "LIVE_SESSION_RESCHEDULED");
+  assert.equal(visibleMove.length, 1, "the actual learner inbox contains the moved session");
+  assert.ok(visibleMove[0].buttonLink?.endsWith(`/sessions/${session.id}`));
+  assert.equal((await notifications.listLearnerNotifications(owner.id)).items.some(
+    (item) => item.templateId === "LIVE_SESSION_RESCHEDULED",
+  ), false, "the host is not notified");
+  assert.equal(mails.length, beforeMoveMailCount, "reschedule itself schedules no email");
 
   // Cancelled on: one row; then a second scenario with it off sends nothing.
   await setTemplate("LIVE_SESSION_CANCELLED", { enabled: true });

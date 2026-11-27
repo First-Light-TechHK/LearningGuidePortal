@@ -16,7 +16,7 @@ import type {
  * (`services/adminCourseMirror.ts`) and the media proxy own the side effects.
  */
 
-export const ADMIN_COURSE_CATEGORIES = ["Chinese Humanities", "European Humanities", "Science"] as const;
+export const ADMIN_COURSE_CATEGORIES = ["Chinese Humanities", "European Humanities", "Science", "Society"] as const;
 export type AdminCourseCategory = (typeof ADMIN_COURSE_CATEGORIES)[number];
 
 const FALLBACK_CATEGORY: AdminCourseCategory = "European Humanities";
@@ -39,6 +39,10 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function nonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
 function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
@@ -51,12 +55,13 @@ let warnedCategory: string | null = null;
 
 /**
  * Admin category is free text; Portal's catalogue filter and pricing tracks only
- * understand three names. Unknown values fall back to European Humanities and log
+ * understand the supported names. Unknown values fall back to European Humanities and log
  * once, so a typo in Admin is visible without flooding the log.
  */
 export function mapAdminCategory(raw: unknown): AdminCourseCategory {
   const text = nonEmptyString(raw);
   if (text) {
+    if (text.toLowerCase() === "社会") return "Society";
     const exact = ADMIN_COURSE_CATEGORIES.find(category => category.toLowerCase() === text.toLowerCase());
     if (exact) return exact;
     if (warnedCategory !== text) {
@@ -90,7 +95,7 @@ function mapNode(adminCourseId: string, raw: unknown, index: number): LessonNode
   if (typeof type !== "string" || !NODE_TYPES.has(type as LessonNode["type"])) return null;
   const node: LessonNode = {
     id: nonEmptyString(raw.id) ?? `node-${index}`,
-    title: stringValue(raw.title) ?? "",
+    title: nonEmptyString(raw.title) ?? `Exhibit ${index + 1}`,
     type: type as LessonNode["type"],
     triggerTime: finiteNumber(raw.triggerTime) ?? 0,
   };
@@ -101,7 +106,7 @@ function mapNode(adminCourseId: string, raw: unknown, index: number): LessonNode
   return node;
 }
 
-function mapContent(adminCourseId: string, raw: unknown, index: number): LessonContent | null {
+function mapContent(adminCourseId: string, raw: unknown, index: number, lessonTitle: string): LessonContent | null {
   if (!isObject(raw)) return null;
   const payload = raw as AdminProjectionContent;
   if (payload.type !== "video" && payload.type !== "text" && payload.type !== "pdf") return null;
@@ -110,7 +115,7 @@ function mapContent(adminCourseId: string, raw: unknown, index: number): LessonC
     .filter((node): node is LessonNode => Boolean(node));
   const base: LessonContent = {
     id: nonEmptyString(payload.id) ?? `content-${index}`,
-    title: stringValue(payload.title) ?? "",
+    title: nonEmptyString(payload.title) ?? lessonTitle,
     type: payload.type,
     mode: payload.mode === "interactive" ? "interactive" : "lecture",
     nodes,
@@ -128,9 +133,10 @@ function mapLesson(adminCourseId: string, raw: unknown, index: number): ProductL
   if (!isObject(raw)) return null;
   const payload = raw as AdminProjectionLesson;
   const durationSeconds = finiteNumber(payload.durationSeconds);
+  const lessonTitle = nonEmptyString(payload.title) ?? `Lesson ${index + 1}`;
   return {
     id: nonEmptyString(payload.id) ?? `lesson-${index}`,
-    title: stringValue(payload.title) ?? "",
+    title: lessonTitle,
     // The projection carries protected text in `contents[].html`, not in `body`.
     body: "",
     summary: stringValue(payload.summary) ?? undefined,
@@ -138,7 +144,7 @@ function mapLesson(adminCourseId: string, raw: unknown, index: number): ProductL
     videoDurationSeconds: durationSeconds,
     isPublic: payload.isPublic === true,
     contents: list(payload.contents)
-      .map((content, contentIndex) => mapContent(adminCourseId, content, contentIndex))
+      .map((content, contentIndex) => mapContent(adminCourseId, content, contentIndex, lessonTitle))
       .filter((content): content is LessonContent => Boolean(content)),
   };
 }
@@ -185,6 +191,10 @@ function baseCourse(adminCourseId: string, summary: AdminCourseSummary, now: str
     tags: stringList(summary.tags),
     referencePrice: finiteNumber(summary.referencePrice),
     discount: finiteNumber(summary.discount),
+    catalogueLessonCount: nonNegativeInteger(summary.lessonCount),
+    catalogueDurationSeconds: finiteNumber(summary.totalDurationSeconds) !== null && summary.totalDurationSeconds! >= 0
+      ? summary.totalDurationSeconds!
+      : undefined,
     status: "published",
     sections: [],
     createdAt: previous?.createdAt ?? now,

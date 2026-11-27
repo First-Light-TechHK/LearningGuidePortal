@@ -127,7 +127,7 @@ test("(a) ensureSchema on an EMPTY database succeeds in one pass and the freshne
 
 test("(b) every db/migrations file applies in numeric order on an EMPTY database; the chain alone is current only once app_files has a migration (known gap); one bootstrap on top is enough; beyond the known gaps the two sources declare the same objects", () => {
   assert.deepEqual(chainThenBootstrap.applied, MIGRATIONS, "every migration file applied, in order");
-  assert.ok(chainThenBootstrap.applied.at(-1)?.startsWith("028_"), "028_app_files.sql is the last file of the chain");
+  assert.ok(chainThenBootstrap.applied.at(-1)?.startsWith("029_"), "029_notification_interaction_events.sql is the last file of the chain");
   assert.equal(chainThenBootstrap.readyAfterMigrations, CHAIN_ALONE_IS_CURRENT, CHAIN_ALONE_IS_CURRENT
     ? "after the whole chain, SCHEMA_PROBE is ready: ensureSchema runs no DDL"
     : `the chain alone cannot satisfy SCHEMA_PROBE while ${KNOWN_BOOTSTRAP_ONLY_TABLES.join(", ")} has no migration (known gap)`);

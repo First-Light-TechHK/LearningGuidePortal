@@ -79,6 +79,8 @@ test("a detail becomes a full syllabus with proxied media and no protected body"
 test("unknown categories fall back to European Humanities", () => {
   assert.equal(mapAdminCategory("Science"), "Science");
   assert.equal(mapAdminCategory("science"), "Science", "case differences still match");
+  assert.equal(mapAdminCategory("Society"), "Society");
+  assert.equal(mapAdminCategory("社会"), "Society", "legacy Chinese value remains compatible");
   assert.equal(mapAdminCategory("Philosophy"), "European Humanities");
   assert.equal(mapAdminCategory(null), "European Humanities");
 });
@@ -99,4 +101,18 @@ test("the media URL rewrite trusts only the last path segment", () => {
   );
   assert.equal(adminAssetProxyUrl("course-uuid", "/api/portal/v1/media/course-uuid/cover"), undefined);
   assert.equal(adminAssetProxyUrl("course-uuid", ""), undefined);
+});
+
+test("untitled projection content and nodes remain playable after learner sanitisation", async () => {
+  const { buildTextLessonPreview } = await import('../../services/textLessonPreview');
+  const course = toProductCourseDetail({ ...detail, sections: [{ id: 's', title: 'Section', lessons: [{
+    id: 'l', title: 'Community introduction', isPublic: true, contents: [{ id: 'v', type: 'video', url: `/api/portal/v1/media/${detail.id}/assets/0a1b2c3d-2222-4222-8222-222222222222`, nodes: [{ id: 'n', type: 'image', triggerTime: 2, url: `/api/portal/v1/media/${detail.id}/assets/0a1b2c3d-3333-4333-8333-333333333333` }] }],
+  }] }] }, NOW);
+  const lesson = course.sections[0]!.lessons[0]!;
+  for (const entitled of [false, true]) {
+    const video = buildTextLessonPreview(lesson, course.id, entitled, course).contents[0];
+    assert.equal(video?.title, 'Community introduction');
+    assert.match(video?.url || '', /\/api\/admin-course-media\//);
+    assert.ok(video?.nodes[0]?.title);
+  }
 });

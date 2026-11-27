@@ -1,3 +1,4 @@
+import { purgeInteractionEvents } from "./interactions";
 import { createNotificationInData, notificationEmailRow, purgeExpiredNotificationRecordsInData } from "./core";
 import { dispatchPendingNotificationEmails, sendNotificationEmailForUser, type SendEmail } from "./email";
 import { editProductData, planDisplayName, planScopeName, readProductData } from "../productStore";
@@ -247,6 +248,7 @@ export async function runNotificationRetentionJob(options: { now?: Date | string
     state.retentionDay = day;
     return { ran: true, ...purged };
   });
+  await purgeInteractionEvents(now);
   if (result.ran || result.reason === "already_ran") retentionDayRun = day;
   return result;
 }

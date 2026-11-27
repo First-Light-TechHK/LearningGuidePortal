@@ -193,6 +193,7 @@ button.auth-provider-icon { padding:0; border:0; background:transparent; color:i
 .portal-account-page.notification-design-page > .portal-section { padding-top:50px; }
 .subscription-design-page .portal-section > h1 { margin:0; line-height:40.3px; }
 .subscription-page-intro { margin:1.7px 0 0; font-size:16px; line-height:20.8px; color:#64748b; }
+.subscription-design-page .subscription-page-intro { margin:8px 0 30px; }
 .subscription-design-page .subscription-section { margin-top:53.2px; gap:0; }
 .subscription-design-page .subscription-heading { margin:0 0 19px; }
 .subscription-design-page .subscription-heading h2 { margin:0; font-size:22px; line-height:27px; font-weight:600; }

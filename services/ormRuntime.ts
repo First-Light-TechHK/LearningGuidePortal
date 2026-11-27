@@ -219,6 +219,18 @@ export async function hydrateOrmFromSql(data: Record<string, unknown>, db: SqlCl
   data.catalogueMigrations = [...new Set([...((data.catalogueMigrations as string[]) || []), ...ids])];
 
   const rows = await db.query("SELECT table_name, id, payload FROM orm_rows");
+  const indexes = new Map<string, Map<string, number>>();
+  const mergeRow = (tableName: string, list: Identified[], payload: Identified) => {
+    let index = indexes.get(tableName);
+    if (!index) {
+      index = new Map();
+      list.forEach((item, position) => { if (!index!.has(item.id)) index!.set(item.id, position); });
+      indexes.set(tableName, index);
+    }
+    const position = index.get(payload.id);
+    if (position === undefined) { index.set(payload.id, list.length); list.push(payload); }
+    else list[position] = payload;
+  };
   for (const row of rows.rows) {
     const tableName = String(row.table_name);
     const payload = (typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload) as Identified;
@@ -227,17 +239,13 @@ export async function hydrateOrmFromSql(data: Record<string, unknown>, db: SqlCl
       continue;
     }
     if ((PRODUCT_TABLES as readonly string[]).includes(tableName)) {
-      const list = Array.isArray(data[tableName]) ? [...(data[tableName] as Identified[])] : [];
-      const index = list.findIndex((item) => item.id === payload.id);
-      if (index < 0) list.push(payload);
-      else list[index] = payload;
+      const list = Array.isArray(data[tableName]) ? data[tableName] as Identified[] : [];
+      mergeRow(tableName, list, payload);
       data[tableName] = list;
       continue;
     }
     const list: Identified[] = extras.tables[tableName] || [];
-    const index = list.findIndex((item: Identified) => item.id === payload.id);
-    if (index < 0) list.push(payload);
-    else list[index] = payload;
+    mergeRow(tableName, list, payload);
     extras.tables[tableName] = list;
   }
 
@@ -256,10 +264,13 @@ export async function persistProductSnapshot(data: Record<string, unknown>, db: 
       await db.query("DELETE FROM orm_rows WHERE table_name = $1", [table]);
     } else {
       await db.query("DELETE FROM orm_rows WHERE table_name = $1 AND NOT (id = ANY($2::text[]))", [table, ids]);
-      for (const row of rows) {
+      // Preserve last-write semantics for duplicate IDs while bounding SQL parameters.
+      const uniqueRows = [...new Map(rows.map(row => [row.id, row])).values()];
+      for (let offset = 0; offset < uniqueRows.length; offset += 1000) {
+        const batch = uniqueRows.slice(offset, offset + 1000);
         await db.query(
-          "INSERT INTO orm_rows (table_name, id, payload, updated_at) VALUES ($1, $2, $3::jsonb, NOW()) ON CONFLICT (table_name, id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()",
-          [table, row.id, JSON.stringify(row)],
+          "INSERT INTO orm_rows (table_name, id, payload, updated_at) SELECT $1, batch.id, batch.payload, NOW() FROM unnest($2::text[], $3::jsonb[]) AS batch(id, payload) ON CONFLICT (table_name, id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()",
+          [table, batch.map(row => row.id), batch.map(row => JSON.stringify(row))],
         );
       }
     }

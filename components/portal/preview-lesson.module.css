@@ -78,7 +78,7 @@
 .exhibitSlot:empty { display:none; }
 .exhibitSlot > section { margin:0; }
 .exhibitSlot [data-exhibit-pointer] { left:18px; }
-@media(max-width:1200px) { .exhibitSlot { display:flex; justify-content:flex-end; flex-basis:100%; width:100%; margin:0; }.exhibitSlot [data-exhibit-pointer] { display:none; } }
+@media(max-width:700px) { .exhibitSlot { display:flex; justify-content:flex-end; flex-basis:100%; width:100%; margin:0; }.exhibitSlot [data-exhibit-pointer] { display:none; } }
 .tool:hover:not(:disabled) { background:#f0f6ff; }
 .tool:disabled { opacity:.72; cursor:not-allowed; }
 .toolIcon { display:grid; place-items:center; width:32px; height:32px; flex-shrink:0; border-radius:16px; background:#e8f1ff; }
@@ -95,7 +95,7 @@
 .progress > a { color:#1660d8; font-size:14px; }
 .page a:focus-visible,.page button:focus-visible { outline:2px solid #246bfd; outline-offset:3px; }
 @media(max-width:700px) { .player.textPlayer { padding:20px 16px; height:auto; min-height:0; overflow:visible; overscroll-behavior:auto; } }
-@media(max-width:1200px) { .layout { grid-template-columns:270px minmax(0,1fr); }.sidebar { padding:23px 20px; }.main { padding-right:24px; }.tools { position:relative; top:auto; right:auto; width:100%; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; margin-top:20px; }.tools h2 { flex-basis:100%; }.toolItem { width:160px; }.banner { padding-right:20px; flex-wrap:wrap; } }
+@media(max-width:700px) { .layout { grid-template-columns:270px minmax(0,1fr); }.sidebar { padding:23px 20px; }.main { padding-right:24px; }.tools { position:relative; top:auto; right:auto; width:100%; flex-direction:row; flex-wrap:wrap; align-items:center; gap:12px; margin-top:20px; }.tools h2 { flex-basis:100%; }.toolItem { width:160px; }.banner { padding-right:20px; flex-wrap:wrap; } }
 @media(max-width:700px) { .breadcrumb { padding:16px 20px; }.layout { display:flex; flex-direction:column; min-height:0; }.sidebar { padding:20px; }.outline { max-height:260px; overflow:auto; }.main { padding:24px 20px 40px; }.heading { padding:16px; }.heading h1 { font-size:24px; line-height:32px; }.player { padding:12px; }.tools { gap:10px; }.toolItem { flex:1 1 150px; }.banner h2 { font-size:22px; }.unlock { width:100%; }.player :global(.la-video-play) { width:54px; height:54px; font-size:22px; } }
 .heading { grid-template-columns:auto minmax(0,1fr) auto; }
 .heading > .introduction { grid-column:1 / -1; }
@@ -103,8 +103,8 @@
 @media(max-width:700px) { .textLayout .outline { max-height:none; overflow:visible; } }
 
 /* Reading sidebars share the article's grid so both headings and sticky edges align. */
-.layout > .tools { position:static; grid-column:2; align-self:start; width:auto; margin:0 24px 20px 0; }
-@media(min-width:1201px) {
+.layout > .tools { position:static; right:auto; grid-column:2; align-self:start; width:auto; margin:0 24px 20px 0; }
+@media(min-width:701px) {
   .layout { box-sizing:border-box; grid-template-columns:304px minmax(0,1fr) 160px; padding-right:12px; }
   .layout > .main { padding-right:24px; }
   .layout > .sidebar { margin-top:20px; padding-top:0; }
@@ -121,7 +121,16 @@
   .textLayout > .sidebar > .outline { min-height:0; overflow-y:auto; scrollbar-width:thin; }
   .textLayout > .sidebar > .outline > .lesson { flex-shrink:0; }
 }
-@media(min-width:1201px) {
+@media(min-width:701px) {
   .textLayout > .tools { max-height:calc(100dvh - var(--reading-top-inset,0px) - 24px); overflow-y:auto; scrollbar-width:thin; }
   .textLayout > .tools > .toolTooltip { top:0; bottom:auto; }
+}
+
+/* Preserve the video columns on a 1500px canvas; text can shrink to 1300px. */
+@media(min-width:701px) {
+  .page { min-width:1500px; }
+  .textPage,.textLayout { min-width:1300px; }
+  /* The shared header, breadcrumb and page background must span the same canvas. */
+  :global(.portal-public-lesson-page):has(.page) { min-width:1500px; }
+  :global(.portal-public-lesson-page):has(.textPage) { min-width:1300px; }
 }

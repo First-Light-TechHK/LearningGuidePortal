@@ -9,7 +9,7 @@ import { getMessages } from "@/lib/i18n/messages";
 import type { LearnerNotificationItem } from "@/services/notifications/types";
 import { PortalProvider } from "./ui/PortalProvider";
 import { NotificationCategoryIcon, externalLinkProps, safeNotificationLink } from "./NotificationList";
-import { fetchNotifications, setNotificationRead, UNREAD_EVENT } from "./notificationsClient";
+import { fetchNotifications, setNotificationRead, trackNotificationInteraction, UNREAD_EVENT } from "./notificationsClient";
 import s from "./notifications.module.css";
 
 const DROPDOWN_ITEMS = 5;
@@ -75,6 +75,7 @@ function NotificationBellContent({ locale }: { locale: Locale }) {
   }, [open, loaded, failed, items]);
 
   function follow(item: LearnerNotificationItem) {
+    trackNotificationInteraction("notification_item_clicked",item.id);
     // Not awaited: the browser is already following the link.
     if (item.unread) setNotificationRead(item.id, true, { keepalive: true }).catch(() => undefined);
     setOpen(false);
@@ -104,6 +105,7 @@ function NotificationBellContent({ locale }: { locale: Locale }) {
         const button = trigger.current?.getBoundingClientRect();
         const inner = trigger.current?.closest(".portal-header-inner")?.getBoundingClientRect();
         if (value && button && inner) setShift(Math.max(0, Math.min(inner.right, window.innerWidth - 12) - button.right));
+        if (value && !open) trackNotificationInteraction("notification_bell_opened");
         setOpen(value);
       }}
       menu={{ items: [] }}

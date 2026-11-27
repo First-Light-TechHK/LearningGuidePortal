@@ -135,7 +135,7 @@ async function run(): Promise<Record<string, unknown>> {
 // Only a spawned worker (barrier set) runs; a test importing the types above does not.
 if (BARRIER_DIR) run()
   .then(async (result) => {
-    console.log(`LG_IO_RESULT ${JSON.stringify(result)}`);
+    await new Promise<void>((resolve, reject) => process.stdout.write(`LG_IO_RESULT ${JSON.stringify(result)}\n`, error => error ? reject(error) : resolve()));
     await getPool().end();
     process.exit(0);
   })

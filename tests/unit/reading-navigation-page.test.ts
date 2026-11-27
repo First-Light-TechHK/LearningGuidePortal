@@ -48,7 +48,7 @@ test("text reading navigation preserves anchors, saves before leaving and offers
       }
       if (pathname.startsWith("/api/")) return route.fulfill({ json: { ok: true } });
       if (pathname.startsWith("/portal/")) return route.fulfill({ body: await readFile(path.join("public", pathname)) });
-      if (pathname.endsWith("/lesson")) return route.fulfill({ contentType: "text/html", body: `<header class="portal-header" style="height:68px"><a href="/${locale}/portal/courses">Courses</a></header><div id="root"></div>` });
+      if (pathname.endsWith("/lesson")) return route.fulfill({ contentType: "text/html", body: `<main class="portal-page portal-public-lesson-page"><header class="portal-header" style="height:68px"><a href="/${locale}/portal/courses">Courses</a></header><div id="root"></div></main>` });
       return route.fulfill({ contentType: "text/html", body: `<h1>Destination</h1><p data-saved>${saved?.paragraphId || "none"}</p>` });
     });
     const contents = ["First reading", "Second reading"].map((title, index) => ({ id: `t${index + 1}`, title, type: "text", mode: "lecture", html: Array.from({ length: 35 }, (_, paragraph) => `<p>Paragraph ${paragraph}. Reading a long Lesson should keep navigation available without losing the current place.</p>`).join(""), nodes: [] }));
@@ -86,12 +86,35 @@ test("text reading navigation preserves anchors, saves before leaving and offers
     assert.equal(await paragraph("t1", 8).evaluate(element => element.getBoundingClientRect().top + scrollY), documentY, "showing the bar does not shift the document");
     assert.equal(await bar.evaluate(element => element.getBoundingClientRect().top), 0);
     assert.ok(await page.locator("[data-reading-outline]").evaluate(element => element.getBoundingClientRect().top >= document.querySelector("[data-reading-toolbar]")!.getBoundingClientRect().bottom), "sticky outline clears the bar");
-    for (const width of [1440, 1300, 1024, 768, 390, 320]) {
+    for (const width of [1440, 1301, 1300, 1299, 1200, 1024, 1023, 900, 768, 701, 700, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), width > 700 && width < 1300, `${locale}/${width}: only narrow non-mobile layouts scroll horizontally`);
+      if (width > 700) {
+        const layout = await page.locator('[data-reading-outline]').evaluate(left => {
+          const main = left.parentElement!.querySelector("article")!, right = left.parentElement!.querySelector("[data-reading-tools]")!;
+          const l=left.getBoundingClientRect(),m=main.getBoundingClientRect(),r=right.getBoundingClientRect();
+          return {left:{width:l.width,y:l.y},main:{width:m.width,right:m.right},right:{width:r.width,y:r.y,x:r.x},width:left.parentElement!.getBoundingClientRect().width};
+        });
+        assert.equal(layout.left.width, 304);
+        assert.equal(layout.right.width, 160);
+        assert.ok(Math.abs(layout.main.width - (layout.width - 304 - 160 - 12)) < 1, "only the middle column stretches");
+        assert.ok(layout.right.x >= layout.main.right - 1, `${width}: Deep Learning remains beside the content ${JSON.stringify(layout)}`);
+        if (width < 1300) {
+          const y = await page.evaluate(() => scrollY);
+          await page.evaluate(() => window.scrollTo(document.documentElement.scrollWidth - innerWidth, scrollY));
+          assert.ok(await page.locator('[data-reading-tools]').evaluate(element => element.getBoundingClientRect().right <= innerWidth), "horizontal scroll reaches the complete tool panel");
+          assert.equal(await page.evaluate(() => scrollY), y);
+          await page.evaluate(() => window.scrollTo(0, scrollY));
+        }
+      }
+      const frame = await page.locator('[data-course-id="course"]').evaluate(root => {
+        const layout=root.querySelector('[data-reading-outline]')!.parentElement!,crumb=root.querySelector('[data-lesson-breadcrumb]')!;
+        return {outer:root.getBoundingClientRect().right,layout:layout.getBoundingClientRect().right,crumb:crumb.getBoundingClientRect().right,header:document.querySelector(".portal-header")!.getBoundingClientRect().right};
+      });
+      assert.ok(frame.outer >= frame.layout && frame.crumb >= frame.layout && frame.header >= frame.layout, `${locale}/${width}: text frame covers the content ${JSON.stringify(frame)}`);
       assert.deepEqual(await bar.getByRole("link").allTextContents(), [copy.backToCourse, copy.myLearning]);
       assert.equal(await bar.locator('details,summary,[title]').count(), 0, "reading bar contains no title or overflow menu");
-      if (width === 1440 || width === 390) await page.screenshot({ path: `${output}/${locale}-${width}.png` });
+      if ([1440, 1024, 768, 390].includes(width)) await page.screenshot({ path: `${output}/${locale}-${width}.png` });
     }
     assert.equal(await bar.getByRole("button", {name:copy.outline,exact:true}).count(), 0, "compact navigation has no Outline entry");
     assert.equal(await page.getByRole("dialog").count(), 0);

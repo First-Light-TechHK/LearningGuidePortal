@@ -23,7 +23,7 @@ test("video previews choose access from the title row, share the cutoff modal an
       if (pathname.startsWith("/api/study/")) { study.push(route.request().postDataJSON()); return route.fulfill({ json: { record: {} } }); }
       if (pathname.startsWith("/portal/")) return route.fulfill({ body: await readFile(path.join("public", pathname)), contentType: pathname.endsWith("svg") ? "image/svg+xml" : "image/jpeg" });
       if (pathname.endsWith("mp4")) return route.fulfill({ status: 404 });
-      return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div>' });
+      return route.fulfill({ contentType: "text/html", body: '<!doctype html><main class="portal-page portal-public-lesson-page"><header class="portal-header">Learning Guide</header><div id="root"></div></main>' });
     });
     await page.goto("http://access.test/");
     for (const file of ["app/styles.css", "app/portal-design.css", "components/portal/lesson-authoring.css"]) await page.addStyleTag({ content: await readFile(file, "utf8") });
@@ -42,6 +42,25 @@ test("video previews choose access from the title row, share the cutoff modal an
     assert.equal(cta.height, 37); if (locale === "en-GB") assert.ok(cta.width >= 150 && cta.width <= 200, `unexpected choose-plan width ${cta.width}`);
     assert.deepEqual(await choose.evaluate(e => { const s = getComputedStyle(e); return [s.borderRadius, s.backgroundColor, s.fontSize, s.fontWeight]; }), ["8px", "rgb(29, 107, 255)", "14px", "600"]);
     await page.screenshot({ path: `${output}/${locale}-entry.png`, fullPage: true });
+    for (const width of [1920, 1501, 1500, 1499, 1440, 1200, 1024, 1023, 900, 768, 701, 700, 390]) {
+      await page.setViewportSize({width,height:1024});
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), width > 700 && width < 1500, `${locale}/${width}: video retains the desktop stage width on narrow screens`);
+      if (width > 700) {
+        const columns = await page.locator('[data-reading-outline]').evaluate(left => {
+          const main=left.parentElement!.querySelector("article")!,right=left.parentElement!.querySelector("[data-reading-tools]")!;
+          return {left:left.getBoundingClientRect().width,right:right.getBoundingClientRect().width,main:main.getBoundingClientRect().width,mainRight:main.getBoundingClientRect().right,toolsX:right.getBoundingClientRect().left,beside:right.getBoundingClientRect().left>=main.getBoundingClientRect().right-1};
+        });
+        assert.equal(columns.left,304); assert.equal(columns.right,160);
+        assert.ok(columns.beside, `${width}: video tools stay in the right column ${JSON.stringify(columns)}`);
+        assert.ok(Math.abs(columns.main - (1440-476)) < 1, 'video stage stops shrinking below its desktop minimum');
+      }
+      const frame = await page.locator('[data-course-id="course"]').evaluate(root => {
+        const layout=root.querySelector('[data-reading-outline]')!.parentElement!, crumb=root.querySelector('[data-lesson-breadcrumb]')!;
+        return {outer:root.getBoundingClientRect().right,layout:layout.getBoundingClientRect().right,crumb:crumb.getBoundingClientRect().right,header:document.querySelector(".portal-header")!.getBoundingClientRect().right,shell:document.querySelector(".portal-public-lesson-page")!.getBoundingClientRect().right};
+      });
+      assert.ok(frame.outer >= frame.layout && frame.crumb >= frame.layout && frame.header >= frame.layout && frame.shell >= frame.layout, `${locale}/${width}: background and breadcrumb cover the three-column frame ${JSON.stringify(frame)}`);
+      if (width === 1024 || width === 768) await page.screenshot({path:`${output}/${locale}-columns-${width}.png`,fullPage:true});
+    }
     const longTitle = "State Spaces, Vector Spaces and Trajectories";
     await mount("long-title", { lesson: { ...props.lesson, title: longTitle } });
     for (const width of [1300, 1366, 1440, 1600, 1920]) {
@@ -56,7 +75,7 @@ test("video previews choose access from the title row, share the cutoff modal an
       assert.ok(geometry.height <= geometry.line * 2 + 1, `${locale}/${width}: preview Lesson title fits in two lines`);
       assert.equal(geometry.beside, true, "purchase entry stays beside the Lesson title");
       assert.equal(geometry.right, geometry.edge);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), width < 1500);
       await page.screenshot({ path: `${output}/${locale}-title-${width}.png`, fullPage: true });
     }
     // BUG-0353: the preview title must render like the entitled (subscribed) one.
@@ -117,7 +136,8 @@ test("video previews choose access from the title row, share the cutoff modal an
     assert.equal(study.some(event => event.event === "complete"), false);
     for (const [width, height] of [[390, 844], [320, 700], [844, 390]]) {
       await page.setViewportSize({ width, height });
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), width > 700 && width < 1500);
+      await choose.scrollIntoViewIfNeeded();
       assert.ok((await choose.boundingBox())!.x >= 0); assert.ok((await choose.boundingBox())!.x + (await choose.boundingBox())!.width <= width);
       await choose.click(); await dialog.waitFor();
       assert.equal(await dialog.evaluate(e => e.scrollWidth > e.clientWidth), false);

@@ -92,6 +92,7 @@ export type NotificationBroadcast = {
 
 export type NotificationLogStatus = "delivered" | "read" | "withdrawn" | "sent" | "failed";
 
+export type LearnerAnalyticsEvent = "notification_bell_opened" | "notification_item_clicked" | "notification_cta_clicked" | "notification_center_opened" | "notification_filter_changed";
 export type NotificationLogEntry = {
   id: string;
   notificationId: string | null;
@@ -103,6 +104,10 @@ export type NotificationLogEntry = {
   failureReason?: string | null;
   occurredAt: string;
   isTest: boolean;
+  /** Analytics-only interaction rows are excluded from operational send logs. */
+  analyticsEvent?: LearnerAnalyticsEvent | "notification_marked_read" | "notification_marked_unread" | "message_created" | "email_sent" | "email_delivered" | "email_failed";
+  category?: NotificationCategory;
+  language?: NotificationLanguage;
   /** Subscription, session, ticket or course reference (PRD §8 NTF-LOG-005). */
   related?: string | null;
   /** Present on failed-before-creation rows so a duplicate event can be traced. */
@@ -110,6 +115,8 @@ export type NotificationLogEntry = {
   /** Test sends to an operator address that has no learner account. */
   recipientEmail?: string | null;
   recipientName?: string | null;
+  /** SMTP Message-ID for correlation; it does not prove final delivery. */
+  providerMessageId?: string | null;
 };
 
 /** The learner-facing projection returned by GET /api/my-learning/notifications. */
