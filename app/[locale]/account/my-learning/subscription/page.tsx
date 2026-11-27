@@ -1,6 +1,3 @@
-import { presentSubscriptionOrders } from "@/services/subscriptionPresentationService";
-import { PendingOrders } from "@/components/portal/PendingOrders";
-import { listManagedOrders } from "@/services/orderPaymentService";
 import { redirect } from "next/navigation";
 import { AccountNav } from "@/components/portal/AccountNav";
 import { PortalHeader } from "@/components/portal/PortalHeader";
@@ -8,18 +5,35 @@ import { PortalFooter } from "@/components/portal/PortalFooter";
 import { SubscriptionManager } from "@/components/portal/SubscriptionManager";
 import { localeFrom } from "@/lib/i18n/config";
 import { getMessages } from "@/lib/i18n/messages";
+import { subscriptionOrdersPath } from "@/lib/subscriptionOrdersPath";
 import { currentProductUser } from "@/services/productAuth";
 import { getLearningOverview } from "@/services/productStore";
+import { presentSubscriptionOrders } from "@/services/subscriptionPresentationService";
 
-export default async function SubscriptionPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ orderId?: string }> }) {
+export default async function SubscriptionPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: Promise<{ orderId?: string | string[] }> }) {
   const locale = localeFrom((await params).locale);
-  const user = await currentProductUser();
-  if (!user) redirect(`/${locale}/portal/sign-in?returnTo=/${locale}/account/my-learning/subscription`);
-  const messages = getMessages(locale);
-  const copy = messages.learning;
-  const overview = await getLearningOverview(user.id);
-  const orders = await presentSubscriptionOrders(overview.orders);
   const { orderId } = await searchParams;
-  const managedOrders = await listManagedOrders(user.id);
-  return <main className="portal-page portal-account-page subscription-design-page"><PortalHeader locale={locale} active="my-learning" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} /><AccountNav locale={locale} copy={messages.account} /><section className="portal-section portal-section-first"><h1>{messages.account.subscription}</h1><p className="subscription-page-intro">{messages.subscriptionDesign.intro}</p><PendingOrders initialOrders={managedOrders} locale={locale} returnOrderId={orderId} /><SubscriptionManager initialSubscriptions={overview.subscriptions} initialOrders={orders} locale={locale} copy={{ title: copy.subscription, active: copy.active, trial: copy.trial, grace: copy.grace, cancelAtPeriodEnd: copy.cancelAtPeriodEnd, canceled: copy.canceled, expired: copy.expired, cancel: copy.cancel, resume: copy.resume, manage: copy.manage, validUntil: copy.validUntil, records: copy.records, date: copy.date, amount: copy.amount, receipt: copy.receipt, noReceipt: copy.noReceipt, paid: copy.paid, pending: copy.pending, failed: copy.failed, canceledPayment: copy.canceledPayment, refunded: copy.refunded, trialActivation: copy.trialActivation, cancelTitle: copy.cancelTitle, cancelDescription: copy.cancelDescription, cancelReason: copy.cancelReason, reasonLowUsage: copy.reasonLowUsage, reasonTooExpensive: copy.reasonTooExpensive, reasonContent: copy.reasonContent, reasonWebsite: copy.reasonWebsite, reasonOther: copy.reasonOther, reasonOtherPlaceholder: copy.reasonOtherPlaceholder, characters: copy.characters, confirmCancel: copy.confirmCancel, close: copy.close, updatePaymentMethod: copy.updatePaymentMethod, payNow: copy.payNow, plan: copy.plan, validPeriod: copy.validPeriod, upgrade: copy.upgrade }} /></section><PortalFooter locale={locale} /></main>;
+  const selected = typeof orderId === "string" && orderId ? orderId : undefined;
+  const user = await currentProductUser();
+  if (!user) {
+    const path = `/${locale}/account/my-learning/subscription`;
+    const returnTo = selected ? `${path}?orderId=${encodeURIComponent(selected)}` : path;
+    redirect(`/${locale}/portal/sign-in?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+
+  const overview = await getLearningOverview(user.id);
+  const selectedOrder = selected ? overview.orders.find(order => order.id === selected) : undefined;
+  if (selectedOrder && selectedOrder.status !== "paid" && selectedOrder.status !== "refunded") redirect(subscriptionOrdersPath(locale, selected));
+  const orders = await presentSubscriptionOrders(overview.orders.filter(order => order.status !== "pending"));
+  const messages = getMessages(locale);
+  return <main className="portal-page portal-account-page subscription-design-page">
+    <PortalHeader locale={locale} active="my-learning" signedIn displayName={user.nickname} avatarUrl={user.avatarPath ? "/api/my-learning/avatar" : undefined} />
+    <AccountNav locale={locale} copy={messages.account} />
+    <section className="portal-section portal-section-first">
+      <h1>{messages.account.subscription}</h1>
+      <p className="subscription-page-intro">{messages.subscriptionDesign.intro}</p>
+      <SubscriptionManager initialSubscriptions={overview.subscriptions} initialOrders={orders} locale={locale} copy={{ ...messages.learning, title: messages.learning.subscription }} />
+    </section>
+    <PortalFooter locale={locale} />
+  </main>;
 }

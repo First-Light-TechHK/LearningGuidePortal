@@ -337,7 +337,7 @@ textarea:not(:where([class*="lg-ant-"])):focus, input:not(:where([class*="lg-ant
 .tutor-composer textarea::placeholder { color:#8a9ab6; }
 .tutor-composer button { flex:0 0 auto; min-width:66px; min-height:36px; border:0; border-radius:6px; background:#005cff; color:#fff; font:500 12px/16px Inter,Arial,sans-serif; cursor:pointer; }
 .tutor-composer button:disabled { cursor:wait; opacity:.55; }
-.learning-list, .notification-list { display: grid; gap: 12px; margin-top: 26px; }
+.learning-list { display: grid; gap: 12px; margin-top: 26px; }
 .user-summary { display: grid; gap: 5px; margin-top: 24px; padding: 16px 18px; border-left: 3px solid #8cb7c3; background: #fff; }
 .user-summary span { color: #647588; }
 .learning-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 20px; border: 1px solid #d6e1e9; border-radius: 7px; background: #fff; }
@@ -347,13 +347,6 @@ textarea:not(:where([class*="lg-ant-"])):focus, input:not(:where([class*="lg-ant
 .progress-track { height: 8px; overflow: hidden; border-radius: 999px; background: #e5edf2; }
 .progress-track span { display: block; height: 100%; border-radius: inherit; background: #0d5b78; }
 .learning-subheading { margin: 44px 0 0; color: #163a5f; font-size: 24px; }
-.notification-row { display: grid; gap: 5px; padding: 15px 18px; border-left: 3px solid #8cb7c3; background: #fff; }
-.notification-row span { color: #647588; line-height: 1.5; }
-.notification-row.unread { border-left-color: #0d5b78; background: #f7fbfc; }
-.notification-row.read { opacity: .78; }
-.notification-row div { display: grid; gap: 5px; }
-.notification-row small { color: #718294; font-size: 12px; }
-.notification-row button { justify-self: start; }
 .settings-form { width: min(620px, 100%); margin-top: 26px; }
 .avatar-settings { display: flex; align-items: center; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid #dce5ee; }
 .avatar-preview { width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden; border-radius: 999px; background: #d9e2f1; color: #0d5b78; font-weight: 800; }
@@ -2200,7 +2193,6 @@ body { background: #fff; color: var(--lg-ink); }
 .account-empty-state { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 26px 0 4px; }
 .account-empty-state p { margin: 0; color: var(--lg-muted); font-size: 14px; }
 .account-empty-state .portal-button { flex: 0 0 auto; }
-.account-activity-panel .notification-list { margin-top: 0; }
 .account-profile-card { padding: 24px; border-radius: 12px; background: linear-gradient(135deg, #07a95e, #00a39a); color: #fff; box-shadow: 0 7px 15px rgba(16, 24, 40, .1); }
 .account-avatar { width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden; margin-bottom: 20px; border: 3px solid rgba(255, 255, 255, .82); border-radius: 50%; background: rgba(255, 255, 255, .95); color: #344054; font-size: 26px; font-weight: 750; }
 .account-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -2436,3 +2428,42 @@ body { background: #fff; color: var(--lg-ink); }
 }
 
 /* Account settings — sign-in method linking */
+
+/* Sandbox environment banner (PRD v2.0 §3.1): rendered only when APP_ENV=SANDBOX.
+   Full width, normal document flow (never fixed) so it cannot cover the header. */
+.sandbox-environment-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  background: #6d28d9;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.sandbox-environment-badge__tag {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sandbox-environment-badge__text {
+  font-weight: 500;
+}
+
+@media (max-width: 480px) {
+  .sandbox-environment-badge { font-size: 0.8rem; padding: 0.5rem 0.75rem; }
+}
+

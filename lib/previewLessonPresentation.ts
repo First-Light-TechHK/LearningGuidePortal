@@ -9,6 +9,10 @@ export function lessonLearningModes(lesson: Pick<ProductCourse["sections"][numbe
   return modes;
 }
 
+export function availableLessonMode(modes: CourseLearningMode[] | undefined, preferred: CourseLearningMode) {
+  return modes?.length && !modes.includes(preferred) ? modes[0] : preferred;
+}
+
 // Only public outline metadata crosses into the preview client component.
 export function previewLessonOutline(course: ProductCourse, locale: string, entitled: boolean) {
   const previewLessonId = course.sections.flatMap(section => section.lessons)[0]?.isPublic
@@ -27,9 +31,10 @@ export function previewLessonOutline(course: ProductCourse, locale: string, enti
 /** Keep every lesson in the menu; choose a mode supported by the destination. */
 export function lessonOutlineDestination(item: { href: string | null; modes?: CourseLearningMode[] }, preferredMode: CourseLearningMode) {
   if (!item.href || item.modes?.length === 0) return null;
-  const mode = !item.modes || item.modes.includes(preferredMode) ? preferredMode : item.modes[0];
+  const mode = availableLessonMode(item.modes, preferredMode);
   const url = new URL(item.href, "https://learning-guide.invalid");
   url.searchParams.set("viewMode", mode);
+  url.searchParams.set("modeSwitch", "1");
   url.searchParams.delete("contentId");
   return { href: url.pathname + url.search + url.hash, mode };
 }

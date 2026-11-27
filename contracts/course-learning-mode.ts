@@ -4,10 +4,14 @@ export type CourseLearningModePreferences = Partial<Record<CourseLearningModeCon
 export type CourseLearningModeInput = { mode: CourseLearningMode; lessonId?: string; accessContext?: CourseLearningModeContext; intent?: "entry" };
 export type CourseModePosition = { lessonId: string; contentId: string | null };
 export type CourseLearningModeResult = { courseId: string; mode: CourseLearningMode; position?: CourseModePosition | null };
+export type CourseLearningModeSelection = { preferredMode: CourseLearningMode | null; mode: CourseLearningMode | null };
 export type CourseModeSnapshot = {
   courseId: string; mode: CourseLearningMode;
+  preferredMode?: CourseLearningMode | null;
   currentLessonId?: string | null; currentContentId?: string | null;
   progress?: number | null; updatedAt?: string | null;
+  bookmarkRevision?: number;
+  completedLessonIds?: string[];
 };
 
 export function isCourseLearningMode(value: unknown): value is CourseLearningMode {

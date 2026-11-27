@@ -64,7 +64,7 @@ test("cached My Learning refreshes changed course modes once and retains cards o
     await mount("video", "other");
     // Same course and mode: each lesson/point/progress change must invalidate the cached card.
     let expected = 2;
-    for (const change of [{ currentLessonId: "lesson-2" }, { currentLessonId: "lesson-3" }, { currentLessonId: "lesson-1" }, { currentContentId: "point-2" }, { progress: 65 }, { updatedAt: "2026-11-02T08:00:00.000Z" }]) {
+    for (const change of [{ currentLessonId: "lesson-2" }, { currentLessonId: "lesson-3" }, { currentLessonId: "lesson-1" }, { currentContentId: "point-2" }, { progress: 65 }, { updatedAt: "2026-11-02T08:00:00.000Z" }, { bookmarkRevision: 1 }, { completedLessonIds: ["lesson-1"] }, { preferredMode: "video" as const }]) {
       study = { ...study, ...change };
       await check();await waitForCount(++expected);
       await check(false, false);await waitForCount(expected);

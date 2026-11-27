@@ -11,7 +11,7 @@ import {
   takeSetCookie,
   uniqueEmail
 } from "./harness";
-import { PRIVATE_LP, readProductData, writeProductData } from "../unit/helpers/my-learning";
+import { PREVIEW_LP, PRIVATE_LP, readProductData, writeProductData } from "../unit/helpers/my-learning";
 
 const CONSENTS = { renewal: true, terms: true, refund: true };
 
@@ -23,6 +23,7 @@ let confirm: typeof import("../../app/api/purchase/demo/confirm/route");
 let overview: typeof import("../../app/api/my-learning/overview/route");
 let entitlements: typeof import("../../app/api/entitlements/check/route");
 let study: typeof import("../../app/api/study/events/route");
+let courseDetail: typeof import("../../app/api/portal/courses/[slug]/route");
 
 before(async () => {
   restore = (await isolate("lg-io-my-learning-")).restore;
@@ -33,6 +34,7 @@ before(async () => {
   overview = await import("../../app/api/my-learning/overview/route");
   entitlements = await import("../../app/api/entitlements/check/route");
   study = await import("../../app/api/study/events/route");
+  courseDetail = await import("../../app/api/portal/courses/[slug]/route");
 });
 
 after(async () => {
@@ -112,6 +114,26 @@ test("ML-FR-004 signed-in: after purchase GET /api/my-learning/overview is 200",
   const body = await response.json();
   assert.equal(body.ok, true);
   assert.ok(body.user?.id);
+});
+
+test("Course detail and My Learning return the same authorised Lesson completion", async () => {
+  await signIn("ml-lesson-completion");
+  await purchase();
+  const saved = await callRoute(study.POST, jsonRequest("POST", "http://localhost/api/study/events", {
+    ...studyBody(PREVIEW_LP), event: "complete",
+  }));
+  assert.equal(saved.status, 200);
+
+  const detail = await callRoute(request => courseDetail.GET(request, { params: Promise.resolve({ slug: COURSE_ID }) }),
+    jsonRequest("GET", `http://localhost/api/portal/courses/${COURSE_ID}`));
+  const response = await callRoute(overview.GET, jsonRequest("GET", "http://localhost/api/my-learning/overview"));
+  assert.equal(detail.status, 200);
+  assert.equal(response.status, 200);
+  const { page } = await detail.json();
+  const [record] = (await response.json()).overview.courses;
+  assert.deepEqual(record.completedLessonIds, [PREVIEW_LP]);
+  assert.deepEqual(record.completedLessonIds, page.syllabus.filter((lesson: { completed: boolean }) => lesson.completed).map((lesson: { lessonId: string }) => lesson.lessonId));
+  assert.equal(record.bookmarkRevision, page.bookmarkRevision);
 });
 
 test("E2E-B1-010 / ML-FR-011 expired entitlement: check is not allowed and locked study/events is 403", async () => {

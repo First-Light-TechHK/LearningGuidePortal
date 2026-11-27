@@ -15,7 +15,7 @@ let clock = new Date("2026-09-19T02:00:00.000Z").getTime();
 let dir: string;
 const access = new Set<string>();
 const removed: Array<{ room: string; identity: string }> = [];
-const notes: Array<{ userId: string; title: string; body: string; sessionId?: string }> = [];
+const notes: Array<{ userId: string; title: string; body: string; sessionId?: string; catalogue?: { templateId: string; channels?: string[] } }> = [];
 const T = (min: number) => new Date(clock + min * 60_000).toISOString();
 const code = (promise: Promise<unknown>) => promise.then(() => "ok", (error: { code?: string }) => error.code);
 
@@ -164,7 +164,10 @@ test("S9: planning again after cancelling brings the reminder back without maili
     await service.dispatchDueReminders();
   }
   assert.equal(notes.filter((note) => note.userId === "m1" && note.title === "Live Session reminder").length, 4);
-  assert.deepEqual(mails.filter((to) => to === "m1@example.com"), ["m1@example.com"]);
+  // The email is sent by the catalogue, once per event key; only the first reminder carries the email channel.
+  const mailed = notes.filter((note) => note.userId === "m1" && note.catalogue?.channels?.includes("email"));
+  assert.equal(mailed.length, 1);
+  assert.deepEqual(mails, []);
 });
 
 test("Idempotency: repeated Leave, Cancel Session and Cancel Group answer like the first call", async () => {
@@ -229,5 +232,5 @@ test("S12: cancelling a session tells the members who planned to attend", async 
   const session = await service.scheduleSession({ actorUserId: "host", groupId: group.id, title: "Poetry", startsAt: T(60), durationSeconds: 1800, maxParticipants: 3 });
   await service.planToAttend({ actorUserId: "m1", sessionId: session.id });
   await service.cancelSession({ actorUserId: "host", sessionId: session.id });
-  assert.deepEqual(notes.map((note) => [note.userId, note.title, note.body]), [["m1", "Live Session cancelled", "Poetry has been cancelled."]]);
+  assert.deepEqual(notes.filter((note) => note.catalogue?.templateId === "LIVE_SESSION_CANCELLED").map((note) => [note.userId, note.title, note.body]), [["m1", "Live Session cancelled", "Poetry has been cancelled."]]);
 });

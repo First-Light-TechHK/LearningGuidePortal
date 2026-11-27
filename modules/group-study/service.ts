@@ -55,6 +55,31 @@ type TutorAnswerFailure = "busy" | "provider" | "offline";
 export type CourseSummary = { id: string; title: string; slug: string };
 export type UserProfile = { id: string; displayName: string; email: string | null; locale: "en-GB" | "zh-CN" };
 
+/** A Live Session notice routed through the Notification P0 catalogue. */
+export type StudyGroupCatalogueNotice = {
+  templateId: "LIVE_SESSION_BOOKED" | "LIVE_SESSION_REMINDER" | "LIVE_SESSION_CANCELLED" | "LIVE_SESSION_RESCHEDULED";
+  /** Rendered template variables (session title, group, HKT date/time, link). */
+  params: Record<string, unknown>;
+  eventKey: string;
+  /** Defaults to the template's own channels. */
+  channels?: Array<"in_app" | "email">;
+  now?: string;
+};
+
+export type StudyGroupNotifyInput = {
+  userId: string;
+  title: string;
+  body: string;
+  sessionId?: string;
+  copies?: LocalizedNotice;
+  /**
+   * Present when the notice is one of the five catalogue templates. The
+   * runtime renders the operator's copy and applies the switch; title/body are
+   * kept for the module-level contract and the reminders-strip marker.
+   */
+  catalogue?: StudyGroupCatalogueNotice;
+};
+
 export type StudyGroupDeps = {
   repository: StudyGroupRepository;
   now: () => Date;
@@ -63,7 +88,7 @@ export type StudyGroupDeps = {
   courseLessons?: (courseId: string) => Promise<Array<{ id: string; title: string }>>;
   accessibleCourses: (userId: string) => Promise<CourseSummary[]>;
   userProfile: (userId: string) => Promise<UserProfile | null>;
-  notify: (input: { userId: string; title: string; body: string; sessionId?: string; copies?: LocalizedNotice }) => Promise<void>;
+  notify: (input: StudyGroupNotifyInput) => Promise<void>;
   /**
    * Whether the account can still be reached (Student Management, owner 2026-11-03): a deactivated account keeps its
    * memberships and plans, but reminders, reschedule and cancellation notices are not sent to it and its queued AI Tutor
@@ -292,6 +317,13 @@ function rescheduleCopies(sessionTitle: string): LocalizedNotice {
     "zh-CN": { title: "直播课时间已更改", body: `${sessionTitle} 的开始时间已更改，请到学习小组查看新的时间。` },
     "en-GB": { title: "Live Session rescheduled", body: `The Start Time of ${sessionTitle} has changed. Open the Study Group to see the new time.` }
   };
+}
+
+/** The module-level copy for a booking notice; the catalogue renders the send. */
+function bookedCopy(sessionTitle: string, groupTitle: string, locale: string | undefined) {
+  return locale === "zh-CN"
+    ? { title: "已预约直播课", body: `你已预约${groupTitle}的${sessionTitle}。` }
+    : { title: "Live Session booked", body: `You've booked ${sessionTitle} in ${groupTitle}.` };
 }
 
 function clean(value: unknown) {
@@ -917,6 +949,19 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
     try { return await deps.accountActive(userId); } catch { return true; }
   }
 
+  // The template variables for a Live Session notice: the operator copy is
+  // rendered by the notification catalogue at send time, with the recipient's
+  // language and the Session's page deep link.
+  function noticeParams(session: { id: string; title: string; startsAt: string }, groupTitle: string, locale?: "en-GB" | "zh-CN") {
+    return {
+      session_title: session.title,
+      group_name: groupTitle,
+      session_date: session.startsAt,
+      session_time: session.startsAt,
+      session_link: deps.sessionLink?.(session.id, locale || "en-GB") ?? null,
+    };
+  }
+
   async function dispatchDueReminders(snapshot?: StudyGroupStore, onlySessionId?: string) {
     const now = deps.now();
     const dueJobs = (store: StudyGroupStore, record: boolean) => {
@@ -978,8 +1023,22 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         // The body names the group and the minutes really left (QA M10-a): a
         // reminder sent again after a reschedule rarely lands at T-10.
         const copy = reminderCopy(job, profile?.locale, now);
-        await deps.notify({ userId: job.userId, title: copy.title, body: copy.body, sessionId: job.sessionId, copies: reminderCopies(job, now) });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(job.sessionId, profile.locale) ?? null });
+        await deps.notify({
+          userId: job.userId,
+          title: copy.title,
+          body: copy.body,
+          sessionId: job.sessionId,
+          copies: reminderCopies(job, now),
+          catalogue: {
+            templateId: "LIVE_SESSION_REMINDER",
+            params: noticeParams({ id: job.sessionId, title: job.sessionTitle, startsAt: job.startsAt }, job.groupTitle, profile?.locale),
+            // One reminder per learner per Start Time: a moved Start Time gets
+            // its own key, the same one never reminds twice.
+            eventKey: `live-session-reminder:${job.sessionId}:${job.userId}:${job.startsAt}`,
+            channels: ["in_app", "email"],
+            now: now.toISOString(),
+          },
+        });
       } catch {
         // Best-effort per recipient; the reminder row is already written.
       }
@@ -994,7 +1053,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
   // (N9-b, r3 server 7a). Then this session's reminders are dispatched
   // (only this session's: r3 server 7b) and every member who planned to
   // attend is told. Best-effort throughout: the move itself has been saved.
-  async function announceReschedule(session: { id: string; title: string; planned: string[]; movedAt: string }) {
+  async function announceReschedule(session: { id: string; title: string; startsAt: string; groupTitle: string; planned: string[]; movedAt: string }) {
     await deps.withdrawReminders?.({ sessionIds: [session.id], sentBefore: session.movedAt })?.catch(() => undefined);
     await dispatchDueReminders(undefined, session.id).catch(() => undefined);
     for (const userId of session.planned) {
@@ -1005,8 +1064,21 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const copy = profile?.locale === "zh-CN" ? copies["zh-CN"] : copies["en-GB"];
         // Linked to its Session so the reminders strip on the Study Group page
         // shows it until the Session starts (there is no in-site inbox).
-        await deps.notify({ userId, title: copy.title, body: copy.body, sessionId: session.id, copies });
-        if (profile?.email) await deps.sendMail({ to: profile.email, subject: copy.title, text: copy.body, locale: profile.locale, link: deps.sessionLink?.(session.id, profile?.locale === "zh-CN" ? "zh-CN" : "en-GB") ?? null });
+        await deps.notify({
+          userId,
+          title: copy.title,
+          body: copy.body,
+          sessionId: session.id,
+          copies,
+          catalogue: {
+            templateId: "LIVE_SESSION_RESCHEDULED",
+            params: noticeParams(session, session.groupTitle, profile?.locale),
+            // One notice per time change (the move's timestamp).
+            eventKey: `live-session-rescheduled:${session.id}:${userId}:${session.movedAt}`,
+            channels: ["in_app"],
+            now: session.movedAt,
+          },
+        });
       } catch {
         // One recipient's failure never blocks the others.
       }
@@ -1574,7 +1646,7 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         }
         const group = store.groups.find((item) => item.id === current.groupId);
         const planned = store.intents.filter((item) => item.sessionId === current.id && !item.cancelledAt && item.userId !== group?.hostUserId).map((item) => item.userId);
-        return { ...current, moved, planned, movedAt: now };
+        return { ...current, moved, planned, movedAt: now, groupTitle: group?.title ?? "" };
       }, { session: input.sessionId });
       if (session.moved) await announceReschedule(session);
       return sessionView(await deps.repository.read({ session: input.sessionId }), session, input.actorUserId);
@@ -1582,13 +1654,13 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async cancelSession(input: { actorUserId: string; sessionId: string }) {
       const now = deps.now().toISOString();
-      const { title, planned } = await deps.repository.update((store) => {
+      const { title, startsAt, groupTitle, planned } = await deps.repository.update((store) => {
         const current = store.sessions.find((item) => item.id === input.sessionId);
         if (!current) throw new StudyGroupError("not_found", "Live Session was not found.");
         // The Host retrying a cancel that already went through gets the same
         // answer; only the call that cancelled notifies the planned members.
         if (current.status === "removed") {
-          if (activeMembership(store, current.groupId, input.actorUserId)?.role === "host") return { title: current.title, planned: [] as string[] };
+          if (activeMembership(store, current.groupId, input.actorUserId)?.role === "host") return { title: current.title, startsAt: current.startsAt, groupTitle: "", planned: [] as string[] };
           throw new StudyGroupError("not_found", "Live Session was not found.");
         }
         if (activeMembership(store, current.groupId, input.actorUserId)?.role !== "host") throw new StudyGroupError("forbidden", "Only the Host can cancel a Live Session.");
@@ -1601,6 +1673,8 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         const group = store.groups.find((item) => item.id === current.groupId);
         return {
           title: current.title,
+          startsAt: current.startsAt,
+          groupTitle: group?.title ?? "",
           planned: store.intents.filter((item) => item.sessionId === current.id && !item.cancelledAt && item.userId !== group?.hostUserId && activeMembership(store, current.groupId, item.userId)).map((item) => item.userId)
         };
       }, { session: input.sessionId });
@@ -1616,7 +1690,20 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           const copy = profile?.locale === "zh-CN"
             ? { title: "直播课已取消", body: `${title} 已被取消。` }
             : { title: "Live Session cancelled", body: `${title} has been cancelled.` };
-          await deps.notify({ userId, title: copy.title, body: copy.body });
+          await deps.notify({
+            userId,
+            title: copy.title,
+            body: copy.body,
+            sessionId: input.sessionId,
+            catalogue: {
+              templateId: "LIVE_SESSION_CANCELLED",
+              params: noticeParams({ id: input.sessionId, title, startsAt }, groupTitle, profile?.locale),
+              // A Session can be cancelled once; one notice per learner.
+              eventKey: `live-session-cancelled:${input.sessionId}:${userId}`,
+              channels: ["in_app"],
+              now,
+            },
+          });
         } catch {
           // One recipient's failure never blocks the others.
         }
@@ -1704,7 +1791,9 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
 
     async planToAttend(input: { actorUserId: string; sessionId: string }) {
       const now = deps.now().toISOString();
-      const restored = await deps.repository.update((store): ReminderJob | null => {
+      type Booking = { userId: string; sessionId: string; sessionTitle: string; groupTitle: string; startsAt: string; plannedAt: string };
+      type PlanOutcome = { booking: Booking; reminder: ReminderJob | null };
+      const outcome = await deps.repository.update((store): PlanOutcome | null => {
         const { session, group } = requireOpenSession(store, input.sessionId, input.actorUserId);
         if (session.status !== "scheduled") throw new StudyGroupError("forbidden", "Plan to Attend is only for an unstarted Session.");
         // A session whose planned end passed without a start is over (the
@@ -1714,6 +1803,10 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
         if (input.actorUserId === group.hostUserId) return null;
         const existing = store.intents.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
         if (existing && !existing.cancelledAt) return null;
+        const booking: Booking = {
+          userId: input.actorUserId, sessionId: session.id, sessionTitle: session.title,
+          groupTitle: group.title, startsAt: session.startsAt, plannedAt: now,
+        };
         if (existing) {
           existing.cancelledAt = null;
           existing.plannedAt = now;
@@ -1721,20 +1814,59 @@ export function createStudyGroupService(deps: StudyGroupDeps) {
           // for the current Start Time; planning again brings that card back.
           // The row stays sent, so cancel / plan cycles never mail it again.
           const sent = store.reminders.find((item) => item.sessionId === session.id && item.userId === input.actorUserId);
-          if (sent && Date.parse(sent.sentAt) >= Date.parse(session.startsAt) - STARTING_SOON_MS) {
-            return { userId: input.actorUserId, sessionId: session.id, sessionTitle: session.title, groupTitle: group.title, startsAt: session.startsAt };
-          }
-          return null;
+          const reminder = sent && Date.parse(sent.sentAt) >= Date.parse(session.startsAt) - STARTING_SOON_MS
+            ? { userId: input.actorUserId, sessionId: session.id, sessionTitle: session.title, groupTitle: group.title, startsAt: session.startsAt }
+            : null;
+          return { booking, reminder };
         }
         const row: AttendanceIntentRow = { id: randomUUID(), sessionId: session.id, userId: input.actorUserId, plannedAt: now, cancelledAt: null };
         store.intents.push(row);
-        return null;
+        return { booking, reminder: null };
       }, { session: input.sessionId });
-      if (restored && await reachable(restored.userId)) {
+      if (!outcome) return;
+      if (!(await reachable(outcome.booking.userId))) return;
+      const profile = await deps.userProfile(outcome.booking.userId).catch(() => null);
+      try {
+        const booking = outcome.booking;
+        const copy = bookedCopy(booking.sessionTitle, booking.groupTitle, profile?.locale);
+        await deps.notify({
+          userId: booking.userId,
+          title: copy.title,
+          body: copy.body,
+          sessionId: booking.sessionId,
+          catalogue: {
+            templateId: "LIVE_SESSION_BOOKED",
+            params: noticeParams({ id: booking.sessionId, title: booking.sessionTitle, startsAt: booking.startsAt }, booking.groupTitle, profile?.locale),
+            // Booking again after cancelling is a new booking (PRD §5): the
+            // plannedAt distinguishes it; a repeated request is a no-op above.
+            eventKey: `live-session-booked:${booking.sessionId}:${booking.userId}:${booking.plannedAt}`,
+            channels: ["in_app"],
+            now: booking.plannedAt,
+          },
+        });
+      } catch {
+        // Best effort: the plan is saved.
+      }
+      if (outcome.reminder) {
         try {
-          const profile = await deps.userProfile(restored.userId);
-          const copy = reminderCopy(restored, profile?.locale, deps.now());
-          await deps.notify({ userId: restored.userId, title: copy.title, body: copy.body, sessionId: restored.sessionId, copies: reminderCopies(restored, deps.now()) });
+          const job = outcome.reminder;
+          const copy = reminderCopy(job, profile?.locale, deps.now());
+          await deps.notify({
+            userId: job.userId,
+            title: copy.title,
+            body: copy.body,
+            sessionId: job.sessionId,
+            copies: reminderCopies(job, deps.now()),
+            catalogue: {
+              templateId: "LIVE_SESSION_REMINDER",
+              params: noticeParams({ id: job.sessionId, title: job.sessionTitle, startsAt: job.startsAt }, job.groupTitle, profile?.locale),
+              // The withdrawn card comes back for this booking; the distinct
+              // suffix keeps the original reminder (and its email) sent once.
+              eventKey: `live-session-reminder:${job.sessionId}:${job.userId}:${job.startsAt}:rebook:${outcome.booking.plannedAt}`,
+              channels: ["in_app"],
+              now: outcome.booking.plannedAt,
+            },
+          });
         } catch {
           // Best effort: the plan is saved; the reminders view still lists the Session.
         }

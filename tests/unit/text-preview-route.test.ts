@@ -7,13 +7,13 @@ import { build } from "esbuild";
 
 test("public Lesson server props exclude hidden text and media before signing, and only live access receives the complete Lesson", async () => {
   const course = { id: "course", slug: "course", title: "Course", category: "Science", status: "published", sections: [{ lessons: [{ id: "public", title: "Lesson", body: "LEGACY-SECRET", isPublic: true, durationMinutes: 2, contents: [1, 2, 3].map(index => ({ id: `text-${index}`, title: `Point ${index}`, type: "text", mode: "lecture", html: `<p>POINT-${index}-SECRET</p>`, nodes: index === 3 ? [{ id: "hidden-exhibit", title: "Hidden", type: "image", url: "https://media.test/hidden-image.jpg", triggerTime: 0 }] : [] })) }, { id: "private", title: "Private", isPublic: false, body: "PRIVATE-SECRET", contents: [] }] }] };
-  const state = { user: { id: "user", nickname: "Learner" } as unknown, allowed: false, course: course as unknown, signed: [] as unknown[] };
+  const state = { user: { id: "user", nickname: "Learner" } as unknown, allowed: false, course: course as unknown, signed: [] as unknown[], preferredMode: null as string | null, recommendationRequests: [] as unknown[] };
   (globalThis as unknown as { textPreviewRoute: unknown }).textPreviewRoute = state;
   const bundle = await build({ entryPoints: ["app/[locale]/portal/courses/[slug]/public-lesson/page.tsx"], bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic", external: ["react/jsx-runtime"], plugins: [{ name: "route-dependencies", setup(b) {
     b.onResolve({ filter: /next\/navigation|services\/(productStore|productAuth|courseMediaSigning|persistence\/s3)$|components\/portal\/(PreviewLessonView|PortalHeader|CourseThumbnail)$/ }, args => ({ path: args.path, namespace: "mock" }));
     b.onLoad({ filter: /.*/, namespace: "mock" }, args => ({ contents:
       args.path === "next/navigation" ? "export function redirect(url){throw new Error('redirect:'+url)};export function notFound(){throw new Error('not-found')}"
-      : args.path.endsWith("productStore") ? "export async function getProductCourse(){return globalThis.textPreviewRoute.course};export function publicFirstLesson(course){return course.sections[0].lessons[0]};export async function checkEntitlement(){return {allowed:globalThis.textPreviewRoute.allowed}};export async function getLessonBookmarks(){return {bookmarks:{},versions:{}}};export async function getCourseLearningMode(){return 'text'};export async function getLearningOverview(){return {courses:[]}};export async function listPublishedCourses(){return []}"
+      : args.path.endsWith("productStore") ? "export async function getProductCourse(){return globalThis.textPreviewRoute.course};export function publicFirstLesson(course){return course.sections[0].lessons[0]};export async function checkEntitlement(){return {allowed:globalThis.textPreviewRoute.allowed}};export async function getLessonBookmarks(){return {bookmarks:{},versions:{}}};export async function getCourseLearningModeSelection(){return {mode:'text',preferredMode:globalThis.textPreviewRoute.preferredMode}};export async function getLearningOverview(){return {courses:[]}};export async function listPreviewCourseRecommendations(course){globalThis.textPreviewRoute.recommendationRequests.push(course);return [{id:'same',title:'Same category',cover:'/same.jpg'},{id:'other',title:'Other category'}]}"
       : args.path.endsWith("productAuth") ? "export async function currentProductUser(){return globalThis.textPreviewRoute.user}"
       : args.path.endsWith("courseMediaSigning") ? "export async function signCourseMediaReferences(value){globalThis.textPreviewRoute.signed.push(value);return value}"
       : args.path.endsWith("/s3") ? "export async function signCourseMediaUrl(url){return url}"
@@ -27,16 +27,26 @@ test("public Lesson server props exclude hidden text and media before signing, a
   for (const locale of ["en-GB", "zh-CN"]) {
     const props = (await invoke(locale)).props.children[1].props;
     assert.equal(props.entitled, false); assert.equal(props.textPreview.rule, "third-point"); assert.equal(props.nextHref, null);
+    assert.equal(state.recommendationRequests.at(-1), course);
+    assert.deepEqual(props.trialGate.recommendations, [
+      { title: "Same category", href: `/${locale}/portal/courses/same`, image: "/same.jpg" },
+      { title: "Other category", href: `/${locale}/portal/courses/other`, image: "/fallback.jpg" }
+    ]);
     assert.ok(!JSON.stringify(props).includes("POINT-3-SECRET")); assert.ok(!JSON.stringify(props).includes("LEGACY-SECRET")); assert.ok(!JSON.stringify(props).includes("hidden-image"));
     assert.ok(!JSON.stringify(state.signed).includes("hidden-image"), "locked media must be removed before issuing signatures");
     const positioned = (await invoke(locale, "public", "text-2")).props.children[1].props;
     assert.equal(positioned.initialContentId, "text-2", "the preview route retains the server-selected mode position");
     assert.ok(!JSON.stringify(positioned.lesson).includes("POINT-3-SECRET"));
     state.allowed = true;
+    state.preferredMode = "video";
+    const requestCount = state.recommendationRequests.length;
     const entitled = (await invoke(locale)).props.children[1].props;
     assert.equal(entitled.textPreview, undefined); assert.equal(entitled.trialGate, undefined); assert.match(JSON.stringify(entitled.lesson), /POINT-3-SECRET/);
+    assert.equal(state.recommendationRequests.length, requestCount);
+    assert.equal(entitled.preferredMode, "text");
+    assert.equal(entitled.preferredCourseMode, "video", "the authorised public route preserves the preference through a text-only Lesson");
     assert.equal(entitled.nextHref, `/${locale}/account/learn/course?lessonId=private`);
-    state.allowed = false; state.signed = [];
+    state.allowed = false; state.signed = []; state.preferredMode = null;
   }
   state.user = null; await assert.rejects(invoke(), /redirect:.*sign-in/);
   state.user = { id: "user" }; await assert.rejects(invoke("en-GB", "private"), /not-found/);

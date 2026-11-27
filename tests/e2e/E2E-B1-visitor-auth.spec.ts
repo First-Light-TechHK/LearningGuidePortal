@@ -7,7 +7,7 @@ const PASSWORD = "Passw0rd!123";
 
 test("header sign-in returns to the source page including query and hash", async ({ page }) => {
   const source = "/en-GB/portal/courses?category=science&sort=title#courses";
-  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true } }));
+  await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: false } } }));
   await page.route("**/api/auth/login", route => route.fulfill({ json: { ok: true } }));
   await page.goto(source);
   const login = page.locator(".portal-header-link").first();
@@ -15,7 +15,7 @@ test("header sign-in returns to the source page including query and hash", async
   await login.click();
   await expect(page.locator(".portal-header-link").first()).toHaveAttribute("href", `/en-GB/portal/sign-in?returnTo=${encodeURIComponent(source)}`);
   await page.locator('input[type="email"]').fill("return-test@example.test");
-  await page.locator(".auth-entry-form button[type=submit], .auth-entry-form button.portal-button").click();
+  await page.locator(".auth-entry-form button[type=submit]").click();
   await page.waitForURL(url => url.searchParams.get("step") === "password");
   await page.waitForLoadState("networkidle");
   await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
@@ -60,17 +60,16 @@ test("a remembered row from before the fix that still holds a password is remove
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("learning-guide.remembered-credentials"))).toBeNull();
 });
 
-test("Remember password expires after 30 minutes", async ({ page }) => {
+test("the remembered email expires after 30 minutes", async ({ page }) => {
   await page.goto("/en-GB/portal/sign-in?step=password");
-  await page.evaluate((password) => window.localStorage.setItem("learning-guide.remembered-credentials", JSON.stringify({
+  await page.evaluate(() => window.localStorage.setItem("learning-guide.remembered-credentials", JSON.stringify({
     email: "expired-remember@example.test",
-    password,
     expiresAt: Date.now() - 1
-  })), PASSWORD);
+  })));
   await page.reload();
   await expect(page.locator('input[type="email"]')).toHaveValue("");
   await expect(page.locator('input[autocomplete="current-password"]')).toHaveValue("");
-  await expect(page.getByRole("checkbox", { name: "Remember password" })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Keep me signed in" })).not.toBeChecked();
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("learning-guide.remembered-credentials"))).toBeNull();
 });
 
@@ -78,7 +77,8 @@ test("check-email redirects to the activation success page after the address is 
   const email = "activated@example.test";
   await page.route("**/api/auth/check-email", route => route.fulfill({ json: { ok: true, data: { exists: true, pending: false } } }));
   await page.goto(`/en-GB/portal/check-email?email=${encodeURIComponent(email)}`);
-  await page.waitForURL(`**/en-GB/portal/verify-email?email=${encodeURIComponent(email)}`);
+  await page.waitForURL(url => url.pathname === "/en-GB/portal/verify-email"
+    && url.searchParams.get("email") === email && url.searchParams.get("returnTo") === "/en-GB/portal");
 });
 
 test("an unverified sign-in and copied legacy resend URL do not send email automatically", async ({ page }) => {
@@ -88,7 +88,7 @@ test("an unverified sign-in and copied legacy resend URL do not send email autom
   await page.route("**/api/auth/resend-verification", route => { resendRequests += 1; return route.fulfill({ json: { ok: true, data: { accepted: true, retryAfter: 60 } } }); });
   await page.goto("/en-GB/portal/sign-in");
   await page.locator('input[type="email"]').fill(email);
-  await page.locator(".auth-entry-form button.portal-button").click();
+  await page.locator(".auth-entry-form button[type=submit]").click();
   await page.waitForURL(url => url.pathname === "/en-GB/portal/check-email" && url.searchParams.get("email") === email && !url.searchParams.has("resend"));
   await page.goto(`/en-GB/portal/check-email?email=${encodeURIComponent(email)}&resend=1`);
   await page.waitForTimeout(250);
@@ -233,7 +233,7 @@ for (const locale of ["en-GB", "zh-CN"]) {
     await expect(preview).toHaveAttribute("href", `/${locale}/portal/sign-in?returnTo=${encodeURIComponent(destination)}`);
     await preview.click();
     await page.locator('.auth-entry-form input[type="email"]').fill(email);
-    await page.locator(".auth-entry-form button.portal-button").click();
+    await page.locator(".auth-entry-form button[type=submit]").click();
     await expect(page.locator('input[autocomplete="current-password"]')).toBeVisible();
     expect(new URL(page.url()).searchParams.get("returnTo")).toBe(destination);
     await page.locator('input[autocomplete="current-password"]').fill("WrongPassword123!");

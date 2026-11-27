@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { isLocale, locales } from "@/lib/i18n/config";
 import { CookieConsent } from "@/components/portal/CookieConsent";
 import { HtmlLang } from "@/components/portal/HtmlLang";
+import { SandboxEnvironmentBadge } from "@/components/portal/SandboxEnvironmentBadge";
 import { StreamedContent } from "@/components/portal/StreamedContent";
 
 export function generateStaticParams() {
@@ -19,5 +20,5 @@ export default async function LocaleLayout({
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
 
-  return <div lang={locale}><HtmlLang locale={locale} /><StreamedContent>{children}<CookieConsent locale={locale} /></StreamedContent></div>;
+  return <div lang={locale}><HtmlLang locale={locale} /><SandboxEnvironmentBadge locale={locale} /><StreamedContent>{children}<CookieConsent locale={locale} /></StreamedContent></div>;
 }

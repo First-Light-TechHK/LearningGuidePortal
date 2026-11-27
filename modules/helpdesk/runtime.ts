@@ -17,7 +17,33 @@ import { outgoingTraceparent, parseTraceparent } from "@/lib/traceparent";
 import { createAssistantService, type AssistantService } from "./assistant";
 import { sharedFaqReleaseCache } from "./faqReleaseCache";
 import { projectOrder } from "./orderDirectory";
-import { createHelpdeskService, type HelpdeskService } from "./service";
+import { createHelpdeskService, type HelpdeskNotification, type HelpdeskService } from "./service";
+import { emitCatalogueNotification } from "@/services/notifications/service";
+/**
+ * The HelpDesk write point for the learner bell. A learner-visible agent reply
+ * is the HELPDESK_TICKET_REPLIED catalogue template: the switch and operator
+ * copy apply, and the event key is the same one Admin's event hook uses, so
+ * the two write paths produce one row (NTF-REV-03). Other learner updates (the
+ * "is it solved?" prompt) have no P0 template and keep the legacy row.
+ */
+export async function helpdeskNotify(notification: HelpdeskNotification) {
+  if (notification.templateId === "HELPDESK_TICKET_REPLIED" && notification.eventKey) {
+    await emitCatalogueNotification({
+      templateId: "HELPDESK_TICKET_REPLIED",
+      userId: notification.userId,
+      eventKey: notification.eventKey,
+      params: notification.params || {},
+      channels: ["in_app"],
+      related: notification.ticketId,
+      // PRD §5: if an unread reply for the same ticket exists, update it.
+      replaceUnreadEventKeyPrefix: `ticket:${notification.ticketId}:`,
+    });
+    return;
+  }
+  await recordUserNotification(notification.userId, notification.title, notification.body);
+}
+
+
 import { projectStudent } from "./studentDirectory";
 import { createInsightsService, type InsightsService, type LearnerAccount } from "./insights";
 import { createTicketStatsService, type TicketStatsService } from "./ticketStats";
@@ -52,9 +78,7 @@ export function helpdeskService(): HelpdeskService {
     },
     // Notification Center rows have no link field; the body carries the
     // ticket number and subject (docs/phase1/helpdesk-tickets.md, TODO).
-    notify: async (notification) => {
-      await recordUserNotification(notification.userId, notification.title, notification.body);
-    },
+    notify: helpdeskNotify,
     // Sent in the background so a slow SMTP server never delays the agent;
     // a failure is logged without the address and never fails the action.
     email: async (mail) => {

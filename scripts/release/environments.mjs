@@ -43,6 +43,27 @@ export const releaseEnvironments = {
     requireVersionMatch: true,
     provisioned: true
   },
+  // Sandbox is its own release environment (PRD v2.0 §3.1, owner 2026-11-14):
+  // an isolated deployment of the same code as the UAT/Production baseline.
+  // It is a real key, never an alias of PROD/PPE. Ops creates the App Runner
+  // service (provisioning request P9); until its ARN is provided the deploy
+  // gate reports "not provisioned" instead of "unknown environment".
+  SANDBOX: {
+    appEnv: "SANDBOX",
+    origin: "https://sandbox.ilovelearningguide.com",
+    adminOrigin: "https://admin.sandbox.ilovelearningguide.com",
+    branch: "sandbox",
+    serviceName: "learning-guide-sandbox",
+    serviceArn: process.env.SANDBOX_APP_RUNNER_SERVICE_ARN || "",
+    // The sandbox branch only ever fast-forwards to the latest production release
+    // SHA (LearningGuideSandbox contract), so an automatic force-push rollback is
+    // forbidden. A failed verify stays red for a human; RELEASE_ROLLBACK_MODE can
+    // still override per run.
+    rollbackMode: "none",
+    requireDependencyChecks: true,
+    requireVersionMatch: true,
+    provisioned: false
+  },
   PPE: {
     appEnv: "PPE/PROD",
     origin: process.env.PPE_ORIGIN || "",

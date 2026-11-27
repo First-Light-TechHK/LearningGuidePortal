@@ -178,11 +178,14 @@ test("lesson tools show access hints only for unentitled previews and retain ena
       if (width === 1440) await page.screenshot({ path: `test-results/lesson-tools/${locale}-reading-aligned-top.png` });
       for (const scrollTop of [300, 700]) {
         await page.evaluate(top => window.scrollTo(0, top), scrollTop);
+        const toolbar = page.locator('[data-reading-toolbar][data-visible="true"]');
+        await toolbar.waitFor({ state: "visible" });
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const leftTop = (await outline.getByRole('heading').boundingBox())!.y;
         const rightTop = (await tools.getByRole('heading').boundingBox())!.y;
         assert.ok(Math.abs(leftTop - rightTop) <= 1, 'both headings stay aligned after scrolling');
-        assert.ok(Math.abs(leftTop - 12) <= 1, `sticky content is 12px from the viewport top, received ${leftTop}`);
+        const toolbarBottom = await toolbar.evaluate(element => element.getBoundingClientRect().bottom);
+        assert.ok(Math.abs(leftTop - toolbarBottom - 12) <= 1, `sticky content starts 12px below the reading toolbar, received ${leftTop - toolbarBottom}px`);
         await assertCompletionPosition(width);
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -190,8 +193,15 @@ test("lesson tools show access hints only for unentitled previews and retain ena
     }
     await page.setViewportSize({ width: 1440, height: 700 });
     await mount('long-outline', true, 'text', 'Looking closely', longReading, 40);
-    await page.waitForFunction(() => document.querySelector('[data-reading-outline]')?.getAttribute('data-reading-sticky') === 'false');
-    assert.notEqual(await page.locator('[data-reading-outline]').evaluate(element => getComputedStyle(element).position), 'sticky', 'an oversized outline remains page-scrollable');
+    const longOutline = page.locator('[data-reading-outline] nav');
+    await page.waitForFunction(() => document.querySelector('[data-reading-outline]')?.getAttribute('data-reading-sticky') === 'true');
+    await longOutline.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    assert.ok(await longOutline.evaluate(element => element.scrollTop > 0), 'an oversized outline scrolls inside the sidebar');
+    assert.ok(await longOutline.getByRole('link').last().evaluate(element => {
+      const list = element.closest('nav')!.getBoundingClientRect();
+      const link = element.getBoundingClientRect();
+      return link.top >= list.top && link.bottom <= list.bottom;
+    }), 'the final lesson is reachable inside the outline');
     for (const width of [1200, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await mount(`reading-narrow-${width}`, true, 'text', 'Looking closely', longReading);

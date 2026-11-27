@@ -1,5 +1,6 @@
 import { getLessonBookmarks } from "@/services/productStore";
-import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
+import { latestLessonBookmark, lessonModeBookmark } from "@/lib/lessonBookmarkDisplay";
+import { availableLessonMode, lessonLearningModes } from "@/lib/previewLessonPresentation";
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -65,12 +66,13 @@ export default async function CourseDetailPage({ params, searchParams }: {
   const lessonMetadata = new Map(course?.sections.flatMap(section => section.lessons.map(lesson => [lesson.id, {
     // Only public syllabus metadata, never protected lesson body/content.
     description: lesson.summary?.trim() || "",
+    modes: lessonLearningModes(lesson),
   }] as const)) || []);
 
   return (
     <main className={`portal-page ${styles.page}`} data-page-state={page.pageState} data-course-cta={page.cta || "none"} data-access-state={page.accessState}>
       <StreamedContent>
-      {user && course && <CourseDetailSync slug={slug} snapshot={{ bookmarkRevision: page.bookmarkRevision, pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount, continuableLessonIds: page.syllabus.filter(lesson => lesson.continuable).map(lesson => lesson.lessonId), completedLessonIds: page.syllabus.filter(lesson => lesson.completed).map(lesson => lesson.lessonId) }}/>}
+      {user && course && <CourseDetailSync slug={slug} snapshot={{ bookmarkRevision: page.bookmarkRevision, preferredMode: page.preferredMode, pageState: page.pageState, cta: page.cta, actionLessonId: page.actionLessonId, progress: page.progress, openedLearningPointCount: page.openedLearningPointCount, continuableLessonIds: page.syllabus.filter(lesson => lesson.continuable).map(lesson => lesson.lessonId), completedLessonIds: page.syllabus.filter(lesson => lesson.completed).map(lesson => lesson.lessonId) }}/>}
       <PortalHeader locale={locale} active="courses" signedIn={Boolean(user)} displayName={user?.nickname} avatarUrl={user?.avatarPath ? "/api/my-learning/avatar" : undefined} serverUserId={user?.id ?? null} />
       {page.pageState === "failed" || !identity ? (
         <section className="portal-section portal-section-first" data-course-failed="true">
@@ -125,8 +127,13 @@ export default async function CourseDetailPage({ params, searchParams }: {
                         ? `/${locale}/account/learn/${course.id}?lessonId=${encodeURIComponent(lesson.lessonId)}`
                         : `/${locale}/portal/courses/${course.id}/public-lesson?lessonId=${encodeURIComponent(lesson.lessonId)}`;
                       const metadata = lessonMetadata.get(lesson.lessonId);
-                      const bookmark = bookmarkSnapshot ? latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.lessonId, bookmarkSnapshot.versions[lesson.lessonId]) : undefined;
-                      const lastStudied = lesson.lessonId === page.actionLessonId && (page.openedLearningPointCount > 0 || Boolean(bookmark));
+                      const lessonMode = page.preferredMode ? availableLessonMode(metadata?.modes, page.preferredMode) : null;
+                      const versions = bookmarkSnapshot?.versions[lesson.lessonId];
+                      const latestBookmark = bookmarkSnapshot ? latestLessonBookmark(bookmarkSnapshot.bookmarks, lesson.lessonId, versions) : undefined;
+                      const bookmark = bookmarkSnapshot && lessonMode
+                        ? lessonModeBookmark(bookmarkSnapshot.bookmarks, lesson.lessonId, versions, lessonMode)
+                        : latestBookmark;
+                      const lastStudied = lesson.lessonId === page.actionLessonId && (page.openedLearningPointCount > 0 || Boolean(latestBookmark));
                       return <article className={`${styles.lesson} ${lastStudied ? styles.lastStudied : ""}`} key={lesson.lessonId} data-lesson-id={lesson.lessonId} data-lesson-access={lesson.access} data-lesson-openable={lesson.openable ? "true" : "false"}>
                         <div className={styles.lessonMain}>
                           <h3><span>{detail.lesson} {index + 1}</span><span className={styles.lessonTitle} title={lesson.title}>{lesson.title}</span></h3>

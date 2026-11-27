@@ -1,5 +1,11 @@
 # Phase 1：API contract
 
+Persistent Course learning mode (2026-11-19): the existing learning-mode PUT saves the user's explicit preference, and ordinary Lesson navigation does not call it. The private Course detail and My Learning API projections add optional `preferredMode` for cache reconciliation. The Lesson routes use the saved preference before entry query hints and restore only the bookmark for the mode actually opened. An unsupported preference falls back within the requested Lesson. Bookmark writes preserve the saved Course preference.
+
+Study entry and bookmark reconciliation (2026-11-19): outline and completion links pass the existing explicit `viewMode` and `modeSwitch=1` query parameters on the Lesson route. On `409 stale_bookmark`, an active reader/player discards the rejected position and reads the existing GET bookmark snapshot. A compatible snapshot lets subsequent user activity save with the current per-mode and Lesson revisions. A changed content version still requires re-entry. The server's optimistic concurrency and idempotency contract stays in effect.
+
+My Learning reconciliation (2026-11-19): `GET /api/my-learning/overview` includes `bookmarkRevision` for each Course alongside the existing `completedLessonIds`. The revision is the sum of the accepted Lesson bookmark revisions, matching Course detail. The client compares both fields when revalidating a cached Overview.
+
 Completed Lesson bookmark resume (2026-11-14): no endpoint/request/response change. Protected and entitled public Lesson pages now apply the same latest-valid-bookmark entry policy regardless of completion. A saved review video resumes at its exact milliseconds; missing/outdated bookmarks retain the beginning fallback. Explicit mode switches and locale continuation retain their own-mode restoration. Session/Entitlement checks and completion writes remain unchanged. Supersedes the earlier ordinary completed-reentry-from-start rule.
 
 Browser Back Course-state reconciliation (2026-11-14): private/no-store GET /api/portal/courses/:slug adds optional page.bookmarkRevision:number, a nonpersisted sum of the current User's accepted per-mode bookmark revisions (0 when none). It invalidates a restored detail snapshot even when Lesson id, completion and Continue membership stay unchanged. The client treats absent legacy values as 0 and rejects invalid/negative revisions. Existing bookmark writes/idempotency/access gates remain unchanged; no database migration.
@@ -175,6 +181,8 @@ Google 和 WeChat 回调必须在服务端校验 state、code、issuer/provider 
 
 ## Purchase / Payment / Subscription
 
+Pending subscription orders (2026-11-24): `POST /api/subscription/quote` may return `resumePending: true` for an owned Checkout candidate with the same terms. `POST /api/purchase/checkout` with `{quoteId, locale, resumeOnly: true}` verifies the existing payment and returns `{ok:true, checkoutUrl: string|null}`. This operation creates no order and requests no cancellation of an open payment. The ordinary Checkout POST still requires the three consents. It checks all overlaps, confirms closure of superseded payments and reserves the new order transactionally. Unknown or still-open conflicts return the existing `payment_pending` / `upgrade_in_progress` conflict with an owned `blockingOrderId`. A payment that completes during conflict resolution is reconciled and the request returns 409 `quote_expired` for a fresh quote. See [pending subscription order rules](domain-model.md#待支付订阅订单规则2026-11-24).
+
 ```ts
 // POST /api/subscription/quote
 type QuoteRequest = {
@@ -228,6 +236,14 @@ Authorised Lesson access includes all active `LessonContent` knowledge points be
 | GET | `/api/my-learning/notifications` | page | 返回当前 User 的通知和 unread count |
 | PATCH | `/api/my-learning/notifications/:id` | `{ read: boolean }` | 只能改当前 User 的一条通知 |
 | PATCH | `/api/my-learning/settings` | nickname、locale、avatar key | 复用字段校验；avatar 先 S3 上传再保存 key |
+
+### Notification Center：Backoffice 广播测试发送
+
+仅 Backoffice 服务端用服务令牌调用（无令牌 401，不对浏览器开放）。
+
+| Method | Path | Request | Server action |
+|---|---|---|---|
+| POST | `/api/integration/notifications/broadcasts/test` | operator、operatorEmail、titleEn、bodyEn、titleZh?、bodyZh?、buttonText?、buttonLink?、language? | 把屏幕上的内容（已保存或未保存）以 `[TEST]` 站内消息发给 operatorEmail 对应的 User；不保存广播、不计入任何统计，发送日志标记 Test；找不到该 User 返回 404 `no_learner`；内容校验失败返回 400 |
 
 ## AI Tutor
 

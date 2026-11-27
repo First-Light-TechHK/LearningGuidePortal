@@ -104,7 +104,13 @@ function serviceFor(
     courseSummary: async (courseId) => ({ id: courseId, title: "German History", slug: "german-history" }),
     accessibleCourses: async () => [],
     userProfile: async (userId) => ({ id: userId, displayName: userId, email: `${userId}@example.test`, locale: "en-GB" }),
-    notify: async () => { stats.notifications += 1; },
+    // A notice that names the email channel hands its email to the
+    // notification catalogue, so it counts as one mail here; sendMail below
+    // still counts the direct sends.
+    notify: async (input) => {
+      stats.notifications += 1;
+      if (input.catalogue?.channels?.includes("email")) stats.mails += 1;
+    },
     listReminders: async () => [],
     sendMail: async () => { stats.mails += 1; },
     liveKit: { apiKey: "", apiSecret: "", url: "" },

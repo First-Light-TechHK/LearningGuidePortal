@@ -31,10 +31,14 @@ test("five subscription designs retain bilingual responsive states, original ico
   const browser = await chromium.launch();
   try { for (const locale of ["en-GB", "zh-CN"] as const) {
     const copy = getMessages(locale), page = await browser.newPage({ viewport: { width: 1440, height: 1024 } });
-    let mode = "success", amountMinor = 3586; const requests: any[] = [];
+    let mode = "success", amountMinor = 3586, resumePending = false;
+    const requests: any[] = [], resumes: unknown[] = [];
+    const hostedCheckout = "https://checkout.stripe.com/fixture";
+    await page.route(hostedCheckout, route => route.fulfill({ status: 204 }));
     await page.route("http://selection.test/**", async route => {
       const pathname = new URL(route.request().url()).pathname;
-      if (pathname === "/api/subscription/quote") { requests.push(route.request().postDataJSON()); return route.fulfill({ status: mode === "success" ? 200 : mode === "anonymous" ? 401 : 400, json: mode === "success" ? { quote: { id: "trusted-quote", amountMinor, currency: "usd", expiresAt: new Date(Date.now() + 600000).toISOString() } } : { code: "upgrade_unavailable", error: copy.paymentErrors.upgrade_unavailable } }); }
+      if (pathname === "/api/subscription/quote") { requests.push(route.request().postDataJSON()); return route.fulfill({ status: mode === "success" ? 200 : mode === "anonymous" ? 401 : 400, json: mode === "success" ? { quote: { id: "trusted-quote", amountMinor, currency: "usd", expiresAt: new Date(Date.now() + 600000).toISOString() }, resumePending } : { code: "upgrade_unavailable", error: copy.paymentErrors.upgrade_unavailable } }); }
+      if (pathname === "/api/purchase/checkout") { resumes.push(route.request().postDataJSON()); return route.fulfill({ json: { checkoutUrl: hostedCheckout } }); }
       if (pathname.startsWith("/portal/")) return route.fulfill({ body: await readFile(path.join("public", pathname)), contentType: "image/svg+xml" });
       return route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' });
     });
@@ -152,16 +156,28 @@ test("five subscription designs retain bilingual responsive states, original ico
     await page.getByRole("button", { name: copy.pricingDesign.year, exact: true }).click();
     assert.equal(await page.locator(".pricing-card-price strong").textContent(), "US$78.00");
     assert.equal(await page.locator('.pricing-card-benefits strong').textContent(),'1,100');
+    resumePending = true;
+    await Promise.all([page.waitForResponse(hostedCheckout), page.locator(".purchase-actions button").click()]);
+    assert.deepEqual(resumes, [{ quoteId: "trusted-quote", locale, resumeOnly: true }]);
+    resumePending = false;
+    await mount(0); await mount(2);
+    await page.getByRole("button", { name: copy.pricingDesign.year, exact: true }).click();
     mode = "error"; await page.locator(".purchase-actions button").click(); await page.getByRole("alert").waitFor(); assert.equal(requests.at(-1).planId, "European Humanities-12");
     mode = "error"; requests.length = 0; await mount(1);
     await page.getByRole("alert").waitFor(); assert.equal(requests.length, 1); assert.deepEqual(requests[0], { kind: "upgrade", subscriptionId: "sub-Chinese Humanities" });
     assert.equal(await page.locator(".pricing-upgrade-action button").last().isDisabled(), true);
     assert.equal(await page.locator(".pricing-upgrade-action button").last().evaluate(e=>getComputedStyle(e).backgroundColor),"rgb(152, 162, 179)");
     assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "—");
-    mode = "success"; amountMinor = 1467; await page.getByRole("button", { name: copy.subscriptionSelection.quoteRetry, exact: true }).click();
+    mode = "success"; amountMinor = 1467; resumePending = true;
+    await page.getByRole("button", { name: copy.subscriptionSelection.quoteRetry, exact: true }).click();
     await page.waitForFunction(() => document.querySelector(".pricing-upgrade-card .pricing-card-price strong")?.textContent === "US$14.67");
     assert.equal(await page.locator(".pricing-upgrade-card .pricing-card-price strong").textContent(), "US$14.67");
     assert.ok((await page.locator(".pricing-upgrade-action button").last().textContent())?.includes("US$14.67"));
+    await Promise.all([page.waitForResponse(hostedCheckout), page.locator(".pricing-upgrade-action button").last().click()]);
+    assert.deepEqual(resumes, Array.from({ length: 2 }, () => ({ quoteId: "trusted-quote", locale, resumeOnly: true })));
+    resumePending = false;
+    await mount(0); await mount(1);
+    await page.waitForFunction(() => document.querySelector(".pricing-upgrade-card .pricing-card-price strong")?.textContent === "US$14.67");
     const quoteRequests = requests.length;
     await page.locator(".pricing-upgrade-action button").last().click(); await page.waitForURL(`**/${locale}/portal/subscription/confirmation?quoteId=trusted-quote`);
     assert.equal(requests.length, quoteRequests, "the displayed Stripe quote is reused without replacing its price on click");

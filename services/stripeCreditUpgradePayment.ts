@@ -4,38 +4,28 @@ import { PaymentError } from "@/contracts/payment";
 import { getStripe } from "./stripeClient";
 import { resolveUpgradeCredit } from "./stripeUpgradeCreditPrice";
 import { invoiceSubscription, stripeIdentity } from "./stripeUpgradeProration";
-import { applyVerifiedStripeEvent, attachStripeCheckoutSession, createPendingStripeUpgradeOrderFromQuote, getQuoteForUser,
-  pendingUpgradeCancellations, prepareStripeCheckout, recordUpgradeCancellation, stripeOrderContext, type ProductOrder } from "./productStore";
+import { applyVerifiedStripeEvent, attachStripeCheckoutSession, getQuoteForUser,
+  pendingUpgradeCancellations, recordUpgradeCancellation, stripeOrderContext, type ProductOrder } from "./productStore";
 
-export async function startCreditUpgradePayment(userId: string, quoted: NonNullable<Awaited<ReturnType<typeof getQuoteForUser>>>, origin: string, locale: "en-GB" | "zh-CN") {
+type UpgradeQuote = NonNullable<Awaited<ReturnType<typeof getQuoteForUser>>>;
+
+export async function assertCreditUpgradeQuoteCurrent(quoted: UpgradeQuote) {
   const credit = quoted.quote.upgradeCredit, price = quoted.quote.price;
   if (!credit || !price) throw new PaymentError("quote_expired");
-  const returnUrl = (id: string) => `/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(id)}`;
-  if (quoted.upgradeOrder?.status === "paid") return { order: quoted.upgradeOrder, checkoutUrl: returnUrl(quoted.upgradeOrder.id) };
-  if (quoted.upgradeOrder && quoted.upgradeOrder.status !== "pending") throw new PaymentError("quote_expired");
-  if (!quoted.upgradeOrder?.stripeCheckoutSessionId) {
-    if (Date.parse(quoted.quote.expiresAt) <= Date.now()) throw new PaymentError("quote_expired");
-    const current = await resolveUpgradeCredit({ sourceOrderId: credit.sourceOrderId, subscriptionId: credit.sourceStripeSubscriptionId,
-      customerId: credit.customerId, sourcePriceId: credit.sourcePriceId, paidAmountMinor: credit.creditMinor, price });
-    if (!isDeepStrictEqual(current, credit)) throw new PaymentError("quote_expired");
-  }
-  const pending = await createPendingStripeUpgradeOrderFromQuote(userId, quoted.quote.id);
-  const order = await prepareStripeCheckout(userId, pending.order.id, origin, locale);
-  if (order.status === "paid") return { order, checkoutUrl: returnUrl(order.id) };
-  const stripe = getStripe();
-  if (order.stripeCheckoutSessionId) {
-    const existing = await stripe.checkout.sessions.retrieve(order.stripeCheckoutSessionId);
-    if (existing.status === "complete") {
-      await reconcileCreditUpgradeCheckout({ id: `credit-checkout:${existing.id}`, type: "checkout.session.retrieved" }, existing.id);
-      return { order, checkoutUrl: returnUrl(order.id) };
-    }
-    if (existing.status !== "open" || !existing.url) throw new PaymentError("quote_expired");
-    return { order, checkoutUrl: existing.url };
-  }
+  if (quoted.upgradeOrder?.status === "paid" || quoted.upgradeOrder?.stripeCheckoutSessionId) return;
+  if (Date.parse(quoted.quote.expiresAt) <= Date.now()) throw new PaymentError("quote_expired");
+  const current = await resolveUpgradeCredit({ sourceOrderId: credit.sourceOrderId, subscriptionId: credit.sourceStripeSubscriptionId,
+    customerId: credit.customerId, sourcePriceId: credit.sourcePriceId, paidAmountMinor: credit.creditMinor, price });
+  if (!isDeepStrictEqual(current, credit)) throw new PaymentError("quote_expired");
+}
+
+export async function createCreditUpgradeCheckout(order: ProductOrder) {
+  const { upgradeCredit: credit, price, userId } = order;
+  if (!credit || !price || order.status !== "pending" || order.stripeCheckoutSessionId) throw new PaymentError("quote_expired");
   const metadata = { app: "learning_guide", kind: "upgrade_credit", purchase_type: "UPGRADE", orderId: order.id, userId, quoteId: order.quoteId,
     planId: order.planId, target_plan: price.termMonths === 6 ? "EVERYTHING_6M" : "EVERYTHING_12M",
     source_order_id: credit.sourceOrderId, source_subscription_id: credit.sourceStripeSubscriptionId };
-  const session = await stripe.checkout.sessions.create({ mode: "subscription", customer: credit.customerId,
+  const session = await getStripe().checkout.sessions.create({ mode: "subscription", customer: credit.customerId,
     locale: order.checkoutLocale === "zh-CN" ? "zh" : "en-GB", client_reference_id: order.id, payment_method_types: ["card"],
     ...(process.env.STRIPE_SANDBOX === "1" ? { managed_payments: { enabled: false }, adaptive_pricing: { enabled: false } } : {}),
     line_items: [{ price: price.stripePriceId, quantity: 1 }], discounts: [{ coupon: credit.couponId }],

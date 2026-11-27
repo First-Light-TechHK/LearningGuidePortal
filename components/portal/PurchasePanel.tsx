@@ -8,6 +8,7 @@ import { formatPlanPrice } from "@/lib/planPricing";
 
 import { useEffect, useId, useRef, useState } from "react";
 import { getMessages } from "@/lib/i18n/messages";
+import { subscriptionOrdersPath } from "@/lib/subscriptionOrdersPath";
 import Link from "next/link";
 
 type Plan = { alreadySubscribed?: boolean; upgradeUnavailable?: boolean; available?: boolean; id: string; name: string; termMonths: 6 | 12; device: "pc" | "mobile"; amountMinor: number; currency: string; aiPoints?: number };
@@ -73,11 +74,19 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
     submitting.current = true; setPendingAction("purchase"); setBusy(true); setError("");
     try {
       const quoteResponse = await fetch("/api/subscription/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ planId: selectedPlan, kind: "purchase" }) });
-      const quoteData = await quoteResponse.json() as { quote?: { id: string }; error?: string; code?: string; blockingOrderId?: string };
+      const quoteData = await quoteResponse.json() as { quote?: { id: string }; resumePending?: boolean; error?: string; code?: string; blockingOrderId?: string };
       setBlockingOrderId(quoteData.blockingOrderId || null);
       if (quoteResponse.status === 401) { signInForPlan(); return; }
       if (!quoteResponse.ok || !quoteData.quote) throw new Error(quoteData.code === "already_subscribed" || quoteData.code === "upgrade_unavailable" ? messages.paymentErrors[quoteData.code] : quoteData.error || "Price calculation failed.");
-      window.location.assign(`/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteData.quote.id)}`);
+      let destination = `/${locale}/portal/subscription/confirmation?quoteId=${encodeURIComponent(quoteData.quote.id)}`;
+      if (quoteData.resumePending) {
+        const response = await fetch("/api/purchase/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quoteData.quote.id, locale, resumeOnly: true }) });
+        const result = await response.json() as { checkoutUrl?: string | null; error?: string; blockingOrderId?: string };
+        setBlockingOrderId(result.blockingOrderId || null);
+        if (!response.ok) throw new Error(result.error || messages.paymentErrors.payment_unavailable);
+        destination = result.checkoutUrl || destination;
+      }
+      window.location.assign(destination);
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "Checkout failed."); submitting.current = false; setPendingAction(null); setBusy(false); }
   }
 
@@ -89,7 +98,7 @@ function PurchasePanelContent({ locale, courseId, plans, allowTrial = true, comp
       </div></> : null}
       {subscribed && <p role="status">{messages.pricingDesign.alreadySubscribed}</p>}
       {error ? <p className="portal-form-error" role="alert">{error}</p> : null}
-      {blockingOrderId && <p><Link href={`/${locale}/account/my-learning/subscription?orderId=${encodeURIComponent(blockingOrderId)}#order-${encodeURIComponent(blockingOrderId)}`}>{messages.orderManagement.viewOrders}</Link></p>}
+      {blockingOrderId && <p><Link href={subscriptionOrdersPath(locale, blockingOrderId)}>{messages.orderManagement.viewOrders}</Link></p>}
       <div className="purchase-actions">{allowTrial ? <PortalButton loading={pendingAction === "trial"} disabled={busy || blocked} onClick={startTrial}>{copy.startTrial}</PortalButton> : null}<PortalButton loading={pendingAction === "purchase"} disabled={busy || blocked} onClick={purchase} type="primary">{copy.buy}</PortalButton></div>
     </div>
   );

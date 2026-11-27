@@ -6,7 +6,9 @@ import { isCourseLearningMode, type CourseModeSnapshot } from "@/contracts/cours
 
 const modeKey = (courses: CourseModeSnapshot[]) => JSON.stringify([...courses].sort((a, b) => a.courseId.localeCompare(b.courseId)).map(course => [
   course.courseId, course.mode, course.currentLessonId ?? null, course.currentContentId ?? null,
+  course.preferredMode ?? null,
   course.progress ?? null, course.updatedAt ?? null,
+  course.bookmarkRevision ?? 0, [...(course.completedLessonIds || [])].sort(),
 ]));
 
 /** Reconcile cached cards after study in another lesson, mode or browser tab. */
@@ -45,7 +47,10 @@ export function OverviewModeSync({ userId, courses }: { userId: string; courses:
         if (!result.ok || request.signal.aborted || !active() || !result.user?.id || !Array.isArray(result.overview?.courses)) return;
         const current = result.overview.courses.filter(course => course.courseStatus === "published");
         if (!current.every(course => typeof course.courseId === "string" && isCourseLearningMode(course.mode)
+          && (course.preferredMode == null || isCourseLearningMode(course.preferredMode))
           && [course.currentLessonId, course.currentContentId, course.updatedAt].every(value => value == null || typeof value === "string")
+          && (course.bookmarkRevision == null || (Number.isSafeInteger(course.bookmarkRevision) && course.bookmarkRevision >= 0))
+          && (course.completedLessonIds == null || (Array.isArray(course.completedLessonIds) && course.completedLessonIds.every(id => typeof id === "string")))
           && (course.progress == null || (typeof course.progress === "number" && Number.isFinite(course.progress) && course.progress >= 0 && course.progress <= 100)))) return;
         if (result.user.id !== userId || modeKey(current as CourseModeSnapshot[]) !== snapshot) refresh();
       } catch { /* Preserve existing cards on transient failures. */ }

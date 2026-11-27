@@ -8,6 +8,7 @@ const CONSENTS = { renewal: true, terms: true, refund: true };
 
 test.skip(Boolean(process.env.CI), "demo trial/purchase is local-only; Actions stay on next start + stripe");
 
+test.use({ extraHTTPHeaders: async ({ baseURL }, use) => use({ Origin: new URL(baseURL!).origin }) });
 test.describe.configure({ mode: "serial" });
 
 function freshEmail(caseId: string) {
@@ -15,11 +16,11 @@ function freshEmail(caseId: string) {
 }
 
 test.describe("E2E-B1-004", () => {
-  test("register with verification off creates a session; login works; returnTo drop is design", async ({ request }) => {
+  test("register with verification off creates a session and login remembers only when requested", async ({ request }) => {
     const email = freshEmail("004");
     const check = await request.post("/api/auth/check-email", { data: { email } });
     expect(check.status()).toBe(200);
-    expect(await check.json()).toEqual({ ok: true });
+    expect(await check.json()).toEqual({ ok: true, data: { exists: false, pending: false, retryAfter: 0 } });
 
     const registered = await request.post("/api/auth/register", {
       data: { termsAccepted: true, email, password: PASSWORD, nickname: "E2E User", locale: "en-GB" },

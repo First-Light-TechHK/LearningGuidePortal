@@ -1,4 +1,5 @@
 {
+  "readingNavigation": {"myLearning": "My Learning", "label": "Reading navigation", "backToCourse": "Back to course", "courses": "Courses", "outline": "Outline", "more": "More navigation", "saving": "Saving your reading position…", "saveError": "Your reading position could not be saved.", "retry": "Retry", "leave": "Leave anyway", "stay": "Stay here", "close": "Close"},
   "lessonBookmark": {"reload": "Reload", "video": "Video · Watched to {lp}", "text": "Text · Read to {lp}", "saveError": "Your reading position could not be saved. Retry or reload to resume from the latest saved position."},
   "orderManagement": {
     "title": "Orders to resolve",
@@ -430,7 +431,7 @@
     ],
     "other": "Related courses",
     "empty": "No related courses yet",
-    "relatedBody": "Explore another perspective in this category.",
+    "relatedBody": "Discover a new perspective in this course.",
     "viewCourse": "View course",
     "cta": "Choose access plan",
     "close": "Close"
@@ -539,7 +540,11 @@
     "eyebrow": "Learning Guide Portal",
     "title": "Learn through guided courses",
     "description": "Explore a course, start with the public lesson, and continue learning with a course-aligned AI Tutor.",
-    "navigation": {"primaryLabel": "Primary navigation", 
+    "sandbox": {
+      "label": "Sandbox",
+      "message": "Sandbox environment — test courses and test payments only. Do not use a real card."
+    },
+    "navigation": {"primaryLabel": "Primary navigation",
       "courses": "Courses",
       "studyGroups": "Study Groups",
       "pricing": "Subscription",
@@ -883,7 +888,7 @@
   "account": {
     "overview": "Overview",
     "subscription": "My Subscription",
-    "notifications": "Notification Center",
+    "notifications": "Notifications",
     "settings": "Personal settings",
     "help": "Help Center / FAQ",
     "menu": "Account menu",
@@ -892,11 +897,26 @@
     "contactAction": "Contact support"
   },
   "notificationsPage": {
-    "title": "Notification centre",
+    "title": "Notifications",
+    "intro": "Updates about your subscription, study groups and Learning Guide.",
+    "dropdownTitle": "Notifications",
+    "bellLabel": "Notifications",
+    "bellLabelUnread": "Notifications, {count} unread",
+    "unreadCount": "{count} unread",
+    "unreadTag": "Unread",
+    "filterLabel": "Filter notifications",
+    "filterAll": "All",
+    "filterUnread": "Unread ({count})",
     "markRead": "Mark as read",
     "markUnread": "Mark as unread",
-    "empty": "Notification centre is being prepared.",
-    "placeholder": "Notifications are not active in the current test release.",
+    "empty": "You have no notifications yet.",
+    "emptyUnread": "You're all caught up.",
+    "loading": "Loading…",
+    "loadError": "Notifications could not be loaded.",
+    "updateError": "The notification could not be updated. Please try again.",
+    "retry": "Try again",
+    "showing": "Showing {shown} of {total}",
+    "loadMore": "Load more",
     "viewAll": "View all notifications"
   },
   "settingsPage": {

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import type { LessonBookmarkRestore, LessonBookmarkSnapshot } from "@/contracts/lesson-bookmark";
-import { latestLessonBookmark } from "@/lib/lessonBookmarkDisplay";
 import { useLessonBookmarks } from "./useLessonBookmarks";
 import { Select } from "antd";
 import { PortalProvider } from "./ui/PortalProvider";
@@ -22,6 +21,7 @@ import type { VideoPlaybackProgress } from "@/contracts/video-progress";
 import { videoCompletionPercent } from "@/lib/videoLessonCompletion";
 import { PreviewProgress } from "./PreviewProgress";
 import styles from "./preview-lesson.module.css";
+import { ReadingNavigation } from "./ReadingNavigation";
 import type { CourseLearningMode, CourseLearningModeResult } from "@/contracts/course-learning-mode";
 import { resolveLessonPresentation, modeLessonDestination } from "@/lib/courseLearningMode";
 import { TextLessonReader } from "./TextLessonReader";
@@ -31,8 +31,8 @@ import { textLessonPreviewPolicy } from "@/lib/textLessonPreview";
 import type { AssessmentAvailability, LessonPreviewConfiguration } from "@/contracts/lesson-resources";
 import type { ExplorationDisplay } from "@/contracts/exploration";
 
-export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, completedLessonIds = [], bookmarkSnapshot, bookmarkOwnerId, locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
-  autoPlayVideo?: boolean; bookmarkRestore?: LessonBookmarkRestore; completedLessonIds?: string[]; bookmarkSnapshot?: LessonBookmarkSnapshot; bookmarkOwnerId?: string;
+export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, bookmarkSnapshot, bookmarkOwnerId, locale, courseId, courseTitle, category, description, lesson, outline, poster, trialGate, textPreview, initialCompleted, completedContentIds, nextHref, entitled, tutorOnline = true, preferredMode = null, preferredCourseMode = null, initialContentId = null, studyEndpoint = "/api/study/preview", explorationData, assessmentAvailability }: {
+  autoPlayVideo?: boolean; bookmarkRestore?: LessonBookmarkRestore; bookmarkSnapshot?: LessonBookmarkSnapshot; bookmarkOwnerId?: string;
   locale: Locale; courseId: string; courseTitle: string; category: string; description: string;
   lesson: { id: string; title: string; body: string; durationMinutes: number; contents?: LessonContent[]; preview?: LessonPreviewConfiguration };
   explorationData?: ExplorationDisplay; assessmentAvailability?: AssessmentAvailability;
@@ -42,6 +42,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
   /** KS 课程级 Online 状态；false 时隐藏「询问 AI 导师」入口（2026-10-22）；页面必须显式传入 */
   tutorOnline?: boolean;
   preferredMode?: CourseLearningMode | null;
+  preferredCourseMode?: CourseLearningMode | null;
   initialContentId?: string | null;
   studyEndpoint?: "/api/study/preview" | "/api/study/events";
 }) {
@@ -65,6 +66,8 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
   const [videoNavigation, setVideoNavigation] = useState<{ id: string; request: number }>();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [modeSaving, setModeSaving] = useState(false), [modeError, setModeError] = useState("");
+  const [coursePreference, setCoursePreference] = useState(preferredCourseMode);
+  useEffect(() => { setCoursePreference(preferredCourseMode); }, [preferredCourseMode]);
   const modeSaveLock = useRef(false);
   const modeMounted = useRef(true);
   useEffect(() => { modeMounted.current = true;return () => { modeMounted.current = false; }; }, []);
@@ -72,6 +75,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
   const selectedVideoProgress = videoProgress?.contentId === selected?.id ? videoProgress : null;
   useEffect(() => { setPlayingId(null); }, [lesson.id]);
   const mode: CourseLearningMode = selected?.type === "video" ? "video" : "text";
+  const navigationMode = coursePreference || mode;
   const resume = useLessonBookmarks({ root: pageRef, courseId, lessonId: lesson.id, mode, enabled: entitled, ownerId: bookmarkOwnerId, initial: bookmarkSnapshot, contents, restorePolicy: bookmarkRestore, onRestoreContent: setContentId });
   useLayoutEffect(() => {
     const page = pageRef.current;
@@ -84,13 +88,13 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
       const offset = `${Math.ceil(page.getBoundingClientRect().top + window.scrollY)}px`;
       if (page.style.getPropertyValue("--learning-top-offset") !== offset) page.style.setProperty("--learning-top-offset", offset);
       for (const element of [outline, tools]) if (element) {
-        element.dataset.readingSticky = String(element.getBoundingClientRect().height <= window.innerHeight - 32);
+        element.dataset.readingSticky = String(mode === "text" || element.getBoundingClientRect().height <= window.innerHeight - 32);
       }
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     update();
     const observer = new ResizeObserver(schedule);
-    for (const element of [page, page.parentElement, outline, tools, document.querySelector(".portal-header")]) if (element) observer.observe(element);
+    for (const element of [page, page.parentElement, outline, tools, page.querySelector("[data-reading-toolbar]"), document.querySelector(".portal-header")]) if (element) observer.observe(element);
     window.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
     return () => {
@@ -124,33 +128,30 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
       await resume.flush();
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: destination.mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
-      const result = await response.json() as { ok?: boolean };
-      if (!response.ok || !result.ok) throw new Error("mode-save");
-      // This is an explicit lesson choice, so do not replace it with the mode's saved cursor.
       if (modeMounted.current) {
         if (lessonCompleted && new URL(destination.href, window.location.origin).searchParams.get("lessonId") === lesson.id) window.location.assign(destination.href);
         else router.push(destination.href);
       }
-    } catch { if (modeMounted.current) setModeError(messages.courseLearningMode.saveError); }
-    finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
+    } finally { modeSaveLock.current = false;if (modeMounted.current) setModeSaving(false); }
   }
-  async function switchMode(mode: CourseLearningMode) {
-    if (modeSaveLock.current) return;
-    const content = mode === "video" ? videoContent : textContent;
-    const currentHasMode=Boolean(content) || (mode==="text" && !contents.length && Boolean(lesson.body?.trim()));
-    if(!modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id))return;
+  async function switchMode(nextMode: CourseLearningMode) {
+    if (modeSaveLock.current || (nextMode === mode && nextMode === coursePreference)) return;
+    const content = nextMode === "video" ? videoContent : textContent;
+    const currentHasMode=Boolean(content) || (nextMode==="text" && !contents.length && Boolean(lesson.body?.trim()));
+    if(!modeLessonDestination(outline,lesson.id,nextMode,currentHasMode,content?.id))return;
     modeSaveLock.current = true;setModeSaving(true);setModeError("");
     pageRef.current?.querySelectorAll<HTMLMediaElement>("video,audio").forEach(media => media.pause());
     try {
       await resume.flush();
-      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
+      const response = await fetch(`/api/courses/${encodeURIComponent(courseId)}/learning-mode`, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: nextMode, lessonId: lesson.id, accessContext: entitled ? "entitled" : "preview" }) });
       const result = await response.json() as { ok: boolean; data?: CourseLearningModeResult };
       if (!response.ok || !result.ok) throw new Error("mode-save");
       if (!modeMounted.current) return;
-      const saved = resume.bookmarks[lesson.id]?.[mode];
-      const localPosition = bookmarkSnapshot && currentHasMode ? { lessonId: lesson.id, contentId: saved && saved.contentVersion === bookmarkSnapshot.versions[lesson.id]?.[mode] ? saved.contentId : content?.id || null } : result.data?.position;
-      const destination = modeLessonDestination(outline,lesson.id,mode,currentHasMode,content?.id,localPosition);
+      setCoursePreference(nextMode);
+      if (nextMode === mode) return;
+      const saved = resume.bookmarks[lesson.id]?.[nextMode];
+      const localPosition = bookmarkSnapshot && currentHasMode ? { lessonId: lesson.id, contentId: saved && saved.contentVersion === bookmarkSnapshot.versions[lesson.id]?.[nextMode] ? saved.contentId : content?.id || null } : result.data?.position;
+      const destination = modeLessonDestination(outline,lesson.id,nextMode,currentHasMode,content?.id,localPosition);
       if (!destination) throw new Error("mode-destination");
       setNodeRequest(undefined);
       setVideoProgress(null);
@@ -158,7 +159,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
       if(destination.lessonId===lesson.id) {
         const targetId = localPosition?.lessonId === lesson.id ? localPosition.contentId || "" : content?.id || "";
         setContentId(targetId);
-        setTextNavigation(mode === "text" && targetId ? { id: targetId, request: Date.now() } : undefined);
+        setTextNavigation(nextMode === "text" && targetId ? { id: targetId, request: Date.now() } : undefined);
       }
       setVideoNavigation(undefined);
       setPlayingId(null);
@@ -171,6 +172,7 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
   const current = outline.find(item => item.id === lesson.id);
   const nextLessonId = nextHref ? new URLSearchParams(nextHref.split("?")[1] || "").get("lessonId") : null;
   const nextLesson = outline.find(item => item.id === nextLessonId);
+  const continuationHref = (nextLesson && lessonOutlineDestination(nextLesson, navigationMode)?.href) || nextHref;
   const courseHref = `/${locale}/portal/courses/${courseId}`;
   const courseReturnPending = useRef(false);
   async function returnToCourse(event: MouseEvent<HTMLAnchorElement>) {
@@ -207,7 +209,8 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
             <div ref={setExhibitContainer} className={styles.exhibitSlot}/>
           </aside>);
   return <div ref={pageRef} className={`${styles.page} ${mode === "text" ? styles.textPage : ""}`} data-course-id={courseId} data-lesson-id={lesson.id}>
-    <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb}>
+    {mode === "text" && <ReadingNavigation root={pageRef} locale={locale} courseHref={courseHref} beforeNavigate={entitled ? () => resume.flush({ requireSaved: true }) : undefined}/>}
+    <nav className={styles.breadcrumb} aria-label={messages.courseDetailDesign.breadcrumb} data-lesson-breadcrumb>
       <Link href={`/${locale}/portal/courses`}>{messages.portal.navigation.courses}</Link><span aria-hidden="true">/</span>
       {category && <><Link href={`/${locale}/portal/courses?category=${encodeURIComponent(category)}`}>{category}</Link><span aria-hidden="true">/</span></>}
       <Link href={courseHref} prefetch={false} onClick={returnToCourse}>{courseTitle}</Link>
@@ -222,25 +225,25 @@ export function PreviewLessonView({ autoPlayVideo = false, bookmarkRestore, comp
               { value: "video", label: copy.videoMode, disabled: !modeLessonDestination(outline, lesson.id, "video", Boolean(videoContent)) },
               { value: "text", label: copy.textMode, disabled: !modeLessonDestination(outline, lesson.id, "text", Boolean(textContent) || (!contents.length && Boolean(lesson.body?.trim()))) },
             ]}
-            onChange={value => void switchMode(value)} />
+            onSelect={value => void switchMode(value)} />
         </PortalProvider> : <span className={`${styles.modeSwitch} ${styles.fixedMode}`} data-learning-mode={mode}>{mode === "video" ? copy.videoMode : copy.textMode}</span>}</div>
         {modeError && <p className={styles.modeError} role="alert">{modeError}</p>}
         <nav aria-label={copy.outline} className={styles.outline}>
-          {outline.map(item => { const bookmark = entitled ? latestLessonBookmark(resume.bookmarks, item.id, bookmarkSnapshot?.versions[item.id]) : undefined; const destination = lessonOutlineDestination(item, (item.id === lesson.id ? lessonCompleted : completedLessonIds.includes(item.id)) ? mode : bookmark?.mode || mode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
-            {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} onClick={event => {
+          {outline.map(item => { const destination = lessonOutlineDestination(item, navigationMode); return <div key={item.id} className={`${styles.lesson} ${item.id === lesson.id ? styles.activeLesson : ""} ${!destination ? styles.lockedLesson : ""}`}>
+            {destination ? <Link className={styles.lessonLink} aria-current={item.id === lesson.id ? "page" : undefined} href={destination.href} prefetch={false} onClick={event => {
               if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
               if (modeSaving) { event.preventDefault();return; }
               if (bookmarkSnapshot || destination.mode !== mode) { event.preventDefault();void openLesson(destination); }
             }}><span>{item.number}</span>{item.title}</Link> : <span className={styles.lessonLink} aria-disabled="true" title={item.modes?.length === 0 ? copy.lessonUnavailable : undefined}><span>{item.number}</span>{item.title}</span>}
-            {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
+            {item.id === lesson.id && contents.length > 0 && <div className={styles.contentLinks}>{contents.filter(content => mode === "video" ? content.type === "video" : content.type === "text" || content.type === "pdf").map((content, modeIndex) => <button data-reading-point key={content.id} type="button" aria-current={content.id === contentId ? "step" : undefined} onClick={() => { if (mode === "text") setTextNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); else { setContentId(content.id); setVideoNavigation(previous => ({ id: content.id, request: (previous?.request || 0) + 1 })); } setNodeRequest(undefined); }}>{Number(item.number)}.{modeIndex + 1} {content.title}</button>)}</div>}
           </div>; })}
           {!outline.length && <p className={styles.emptyOutline} role="status">{copy.noLessonsInMode}</p>}
         </nav>
       </aside>
       <article className={styles.main}>
-        <header className={styles.heading} data-preview={!entitled}><p>{current?.number}</p><h1>{lesson.title}</h1>{!entitled && <button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button>}{selected?.type === "video" && entitled && <LessonCompletionBar actionOnly onCompleted={() => setLessonCompleted(true)} nextLesson={nextLesson} assessmentAvailability={assessmentAvailability} lessonTitle={lesson.title} key={`${lesson.id}:${selected.id}`} contentId={selected.id} endedRequest={ended?.contentId === selected.id ? ended.request : 0} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} percentage={videoCompletionPercent(selectedVideoProgress) || 0} seconds={Math.floor(selectedVideoProgress?.currentTime || 0)} initialCompleted={lessonCompleted || initialCompleted} nextHref={nextHref} endpoint={studyEndpoint}/>}<div className={styles.introduction}>{description}</div><Image className={styles.headingDivider} src="/portal/study/divider.svg" alt="" width={940} height={1}/></header>
+        <header className={styles.heading}><p>{current?.number}</p><h1>{lesson.title}</h1>{!entitled && <button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button>}{selected?.type === "video" && entitled && <LessonCompletionBar actionOnly onCompleted={() => setLessonCompleted(true)} nextLesson={nextLesson} assessmentAvailability={assessmentAvailability} lessonTitle={lesson.title} key={`${lesson.id}:${selected.id}`} contentId={selected.id} endedRequest={ended?.contentId === selected.id ? ended.request : 0} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} percentage={videoCompletionPercent(selectedVideoProgress) || 0} seconds={Math.floor(selectedVideoProgress?.currentTime || 0)} initialCompleted={lessonCompleted || initialCompleted} nextHref={continuationHref} endpoint={studyEndpoint}/>}<div className={styles.introduction}>{description}</div><Image className={styles.headingDivider} src="/portal/study/divider.svg" alt="" width={940} height={1}/></header>
         <div className={styles.mediaRow} data-text-row>
-          {mode === "text" ? <div className={styles.textSurface}><TextLessonReader key={`${lesson.id}:text`} className={`${styles.player} ${styles.textPlayer}`} label={copy.textMode} contents={contents} body={lesson.body} locale={locale} lessonNumber={current?.number || "01"} initialContentId={presentation.mode === "text" ? presentation.contentId : textContent?.id || ""} navigationRequest={textNavigation} onContentChange={setContentId} preview={textPolicy} ending={entitled ? <div className={styles.endingSpace}><span data-text-completion-trigger/></div> : undefined} previewEnd={textEnd ? <div className={styles.previewEnd} data-text-preview-end><div className={styles.lockedText} aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index}/>)}</div><div className={styles.previewFade}/><section className={styles.previewNotice} aria-label={messages.previewAccess.previewEnds}><h2><Image src="/portal/text-preview/lock.svg" alt="" width={16} height={16}/>{messages.previewAccess.previewEnds}</h2><button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button></section></div> : undefined}/>{entitled && <TextLessonCompletion onCompleted={() => setLessonCompleted(true)} initialCompleted={lessonCompleted || initialCompleted} nextLesson={nextLesson} variant="card" assessmentAvailability={assessmentAvailability} key={lesson.id} visible={mode === "text"} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} nextHref={nextHref} endpoint={studyEndpoint}/>}</div> : <div className={styles.player} key={`${lesson.id}:video`}>
+          {mode === "text" ? <div className={styles.textSurface}><TextLessonReader key={`${lesson.id}:text`} className={`${styles.player} ${styles.textPlayer}`} label={copy.textMode} contents={contents} body={lesson.body} locale={locale} lessonNumber={current?.number || "01"} initialContentId={presentation.mode === "text" ? presentation.contentId : textContent?.id || ""} navigationRequest={textNavigation} onContentChange={setContentId} preview={textPolicy} ending={entitled ? <div className={styles.endingSpace}><span data-text-completion-trigger/></div> : undefined} previewEnd={textEnd ? <div className={styles.previewEnd} data-text-preview-end><div className={styles.lockedText} aria-hidden="true">{Array.from({ length: 7 }, (_, index) => <span key={index}/>)}</div><div className={styles.previewFade}/><section className={styles.previewNotice} aria-label={messages.previewAccess.previewEnds}><h2><Image src="/portal/text-preview/lock.svg" alt="" width={16} height={16}/>{messages.previewAccess.previewEnds}</h2><button type="button" className={styles.chooseAccess} aria-haspopup="dialog" aria-expanded={accessPlanOpen} onClick={() => void chooseAccessPlan()}>{messages.previewAccess.choosePlan}</button></section></div> : undefined}/>{entitled && <TextLessonCompletion onCompleted={() => setLessonCompleted(true)} initialCompleted={lessonCompleted || initialCompleted} nextLesson={nextLesson} variant="card" assessmentAvailability={assessmentAvailability} key={lesson.id} visible={mode === "text"} locale={locale} courseId={courseId} lessonId={lesson.id} lessonNumber={current?.number || "01"} lessonTitle={lesson.title} nextHref={continuationHref} endpoint={studyEndpoint}/>}</div> : <div className={styles.player} key={`${lesson.id}:video`}>
             <LessonContentPlayer videoNavigationRequest={videoNavigation} exhibitContainer={exhibitContainer} contents={contents} locale={locale} fallbackImageUrl="/portal/exh.jpg" trialGate={entitled ? undefined : trialGate} onPreviewAccess={!entitled ? () => void chooseAccessPlan() : undefined} selectedContentId={contentId} onContentChange={setContentId} hideNavigation nodeRequest={nodeRequest} onVideoStart={setPlayingId} onVideoProgress={setVideoProgress} onVideoEnded={progress => setEnded(previous => ({ contentId: progress.contentId, request: (previous?.request || 0) + 1 }))} videoPresentation={{ poster, playLabel: copy.play, autoPlay: autoPlayVideo && contentId === presentation.contentId }} />
           </div>}
         </div>

@@ -95,14 +95,14 @@ test("video exhibits appear at configured times, dismiss, reopen and respect see
       await setMode("text");
       await textSaved;
       assert.equal(await page.evaluate(()=>(window as unknown as {modeDestination:string}).modeDestination),"/lesson?viewMode=text&contentId=text&modeSwitch=1");
-      assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).getAttribute("href"),"/video-lesson?viewMode=video");
-      assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).getAttribute("href"),"/text-lesson?viewMode=text");
+      assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).getAttribute("href"),"/video-lesson?viewMode=video&modeSwitch=1");
+      assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).getAttribute("href"),"/text-lesson?viewMode=text&modeSwitch=1");
       assert.equal(await page.getByRole("link",{name:/Locked text lesson/}).count(),0);
       await page.getByText("Mode switch reading content.",{exact:true}).waitFor();
       assert.equal(await page.locator("video.la-lesson-video").count(),0);
       await setMode("video");
       await page.locator("video.la-lesson-video").waitFor();
-      assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).getAttribute("href"),"/text-lesson?viewMode=text");
+      assert.equal(await page.getByRole("link",{name:/Text-only lesson/}).getAttribute("href"),"/text-lesson?viewMode=text&modeSwitch=1");
       assert.equal(await page.getByRole("link",{name:/Video-only lesson/}).count(),1);
       await page.locator("video.la-lesson-video").waitFor();
       const videoBounds=(await page.locator("video.la-lesson-video").boundingBox())!;
