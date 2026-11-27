@@ -54,8 +54,17 @@ test("Subscription products start collapsed, expand independently, preserve bill
     const footer = renderToStaticMarkup(await Footer({ locale })).replace(/^<footer[^>]*>/, "").replace(/<\/footer>$/, "");
     const mount = (key: string, subscriptions: any[], orders: any[]) => page.evaluate(props => (window as any).mount(props), { key, locale, footer, initialSubscriptions: subscriptions, initialOrders: orders });
     const card = (id: string) => page.locator(`[data-subscription-id="${id}"]`);
+    const checkIntroSpacing = async () => {
+      const gaps = await page.locator(".subscription-page-intro").evaluate(intro => {
+        const title = intro.previousElementSibling!, section = intro.nextElementSibling!.querySelector("h2")!;
+        return { title: intro.getBoundingClientRect().top - title.getBoundingClientRect().bottom, section: section.getBoundingClientRect().top - intro.getBoundingClientRect().bottom };
+      });
+      assert.ok(Math.abs(gaps.title - 12) < 1, `${locale}: title and introduction have breathing room ${JSON.stringify(gaps)}`);
+      assert.ok(Math.abs(gaps.section - 28) < 1, `${locale}: current subscriptions are visually separated ${JSON.stringify(gaps)}`);
+    };
     await mount("categories", [chinese, science, european, expired], currentOrders);
     await card("science").waitFor();
+    await checkIntroSpacing();
     await page.locator(".account-menu-trigger").click();
     assert.equal(await page.locator(".account-menu-identity strong").innerText(), "M");
     assert.equal(await page.locator(".account-menu-identity div span").count(), 0);
@@ -104,6 +113,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await page.screenshot({ path: `${output}/${locale}-current-v4.png`, fullPage: true });
     for (const width of [1440, 1366, 1280, 1024]) {
       await page.setViewportSize({ width, height: 1024 });
+      await checkIntroSpacing();
       const geometry = await card("science").getByRole("table").evaluate(table => {
         const wrapper = table.parentElement!;
         return { available: wrapper.clientWidth, content: wrapper.scrollWidth,
@@ -150,7 +160,7 @@ test("Subscription products start collapsed, expand independently, preserve bill
     await card("science").getByRole("button", { name: copy.subscriptionDesign.turnOnRenewal , exact: true }).click();
     await card("science").getByRole("button", { name: copy.subscriptionDesign.cancelRenewal, exact: true }).waitFor();
     assert.equal(requests.at(-1).action, "resume");
-    for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false); await page.screenshot({ path: `${output}/${locale}-current-v4-${width}.png`, fullPage: true }); }
+    for (const width of [390, 320]) { await page.setViewportSize({ width, height: 844 }); await checkIntroSpacing(); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false); await page.screenshot({ path: `${output}/${locale}-current-v4-${width}.png`, fullPage: true }); }
     await page.emulateMedia({reducedMotion:"reduce"});
     await historyToggle.click();
     assert.equal(await history.evaluate(element=>element.getAnimations().length),0);
